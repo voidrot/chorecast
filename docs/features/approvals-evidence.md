@@ -8,12 +8,14 @@ Status: accepted (planning session, 2026-10-30). Builds on [points.md](points.md
 | Topic | Decision |
 |---|---|
 | Evidence types | Per chore, any combination of: **photos** (min count, optional before + after), **video**, **checklist ticks** (all steps), **note/text**. |
-| Rejection | **Back to `open` with required feedback** (quick-pick reason or text, optional annotated photo). Kid can resubmit until day close. |
+| Rejection | **Back to `open` with required feedback**: quick-pick reason and/or text, plus optional **annotated photo** (draw + text on the kid's photo). Kid can resubmit until day close. |
+| Fresh evidence only | **In-app capture only** for kids (no gallery picker); duplicate/reused media is detected and flagged. See below. |
+| Past evidence | No gallery. Kids and parents can view the media attached to any past instance from its history entry, until retention expires. |
 | Review queue | **Bulk approve**, **approve/reject from the Android notification**, **auto-approve after a timeout**. Any parent can approve; no delegated approver role in v1. |
 | Auto-approve | **Household default timeout + per-chore override** (including "never"). An AI verdict of `not_yet` **blocks** auto-approval, so a parent must decide. |
 | Offline | **Queue and sync.** The app stores completions and media locally and uploads later with the device's completion time. |
 | Storage | **Local disk by default, S3-compatible optional** (MinIO, Garage, R2, AWS). |
-| Image processing | Re-encode to ~1600 px, EXIF/GPS stripped, thumbnail generated. Pure Go. |
+| Image processing | Re-encode to ~1600 px **WebP**, EXIF/GPS stripped, WebP thumbnail. No JPEG fallback (minSdk 26 and all supported browsers decode WebP). |
 | Video processing | **ffmpeg optional, detected at runtime.** If present: transcode to **720p H.264/AAC MP4, max 60 s**, poster frame. If absent: stored as uploaded, size/length capped, no poster. |
 | Images published | `ghcr.io/voidrot/chorecast:<v>` (slim, distroless) and `:<v>-media` (with ffmpeg). |
 | AI on video | ~4 frames sampled evenly via ffmpeg and sent as images; skipped when ffmpeg is unavailable. |
@@ -33,6 +35,32 @@ Status: accepted (planning session, 2026-10-30). Builds on [points.md](points.md
 5. Auto-approve: a job approves `submitted` instances older than the effective timeout, unless the latest AI
    verdict is `not_yet`. The ledger entry is marked `created_by = system` with an "auto-approved" note.
 
+## Fresh-evidence rules (no reusing old photos)
+
+Goal: a kid can't satisfy today's chore with an old photo or one taken from the gallery or downloaded.
+
+1. **In-app capture only.** On kid sessions the app uses CameraX directly; there's no photo picker or share-in.
+   Each capture gets a `capture_id` and device timestamp recorded by the app at the shutter.
+2. **Capture window.** The server rejects evidence whose capture time is before the instance became available
+   (start of its day, or of the week for flexible chores). For offline uploads the device timestamp is used, with the
+   same clock-skew flag as completions.
+3. **Duplicate detection.** On upload the server computes a SHA-256 and a 64-bit perceptual hash (dHash) of the
+   decoded image (for video: of the sampled frames when ffmpeg is present).
+   - **Exact match** (same SHA-256) against any earlier evidence in the household → **rejected** at upload.
+   - **Near-identical** (dHash Hamming distance ≤ 4, tunable) to the same kid's evidence for the same chore in the
+     last 30 days → accepted but **flagged** "looks like a previous photo". Flagged submissions **block
+     auto-approve** and show the earlier photo side by side in the review queue.
+   - Near-duplicates are only flagged, not rejected, because a correctly made bed photographed from the
+     same spot every day genuinely looks the same.
+4. Hashes are kept after media expires, so reuse is still detected after retention deletes the file.
+5. Parents' uploads (reference photos, annotations) use the normal picker; rules 1–3 apply to kid evidence only.
+
+## Rejection annotations
+
+The parent app and web admin open the kid's photo in an editor with **freehand drawing** (a few colors and widths)
+and **text labels**. The annotated result is flattened to a new WebP and stored as rejection media
+(`owner_kind = rejection`); the original evidence is untouched. Retention follows the instance.
+
 ## Offline sync
 
 - The app keeps a local outbox (Room DB + files). Each submission has a client-generated UUID, so retries are
@@ -47,7 +75,7 @@ Status: accepted (planning session, 2026-10-30). Builds on [points.md](points.md
 
 ```
 upload → quarantine/tmp → validate (magic bytes, size, duration)
-       → image: decode → resize 1600px → strip metadata → encode WebP (+ JPEG fallback?) → thumbnail 320px
+       → image: decode → SHA-256 + dHash → resize 1600px → strip metadata → encode WebP → thumbnail 320px
        → video: (ffmpeg?) transcode 720p H.264/AAC, cap 60s, faststart, poster frame : store original
        → write to storage backend → media row (status ready)
 ```
@@ -87,6 +115,4 @@ Household settings (in the admin UI, not env): retention days, auto-approve time
 
 ## Open questions
 
-- WebP only, or keep a JPEG fallback for very old Android WebViews? (minSdk 26 supports WebP, so probably WebP only.)
-- Should kids be able to see their own past evidence after approval (a "my work" gallery)?
-- Annotated rejection photos: draw on the photo in the app (v1) or text only first?
+- None outstanding from the planning session. Tune the dHash threshold with real household photos during beta.
