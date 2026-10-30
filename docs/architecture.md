@@ -83,6 +83,7 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
 | `web_session` | Browser (HttpOnly, Secure, SameSite=Lax cookie) | Password(+TOTP) or OIDC login on the web | Full parent access |
 | `app` | Parent's phone | In-app login (password or brokered OIDC) | Full parent access |
 | `device` | Kid's phone or shared tablet | **QR pairing** by a parent | Bound to one kid, or "shared" (profile picker); kid-level access only |
+| `display` | Wall tablet / TV browser (family dashboard) | Code/QR shown on the display, approved by a parent | Read-only kid-visible household data |
 
 ### Flows
 

@@ -81,7 +81,7 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
 ## Devices
 
 - **Devices page** (web + parent app): name (from the app's device model, e.g. "Pixel Tablet"), kind
-  (kid-bound or shared + which kids), app version, last seen, push transports, kiosk on/off. **Revoke** deletes
+  (kid-bound, shared + which kids, or **display** for the family dashboard; see reporting.md), app version, last seen, push transports, kiosk on/off. **Revoke** deletes
   the token immediately; the app returns to the pairing screen on next contact.
 - **Remote lock to picker**: sends a push (or applied on next sync) that ends the active kid or parent session
   on a shared tablet.

@@ -27,7 +27,7 @@ Status: accepted (planning session, 2026-10-30). Builds on the other feature spe
 | `requests` | both | reward/transfer/swap requests and decisions | no |
 | `points` | kids | behavior entries, streak milestones, adjustments, gifts | yes |
 | `bonus` | kids | new bonus chore available | yes |
-| `summary` | parents | daily digest at day close | — |
+| `summary` | parents | daily digest at day close; weekly digest at week close (with optional AI insight) | — |
 | `problems` | parents | duplicate evidence flags, device clock skew, device not synced >48 h, disk space, backup failure, push endpoint failing | — |
 
 ## Pipeline
@@ -91,6 +91,11 @@ pre-selected on that kid, requiring their PIN if they have one.
 
 Sent at day close (or the end of the parent's quiet hours if later). Per kid: done / missed / excused / pending
 review, points earned and lost, balance, streak; plus household items needing action (pending requests, flags).
+
+## Weekly summary (parents)
+
+Sent at week close. Per kid: completion rate vs previous week, points in and out, streaks, goals met, badges earned;
+plus the optional AI insight (see [reporting.md](reporting.md)).
 
 ## Open questions
 
