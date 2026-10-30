@@ -18,6 +18,8 @@ v1 = end of Phase 1, released as a container image + GitHub Release APK.
 
 ## Phase 0: Foundations
 
+Tracking: [#1](https://github.com/voidrot/chorecast/issues/1) (sub-issues #3–#11)
+
 Goal: the rules every later feature depends on exist and are tested before any feature code lands.
 
 - [ ] **Clock & household time**: `Clock` interface (real + fake for tests); helpers for household timezone, effective
@@ -39,6 +41,8 @@ Exit: a fake-clock test can advance across a day close in another timezone and o
 endpoint without declared scopes fails CI.
 
 ## Phase 1: v1, the core chore loop
+
+Tracking: [#2](https://github.com/voidrot/chorecast/issues/2) (sub-issues #12–#38)
 
 Goal: one household runs its daily chores on Chorecast end to end.
 
