@@ -4,16 +4,16 @@ plugins {
 }
 
 android {
-    namespace = "io.github.voidrot.chorecast"
+    namespace = "dev.voidrot.chorecast"
     compileSdk = 36
 
     defaultConfig {
         // NOTE: the applicationId is permanent once published to Google Play.
-        applicationId = "io.github.voidrot.chorecast"
+        applicationId = "dev.voidrot.chorecast"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
         versionName = "0.0.0" // x-release-please-version
+        versionCode = versionCodeFor(versionName!!)
     }
 
     // "play" may use FCM as a push fallback; "foss" is Google-free (UnifiedPush only).
@@ -54,4 +54,11 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+}
+
+/** Derives a monotonic versionCode from semver: major * 1_000_000 + minor * 1_000 + patch. */
+fun versionCodeFor(versionName: String): Int {
+    val (major, minor, patch) = versionName.substringBefore('-').split('.').map(String::toInt)
+    require(minor < 1000 && patch < 1000) { "minor/patch must be < 1000: $versionName" }
+    return maxOf(1, major * 1_000_000 + minor * 1_000 + patch)
 }

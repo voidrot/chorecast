@@ -1,4 +1,4 @@
-package io.github.voidrot.chorecast.ui.theme
+package dev.voidrot.chorecast.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme

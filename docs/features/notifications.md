@@ -8,8 +8,8 @@ Status: accepted (planning session, 2026-10-30). Builds on the other feature spe
 |---|---|
 | Kid events | Due reminders; approved/rejected (with feedback and points); reward/transfer/swap decisions and requests; behavior entries, streak milestones, new bonus chores. |
 | Parent events | Submissions to review (with Approve/Reject actions); requests (rewards, transfers, swaps); daily summary; problems. |
-| Reminders (defaults) | **Before slot due** (30 min, per-chore override); **before day close** (1 h, lists anything open); **morning overview** (end of quiet hours); **escalate to parents** if still open 30 min before day close. |
-| Quiet hours | **Per person, defaults by role**: kids 20:00–07:00 (optional school-hours window), parents none. Held notifications are delivered when quiet hours end; parent "problems" can bypass. |
+| Reminders (defaults) | **Before slot due** (30 min, per-chore override); **before day close** (1 h, lists anything open); **morning overview** (end of quiet hours); **escalate to parents** if still open 30 min before day close, **only for chores flagged `escalate`** (default off; e.g. meds, pets). |
+| Quiet hours | **Per person, defaults by role**: kids 20:00–07:00, plus an optional **school-hours** window per kid (weekdays + times) that is skipped on household **no-school dates** (holidays/breaks calendar); parents none. Held notifications are delivered when quiet hours end; parent "problems" can bypass. |
 | Batching | **Smart batching** for parents: first submission notifies immediately; more within ~10 min collapse into one "Sam submitted 4 chores". |
 | Preferences | **Per category × channel toggles.** Android notification channels mirror the categories. |
 | Kid control | **Parents set** kids' prefs and quiet hours; kids may mute only `points` and `bonus`. |
@@ -60,7 +60,7 @@ Per device, the app registers whichever transports are available:
 1. **UnifiedPush** (both flavors): the user has a distributor app (ntfy, NextPush, ...) pointing at the
    household's own or a public server. Payloads are additionally Web Push–encrypted (RFC 8291) as UnifiedPush recommends.
 2. **FCM, `play` flavor, only if the admin configured it.** The admin creates **their own Firebase project**,
-   registers the Android app ID `io.github.voidrot.chorecast` in it, and gives the server the service-account JSON
+   registers the Android app ID `dev.voidrot.chorecast` in it, and gives the server the service-account JSON
    plus the client config (project ID, app ID, API key, sender ID). The server hands the client config to paired
    devices; the app initializes Firebase **at runtime** with those options and registers a token. The server sends via
    the FCM HTTP v1 API directly. There's no default project and no relay; if unconfigured, FCM is simply unused.
@@ -94,6 +94,4 @@ review, points earned and lost, balance, streak; plus household items needing ac
 
 ## Open questions
 
-- School-hours quiet window: per kid weekdays + times, or a household "school days" calendar?
-- Should escalation-to-parent be per chore (e.g. only for meds/pets) rather than global?
-- Webhook event catalog and payload schema versioning: define with the API.
+- Webhook event catalog and payload schema versioning: define alongside the API implementation.

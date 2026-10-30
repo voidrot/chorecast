@@ -13,14 +13,14 @@ Status: accepted (planning session, 2026-10-30). Covers earning, spending, corre
 | Missed chores | Optional **fixed penalty in points** per chore. Parent can **excuse** a missed chore, which reverses the penalty. |
 | Negative balance | **Household setting `allow_negative_balance`.** When off, a deduction is clamped to the current balance (the entry records the clamp). |
 | Corrections | **Append-only ledger.** Mistakes are fixed with a reversing entry linked to the original; nothing is edited or deleted. |
-| Manual adjustments | Parent can add or subtract points with a **required note**. |
+| Manual adjustments | Parent can add or subtract points with a **required note**. **Recurring adjustments** (e.g. weekly base allowance): per kid, amount + note + schedule rule (same model as chores), pausable; writes `adjustment` entries. |
 | Transfers | Kids can gift points to a sibling; **parent approves**. |
 | Behavior | Parents log positive and negative behaviors, from presets or ad hoc, with point values. Goals, check-ins and behavior streaks add bonuses. See [behavior.md](behavior.md). |
 | Streaks | **Daily streak**: every required (non-bonus) chore done that day, excused ones don't break it, bonus points at household milestones (e.g. 3/7/30 days). **Per-chore streaks** for recurring chores. |
 | Bonus chores | Optional chores any eligible kid can **claim** (first claim wins) for extra points. No penalty if unclaimed. |
-| Rewards | Kid **requests**, points are **held**, parent approves (deducted) or denies (hold released). |
+| Rewards | Kid **requests**, points are **held**, parent approves (deducted) or denies (hold released). Rewards can opt in to **needs delivery**: `approved → delivered`, with a parent "to deliver" list. |
 | Reward controls | Per-kid availability (kids or min age), limits/cooldowns (N per day/week/month), stock quantity, **savings goals** (kid pins a reward and sees progress). |
-| Sibling visibility | **Household setting**: private (own data only) or family leaderboard. |
+| Sibling visibility | **Household setting**: private (own data only) or family leaderboard. The leaderboard ranks by **points earned this week** (gross earned since week start; spending and penalties don't lower rank). |
 | AI evidence check | **Advisory + coaching**, never approves on its own. A `not_yet` verdict blocks *auto*-approval (see [approvals-evidence.md](approvals-evidence.md)). Pluggable provider, **off by default**. Details below. |
 
 ## Ledger model
@@ -100,6 +100,4 @@ Optional, **off by default**, enabled by a parent in Settings, which states plai
 
 ## Open questions
 
-- Reward fulfillment: is "approved" the end, or do some rewards need a separate "delivered" step (e.g. money paid)?
-- Leaderboard metric if enabled: points earned this week (not balance), so spending doesn't drop your rank?
-- Should parents be able to schedule recurring adjustments (e.g. weekly base allowance in points)?
+- None outstanding.

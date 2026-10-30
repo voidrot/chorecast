@@ -1,4 +1,4 @@
-package io.github.voidrot.chorecast
+package dev.voidrot.chorecast
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,7 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import io.github.voidrot.chorecast.ui.theme.ChorecastTheme
+import dev.voidrot.chorecast.ui.theme.ChorecastTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

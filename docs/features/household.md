@@ -65,7 +65,7 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
                       pin_hash?, pin_required, day_end_override?, quiet_hours, school_hours, archived_at
 ```
 
-- **Built-in avatar set** plus optional uploaded photo (parent uploads; processed like evidence, never expires).
+- **Built-in avatar set** from an open-licensed (CC0/MIT) set, e.g. a DiceBear style generated once and shipped as static SVGs in the web and Android apps (licence recorded in `THIRD_PARTY_NOTICES`), plus optional uploaded photo (parent uploads; processed like evidence, never expires).
 - **Day-end override**: a kid's day can end **at or before** the household day end (e.g. 19:30 for a 6-year-old).
   Everything that says "day close" for a kid (missed, streaks, reminders, offline grace) uses the kid's
   **effective day end**. Household-level jobs (daily summary, horizon generation) run at the household day end,
@@ -108,7 +108,7 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
 - **CLI**: `chorecast backup [--out file]`, `chorecast restore <file>` (refuses to run while the server is running
   against the same data dir; checks schema version, runs migrations after restore).
 - **No web download** of backups, by decision. Backups contain every kid's data and photos.
-- **Export** (owner or parent): household or single kid, as a zip of JSON (complete) plus CSVs (ledger, instances,
+- **Export** (**any parent**; audit-logged): household or single kid, as a zip of JSON (complete) plus CSVs (ledger, instances,
   behavior). Media is optional. Generated as a background job, available for 24 h, then deleted.
 
 ## Audit log
@@ -130,5 +130,4 @@ of truth for points; the audit log records who did what around it.
 
 ## Open questions
 
-- Built-in avatar set: commission or pick an open-licensed set (e.g. DiceBear styles, which are MIT/CC0)?
-- Should parents (not only owners) be able to export a single kid's data?
+- None outstanding.

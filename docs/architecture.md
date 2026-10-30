@@ -144,9 +144,10 @@ infrastructure.
    (positive/negative), rewards & redemption, allowance. Next planning session.
 2. Implement auth (first-run setup, login, sessions, pairing) + Huma auth middleware.
 3. Wire openapi-generator into the Android Gradle build (`:api-client` module).
-4. Android release signing (keystore via GitHub secrets) and `versionCode` strategy (derive from version or run number).
-5. **Play Families policy** review: kids are users, so data-safety form, no ads SDKs, and privacy policy are required.
+4. Android release signing (keystore via GitHub secrets). `versionCode` is derived from semver in Gradle
+   (`major*1_000_000 + minor*1_000 + patch`).
+5. **Google Play after v1** (v1 ships GitHub Release APKs). Before Play: Families policy review, data-safety form, privacy policy, no ads SDKs.
 6. Trusted-proxy handling for client IPs (explicit `CHORECAST_TRUSTED_PROXIES`, not blanket `X-Forwarded-For`).
-7. Helm chart in `deploy/helm` (single replica + PVC; SQLite means no horizontal scaling).
+7. Helm chart in `deploy/helm` **after v1** (single replica + PVC; SQLite means no horizontal scaling).
 8. Backups: `chorecast backup` command using SQLite `VACUUM INTO`.
-9. The `applicationId` `io.github.voidrot.chorecast` is permanent once on Play — confirm before first upload.
+9. `applicationId` is **`dev.voidrot.chorecast`** (owner controls voidrot.dev). Permanent once on Play.

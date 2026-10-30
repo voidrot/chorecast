@@ -101,6 +101,11 @@ checkin_answers(item_id, kid_id, local_date, answer: yes|no, answered_by, answer
 - A day counts if the kid had **no recorded entry** of that preset and wasn't away. Logging the behavior resets
   the streak; a reversed entry restores it.
 
+## Trend chart (v1)
+
+Each kid's behavior page in the parent app and web shows a weekly bar chart of positive vs negative entry counts
+(and net behavior points) for the last 12 weeks, computed from `behavior_events` (reversed entries excluded).
+
 ## Ledger kinds added
 
 `behavior` (exists), `behavior_goal`, `checkin`, `behavior_streak`. Each references its source row.
@@ -113,5 +118,4 @@ checkin_answers(item_id, kid_id, local_date, answer: yes|no, answered_by, answer
 
 ## Open questions
 
-- Should parents be able to see a per-kid behavior trend chart (positives vs negatives by week) in v1, or wait for reporting?
-- Nomination visibility: should the nominated kid see who nominated them? (Spec says yes.)
+- None outstanding. Nominations are shown to the sibling with the nominator's name.

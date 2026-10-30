@@ -9,7 +9,7 @@ Status: accepted (planning session, 2026-10-30). Builds on [points.md](points.md
 | Repeat patterns | Specific weekdays; every N days/weeks; monthly variants (specific days incl. last day, Nth weekday); **flexible "N times per week"**; one-off. |
 | Time slots | A chore can have **several due times per day**; each slot produces its own instance (e.g. feed dog 07:00 and 18:00). |
 | Assignment modes | **Fixed kid(s)**, **everyone eligible**, **rotation**, **fair auto-pick**, and **shared/team**. |
-| Generation | **Rolling horizon**: instances generated ~7 days ahead. |
+| Generation | **Rolling horizon**: instances generated **7 days** ahead (fixed, not a setting). |
 | Edits | Future, untouched instances are regenerated. Today's, started and finished instances keep their values. |
 | Age gating | Optional **minimum age**, eligibility updates automatically on the kid's birthday; per-kid parent override (force allow/deny). |
 | Rotation gaps | Away/ineligible kid is **skipped but keeps their place**; they take the next turn so it evens out. |
@@ -76,7 +76,8 @@ instance date (missing minutes counts as a household default, e.g. 10). Pick the
 recent `auto` picks of this chore, then a stable order. It's deterministic, with no randomness (unlike ownit), so
 regenerating the horizon is reproducible and testable.
 
-**Shared**: completer taps done and optionally tags helpers from the group. Points policy per chore:
+**Shared**: completer taps done and optionally tags helpers from the group. The **completer** must satisfy the
+evidence rules; tagged helpers can attach extra evidence until a parent decides. The AI check runs on the combined set. Points policy per chore:
 `completer_takes_all` or `split_evenly` (remainder to the completer). The penalty when missed goes to every group
 member, or to none, as a per-chore setting.
 
@@ -98,6 +99,10 @@ member, or to none, as a per-chore setting.
 - **Swap/trade**: a kid proposes trading instance A (theirs) for instance B (sibling's), or just handing one over.
   The sibling accepts; household setting `swaps_require_parent_approval`. On completion, both instances change
   assignee and are marked as manually reassigned (not regenerated).
+  - A swap request **expires after 30 minutes** without a sibling response (both kids notified).
+  - After expiry the requester can **resubmit it to a parent**, who can approve it without the sibling's acceptance
+    (or deny it). The sibling is notified of the outcome.
+  - A request also lapses if either instance is no longer `open`.
 - Parents can always **reassign** any open instance directly.
 
 ## Routines
@@ -108,6 +113,4 @@ A "routine complete" moment can feed per-routine streaks later (not v1).
 
 ## Open questions
 
-- Should the horizon length be a setting (7 days default)?
-- Shared chores and the AI check: whose photos count, and can helpers add evidence?
-- Do swaps need a time limit (expire if not accepted before the earlier instance is due)?
+- None outstanding.
