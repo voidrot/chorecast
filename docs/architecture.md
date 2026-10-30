@@ -29,7 +29,7 @@ Status: accepted (initial planning session, 2026-10-30). Revisit any item by add
 | TypeScript | **TS 7** (native compiler) as `tsc`; `vue-tsc` checks `.vue` files | Volar/vue-tsc and openapi-typescript still need the TS 6 JS API, so `web/.pnpmfile.cjs` gives just those packages a private TS 6. Remove the shim once they support TS 7. |
 | Android | **Native Kotlin + Jetpack Compose** (Material 3), AGP 9 built-in Kotlin, version catalog | First-class kiosk/notification/widget support; conventional so it's easy to learn. |
 | Android API client | **openapi-generator `kotlin` (jvm-ktor + kotlinx.serialization)** — *to be wired up* | Generated from the same `api/openapi.json`. |
-| Push notifications | **UnifiedPush** primary, **FCM fallback** in the `play` flavor only | Works fully self-hosted (ntfy etc.) and on de-Googled phones; `foss` flavor has no Google deps. |
+| Push notifications | **UnifiedPush** primary; **FCM only with the admin's own Firebase project** (`play` flavor); polling fallback | Content-free pushes, no project-run relay; `foss` flavor has no Google deps. |
 | JS package manager | **pnpm** | Pinned by mise. |
 | Git hooks | **lefthook** | gofmt/golangci-lint/biome on staged files, Conventional Commit check. |
 | CI | **GitHub Actions** calling `mise run …` | No duplicated logic between local and CI. |
@@ -113,11 +113,11 @@ Enforced in a Huma middleware that resolves the principal from cookie or bearer 
 
 ## Push notifications
 
-Server keeps a `push_endpoints` table per device. Delivery:
-- **UnifiedPush**: device registers its distributor endpoint (e.g. the household's ntfy); server POSTs to it.
-- **FCM fallback** (`play` flavor only): requires a Firebase project; since self-hosters can't each hold our
-  FCM credentials, this goes through a UnifiedPush ↔ FCM gateway. Decide gateway hosting before implementing.
-- Always complemented by WorkManager periodic sync + local reminder notifications so the app works with no push at all.
+See [features/notifications.md](features/notifications.md). In short: push payloads carry no content (wake-up
+only; the app fetches from the server). Transports are **UnifiedPush** (both flavors), **FCM only via the
+admin's own Firebase project** configured at runtime (`play` flavor), and an always-on **polling + local
+reminders** fallback. The project operates **no relay or gateway**, so no child data passes through project
+infrastructure.
 
 ## mise tasks
 
