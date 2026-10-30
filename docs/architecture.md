@@ -145,8 +145,7 @@ infrastructure.
 
 ## Open items / next steps
 
-1. **Domain model**: chores (recurring schedules, rotation), completions + parent approval, behavior points
-   (positive/negative), rewards & redemption, allowance. Next planning session.
+1. **Feature specs** are in [features/](features/); sequencing is in [roadmap.md](roadmap.md).
 2. Implement auth (first-run setup, login, sessions, pairing) + Huma auth middleware.
 3. Wire openapi-generator into the Android Gradle build (`:api-client` module).
 4. Android release signing (keystore via GitHub secrets). `versionCode` is derived from semver in Gradle
