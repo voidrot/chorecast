@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "include-component-in-tag": true,
+  "separate-pull-requests": true,
+  "packages": {
+    "server": {
+      "component": "server",
+      "release-type": "go",
+      "exclude-paths": ["server/internal/webui/dist"],
+      "extra-files": []
+    },
+    "web": {
+      "component": "web",
+      "release-type": "node",
+      "skip-github-release": true
+    },
+    "android": {
+      "component": "android",
+      "release-type": "simple",
+      "extra-files": [{ "type": "generic", "path": "app/build.gradle.kts" }]
+    }
+  },
+  "plugins": [
+    { "type": "linked-versions", "groupName": "server+web", "components": ["server", "web"] }
+  ]
+}

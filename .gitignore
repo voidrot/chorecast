@@ -1,0 +1,26 @@
+# build outputs
+/dist/
+/.data/
+server/internal/webui/dist/*
+!server/internal/webui/dist/.gitkeep
+
+# node
+node_modules/
+web/coverage/
+
+# android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+*.keystore
+*.jks
+
+# editors / os
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+*.local
+mise.local.toml

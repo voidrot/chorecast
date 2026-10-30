@@ -1,0 +1,17 @@
+services:
+  chorecast:
+    image: ghcr.io/voidrot/chorecast:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - chorecast-data:/data
+    environment:
+      TZ: America/New_York
+      # Optional SSO for parent accounts:
+      # CHORECAST_OIDC_ISSUER: https://auth.example.com/application/o/chorecast/
+      # CHORECAST_OIDC_CLIENT_ID: chorecast
+      # CHORECAST_OIDC_CLIENT_SECRET: change-me
+
+volumes:
+  chorecast-data:
