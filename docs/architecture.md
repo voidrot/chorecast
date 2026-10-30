@@ -68,7 +68,8 @@ Hand-rolled on small, auditable libraries — no auth framework:
 ### Identities
 
 - **Parent** (`role = parent`): username + argon2id password, optional TOTP. Optionally linked to an
-  external OIDC identity (`oidc_subject`). First-run creates the initial parent account.
+  external OIDC identity (`oidc_subject`). First-run creates the initial parent account. Optional
+  **parent PIN** (4–8 digits, argon2id) used only to elevate a shared-tablet session (see below).
 - **Child** (`role = child`): no username/password. Optional 4–6 digit PIN (argon2id), required or not per
   parent setting.
 
@@ -91,6 +92,8 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
    a long-lived `device` token stored in EncryptedSharedPreferences/Keystore.
 2. **Shared tablet profile switch.** Device token + `POST /api/v1/devices/session {userId, pin?}` → a short-lived
    kid session scoped to that device. Auto-locks back to the picker after inactivity.
+   **Parent elevation:** device token + `POST /api/v1/devices/elevate {userId, parentPin}` → a ~2 min parent session
+   scoped to that device (attributed to that parent). 5 failed PINs lock elevation on that device for 15 min.
 3. **Parent login in the app, password.** `POST /api/v1/auth/login` → `app` token.
 4. **Parent login in the app, OIDC (server-brokered).** App opens a Custom Tab to
    `/api/v1/auth/oidc/start?client=android&challenge=<pkce>`. The server does the full OIDC code flow with the
