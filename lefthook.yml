@@ -3,7 +3,9 @@ pre-commit:
   commands:
     go-fmt:
       glob: "server/**/*.go"
-      run: gofmt -l {staged_files} | (! grep .) || (echo "run: mise run fmt" && exit 1)
+      run: |
+        unformatted=$(gofmt -l {staged_files})
+        [ -z "$unformatted" ] || { echo "gofmt needed (mise run fmt):"; echo "$unformatted"; exit 1; }
     go-lint:
       glob: "server/**/*.go"
       root: "server/"
