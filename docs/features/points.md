@@ -21,7 +21,7 @@ Status: accepted (planning session, 2026-10-30). Covers earning, spending, corre
 | Rewards | Kid **requests**, points are **held**, parent approves (deducted) or denies (hold released). |
 | Reward controls | Per-kid availability (kids or min age), limits/cooldowns (N per day/week/month), stock quantity, **savings goals** (kid pins a reward and sees progress). |
 | Sibling visibility | **Household setting**: private (own data only) or family leaderboard. |
-| AI evidence check | **Advisory + coaching**, never approves on its own. Pluggable provider, **off by default**. Details below. |
+| AI evidence check | **Advisory + coaching**, never approves on its own. A `not_yet` verdict blocks *auto*-approval (see [approvals-evidence.md](approvals-evidence.md)). Pluggable provider, **off by default**. Details below. |
 
 ## Ledger model
 
@@ -91,8 +91,9 @@ Optional, **off by default**, enabled by a parent in Settings, which states plai
   a parent-written **AI instructions** field, and parent-uploaded **reference photos** ("this is what done looks like").
 - **Kid flow (coaching)**: the kid takes a photo, the server returns a verdict (`looks_done | not_yet | unsure`) and short,
   kid-friendly feedback ("Almost! The pillows are still on the floor."). The kid can retake or submit anyway.
-- **Parent flow**: approval screens show the AI verdict, confidence and feedback next to the photos. Points are never
-  affected by the AI. Crediting follows `requires_approval` only.
+- **Parent flow**: approval screens show the AI verdict, confidence and feedback next to the photos. The AI never
+  awards or removes points. Crediting follows `requires_approval`; the only effect is that a `not_yet` verdict stops
+  the auto-approve timeout, so a parent must decide.
 - **Storage**: `ai_reviews(evidence_id, provider, model, verdict, confidence, feedback, created_at)`.
 - **Guardrails**: images downscaled and EXIF-stripped before sending, per-kid rate limit, timeout with graceful
   "couldn't check" fallback, and the prompt instructs the model to talk about the chore, never the child.
