@@ -8,8 +8,8 @@ Status: accepted (planning session, 2026-10-30). Covers earning, spending, corre
 |---|---|
 | Currency | **One points currency.** Money is just a reward type (e.g. "500 pts = $5"). |
 | Crediting chores | **Per-chore `requires_approval`.** Off: points credit when the kid marks it done. On: credit when a parent approves. Either way a parent can reverse later. |
-| Due time | **Soft target.** Anything completed before the household day closes earns full points. No reduced-points late window. |
-| Day close | **Household setting `day_end_time`**, default `00:00`, in the household timezone. At day close, open required chores become `missed`. |
+| Due time | **Soft target.** Anything completed before the kid's day closes earns full points. No reduced-points late window. |
+| Day close | **Household setting `day_end_time`**, default `00:00`, in the household timezone, with an optional **per-kid override** that ends at or before it (see [household.md](household.md)). "Day close" for a kid always means their effective day end. At day close, open required chores become `missed`. |
 | Missed chores | Optional **fixed penalty in points** per chore. Parent can **excuse** a missed chore, which reverses the penalty. |
 | Negative balance | **Household setting `allow_negative_balance`.** When off, a deduction is clamped to the current balance (the entry records the clamp). |
 | Corrections | **Append-only ledger.** Mistakes are fixed with a reversing entry linked to the original; nothing is edited or deleted. |
