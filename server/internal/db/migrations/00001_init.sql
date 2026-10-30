@@ -14,7 +14,7 @@ CREATE TABLE users (
 CREATE TABLE tokens (
     id           INTEGER PRIMARY KEY,
     token_hash   BLOB    NOT NULL UNIQUE,
-    kind         TEXT    NOT NULL CHECK (kind IN ('web_session', 'app', 'device', 'display')),
+    kind         TEXT    NOT NULL CHECK (kind IN ('web_session', 'app', 'device', 'display', 'api')),
     user_id      INTEGER REFERENCES users (id) ON DELETE CASCADE, -- NULL for shared-device tokens
     label        TEXT    NOT NULL DEFAULT '',
     created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

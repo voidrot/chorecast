@@ -84,6 +84,7 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
 | `app` | Parent's phone | In-app login (password or brokered OIDC) | Full parent access |
 | `device` | Kid's phone or shared tablet | **QR pairing** by a parent | Bound to one kid, or "shared" (profile picker); kid-level access only |
 | `display` | Wall tablet / TV browser (family dashboard) | Code/QR shown on the display, approved by a parent | Read-only kid-visible household data |
+| `api` | Scripts and external systems (post-v1) | Created in Settings → Integrations | Explicit scopes, optional kid restriction; see [features/integrations.md](features/integrations.md) |
 
 ### Flows
 
@@ -104,6 +105,9 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
 5. **Web login.** Same password/OIDC handlers, issuing the cookie session instead.
 
 ### Authorization
+
+Every operation declares required **scopes**; sessions and tokens map to scope sets (parent, kid, display, API key).
+This is built from day one so post-v1 API keys need no redesign.
 
 Two roles are enough for v1: `parent` (everything) and `child` (own chores/points, submit completions).
 Enforced in a Huma middleware that resolves the principal from cookie or bearer and per-operation
