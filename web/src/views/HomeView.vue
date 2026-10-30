@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
 import Card from 'primevue/card'
 import Tag from 'primevue/tag'
+import { onMounted, ref } from 'vue'
 import { api } from '@/api/client'
 
 const version = ref<string>()

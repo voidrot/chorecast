@@ -25,11 +25,13 @@ Status: accepted (initial planning session, 2026-10-30). Revisit any item by add
 | Migrations | **goose**, embedded and run at startup | Self-hosters never run a migration step by hand. `mise run db:new <name>` creates one. |
 | Web admin | **Vue 3 + Vite + TypeScript SPA**, **PrimeVue** (Aura theme), Pinia, Vue Router | Built into `server/internal/webui/dist` and embedded with `go:embed` → one artifact. |
 | Web API client | **openapi-typescript + openapi-fetch** | Typed `api.GET('/health')` from the generated spec, tiny runtime. |
+| Web lint/format | **Biome** (with experimental full Vue support) | One fast tool replaces ESLint + Prettier. |
+| TypeScript | **TS 7** (native compiler) as `tsc`; `vue-tsc` checks `.vue` files | Volar/vue-tsc and openapi-typescript still need the TS 6 JS API, so `web/.pnpmfile.cjs` gives just those packages a private TS 6. Remove the shim once they support TS 7. |
 | Android | **Native Kotlin + Jetpack Compose** (Material 3), AGP 9 built-in Kotlin, version catalog | First-class kiosk/notification/widget support; conventional so it's easy to learn. |
 | Android API client | **openapi-generator `kotlin` (jvm-ktor + kotlinx.serialization)** — *to be wired up* | Generated from the same `api/openapi.json`. |
 | Push notifications | **UnifiedPush** primary, **FCM fallback** in the `play` flavor only | Works fully self-hosted (ntfy etc.) and on de-Googled phones; `foss` flavor has no Google deps. |
 | JS package manager | **pnpm** | Pinned by mise. |
-| Git hooks | **lefthook** | gofmt/golangci-lint/eslint on staged files, Conventional Commit check. |
+| Git hooks | **lefthook** | gofmt/golangci-lint/biome on staged files, Conventional Commit check. |
 | CI | **GitHub Actions** calling `mise run …` | No duplicated logic between local and CI. |
 | Releases | **Conventional Commits + release-please** (manifest mode) | Independent versions: `server` (web is linked to it) and `android`. |
 | Container | Multi-stage `deploy/Dockerfile` → `distroless/static:nonroot`, amd64 + arm64, pushed to GHCR | Small, no shell, non-root. |

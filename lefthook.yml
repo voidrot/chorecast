@@ -8,10 +8,10 @@ pre-commit:
       glob: "server/**/*.go"
       root: "server/"
       run: golangci-lint run --new-from-rev=HEAD ./...
-    web-lint:
-      glob: "web/**/*.{ts,vue}"
+    web-biome:
+      glob: "web/**/*.{ts,js,vue,json,html,css}"
       root: "web/"
-      run: pnpm exec eslint {staged_files}
+      run: pnpm exec biome check --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
 
 commit-msg:
   commands:

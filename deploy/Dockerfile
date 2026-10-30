@@ -4,7 +4,7 @@
 FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 RUN corepack enable
 WORKDIR /src/web
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/.pnpmfile.cjs ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN mkdir -p ../server/internal/webui/dist && pnpm build
