@@ -1,7 +1,8 @@
 // Package chores holds chore definitions: what the chore is (name, steps, points, penalty,
 // estimated time, minimum age), when it's due in a day (slots), how it's checked (approval,
 // evidence, auto-approve override, escalation) and where/with what (location, equipment).
-// Schedules (which days) and assignment (who) build on these. See docs/features/schedules.md.
+// The schedule rule (which days, internal/schedule) is stored on the chore; assignment (who)
+// builds on these. See docs/features/schedules.md.
 package chores
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/schedule"
 )
 
 const (
@@ -46,22 +48,23 @@ type ChoreEligibility struct {
 
 // ChoreInput is a chore as parents create or edit it.
 type ChoreInput struct {
-	Name             string             `json:"name" minLength:"1" maxLength:"80"`
-	Description      string             `json:"description,omitempty" maxLength:"2000"`
-	Points           int                `json:"points" minimum:"0" maximum:"100000"`
-	Penalty          int                `json:"penalty,omitempty" minimum:"0" maximum:"100000" doc:"Points deducted when the chore is missed"`
-	EstimatedMinutes *int               `json:"estimatedMinutes,omitempty" minimum:"1" maximum:"1440"`
-	MinAge           *int               `json:"minAge,omitempty" minimum:"1" maximum:"25"`
-	Steps            []string           `json:"steps,omitempty" maxItems:"20" doc:"Checklist steps shown to the kid"`
-	Slots            []string           `json:"slots,omitempty" maxItems:"6" doc:"Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance."`
-	RequiresApproval bool               `json:"requiresApproval" doc:"A parent approves before points are credited"`
-	Escalate         bool               `json:"escalate,omitempty" doc:"Remind parents if still open 30 minutes before day close (meds, pets)"`
-	AutoApproveHours *int               `json:"autoApproveHours,omitempty" minimum:"0" maximum:"720" doc:"Absent = household default; 0 = never; N = approve after N hours"`
-	Evidence         EvidenceRules      `json:"evidence"`
-	LocationID       *int64             `json:"locationId,omitempty"`
-	EquipmentIDs     []int64            `json:"equipmentIds,omitempty" uniqueItems:"true"`
-	Eligibility      []ChoreEligibility `json:"eligibility,omitempty" doc:"Per-kid exceptions to minAge"`
-	Disabled         bool               `json:"disabled,omitempty" doc:"Kept, but not scheduled"`
+	Name             string                 `json:"name" minLength:"1" maxLength:"80"`
+	Description      string                 `json:"description,omitempty" maxLength:"2000"`
+	Points           int                    `json:"points" minimum:"0" maximum:"100000"`
+	Penalty          int                    `json:"penalty,omitempty" minimum:"0" maximum:"100000" doc:"Points deducted when the chore is missed"`
+	EstimatedMinutes *int                   `json:"estimatedMinutes,omitempty" minimum:"1" maximum:"1440"`
+	MinAge           *int                   `json:"minAge,omitempty" minimum:"1" maximum:"25"`
+	Steps            []string               `json:"steps,omitempty" maxItems:"20" doc:"Checklist steps shown to the kid"`
+	Slots            []string               `json:"slots,omitempty" maxItems:"6" doc:"Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance."`
+	Schedule         *schedule.ScheduleRule `json:"schedule,omitempty" doc:"Which days it occurs; absent = not scheduled (kept for later or one-off assignment)"`
+	RequiresApproval bool                   `json:"requiresApproval" doc:"A parent approves before points are credited"`
+	Escalate         bool                   `json:"escalate,omitempty" doc:"Remind parents if still open 30 minutes before day close (meds, pets)"`
+	AutoApproveHours *int                   `json:"autoApproveHours,omitempty" minimum:"0" maximum:"720" doc:"Absent = household default; 0 = never; N = approve after N hours"`
+	Evidence         EvidenceRules          `json:"evidence"`
+	LocationID       *int64                 `json:"locationId,omitempty"`
+	EquipmentIDs     []int64                `json:"equipmentIds,omitempty" uniqueItems:"true"`
+	Eligibility      []ChoreEligibility     `json:"eligibility,omitempty" doc:"Per-kid exceptions to minAge"`
+	Disabled         bool                   `json:"disabled,omitempty" doc:"Kept, but not scheduled"`
 }
 
 // Chore is a chore definition as the API returns it.
@@ -108,6 +111,13 @@ func toChore(c sqlc.Chore, equipment []int64, elig []ChoreEligibility) Chore {
 	var steps, slots []string
 	_ = json.Unmarshal([]byte(c.Steps), &steps)
 	_ = json.Unmarshal([]byte(c.Slots), &slots)
+	var rule *schedule.ScheduleRule
+	if c.Schedule.Valid {
+		var r schedule.ScheduleRule
+		if json.Unmarshal([]byte(c.Schedule.String), &r) == nil {
+			rule = &r
+		}
+	}
 	created, _ := db.ParseTimestamp(c.CreatedAt)
 	updated, _ := db.ParseTimestamp(c.UpdatedAt)
 	var loc *int64
@@ -119,6 +129,7 @@ func toChore(c sqlc.Chore, equipment []int64, elig []ChoreEligibility) Chore {
 		ChoreInput: ChoreInput{
 			Name: c.Name, Description: c.Description, Points: int(c.Points), Penalty: int(c.Penalty),
 			EstimatedMinutes: optInt(c.EstimatedMinutes), MinAge: optInt(c.MinAge), Steps: steps, Slots: slots,
+			Schedule:         rule,
 			RequiresApproval: c.RequiresApproval == 1, Escalate: c.Escalate == 1, AutoApproveHours: optInt(c.AutoApproveHours),
 			Evidence: EvidenceRules{
 				Photos: int(c.EvidencePhotos), BeforeAfter: c.EvidenceBeforeAfter == 1, Video: c.EvidenceVideo == 1,
@@ -235,6 +246,12 @@ func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, err
 	}
 	in.Slots = slots
 
+	if in.Schedule != nil {
+		r := schedule.Normalize(*in.Schedule)
+		in.Schedule = &r
+		details = append(details, schedule.Validate(r, "body.schedule")...)
+	}
+
 	if in.Evidence.BeforeAfter && in.Evidence.Photos < 2 {
 		bad("evidence.beforeAfter", "before and after needs at least 2 photos", in.Evidence.Photos)
 	}
@@ -279,6 +296,14 @@ func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, err
 	return in, nil
 }
 
+func scheduleJSON(r *schedule.ScheduleRule) sql.NullString {
+	if r == nil {
+		return sql.NullString{}
+	}
+	b, _ := json.Marshal(r)
+	return sql.NullString{String: string(b), Valid: true}
+}
+
 func mustJSON(v []string) string {
 	if v == nil {
 		v = []string{}
@@ -299,7 +324,7 @@ func (s *Service) Create(ctx context.Context, in ChoreInput) (Chore, error) {
 		c, err := q.CreateChore(ctx, sqlc.CreateChoreParams{
 			Name: in.Name, Description: in.Description, Points: int64(in.Points), Penalty: int64(in.Penalty),
 			EstimatedMinutes: nullInt(in.EstimatedMinutes), MinAge: nullInt(in.MinAge), Steps: mustJSON(in.Steps),
-			Slots: mustJSON(in.Slots), RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
+			Slots: mustJSON(in.Slots), Schedule: scheduleJSON(in.Schedule), RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
 			AutoApproveHours: nullInt(in.AutoApproveHours), EvidencePhotos: int64(in.Evidence.Photos),
 			EvidenceBeforeAfter: b2i(in.Evidence.BeforeAfter), EvidenceVideo: b2i(in.Evidence.Video),
 			EvidenceChecklist: b2i(in.Evidence.Checklist), EvidenceNote: b2i(in.Evidence.Note),
@@ -330,7 +355,7 @@ func (s *Service) Update(ctx context.Context, id int64, in ChoreInput) (Chore, e
 		if err := q.UpdateChore(ctx, sqlc.UpdateChoreParams{
 			Name: in.Name, Description: in.Description, Points: int64(in.Points), Penalty: int64(in.Penalty),
 			EstimatedMinutes: nullInt(in.EstimatedMinutes), MinAge: nullInt(in.MinAge), Steps: mustJSON(in.Steps),
-			Slots: mustJSON(in.Slots), RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
+			Slots: mustJSON(in.Slots), Schedule: scheduleJSON(in.Schedule), RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
 			AutoApproveHours: nullInt(in.AutoApproveHours), EvidencePhotos: int64(in.Evidence.Photos),
 			EvidenceBeforeAfter: b2i(in.Evidence.BeforeAfter), EvidenceVideo: b2i(in.Evidence.Video),
 			EvidenceChecklist: b2i(in.Evidence.Checklist), EvidenceNote: b2i(in.Evidence.Note),

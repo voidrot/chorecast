@@ -37,6 +37,13 @@ func registerChores(hapi huma.API, h *handlers) {
 		Errors: []int{http.StatusNotFound},
 	}, h.deleteChore)
 
+	huma.Register(hapi, huma.Operation{
+		OperationID: "previewSchedule", Method: http.MethodPost, Path: "/chores/preview-schedule",
+		Summary:     "Preview a schedule rule",
+		Description: "Validates a rule and returns its next occurrences from today in the household timezone, without saving anything. POST because the rule is a JSON body.",
+		Tags:        []string{"chores"}, Security: manage, Errors: []int{http.StatusUnprocessableEntity},
+	}, h.previewSchedule)
+
 	registerCatalog(hapi, "Location", "/locations", "locations", func() *chores.Catalog { return h.chores.Locations() })
 	registerCatalog(hapi, "Equipment", "/equipment", "equipment", func() *chores.Catalog { return h.chores.Equipment() })
 }
@@ -100,6 +107,22 @@ func (h *handlers) updateChore(ctx context.Context, in *UpdateChoreInput) (*Chor
 
 func (h *handlers) deleteChore(ctx context.Context, in *ChoreIDInput) (*struct{}, error) {
 	return nil, h.chores.Delete(ctx, in.ID)
+}
+
+type PreviewScheduleInput struct {
+	Body chores.SchedulePreviewInput
+}
+
+type PreviewScheduleOutput struct {
+	Body chores.SchedulePreview
+}
+
+func (h *handlers) previewSchedule(ctx context.Context, in *PreviewScheduleInput) (*PreviewScheduleOutput, error) {
+	p, err := h.chores.PreviewSchedule(ctx, in.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &PreviewScheduleOutput{Body: p}, nil
 }
 
 type CatalogOutput struct {

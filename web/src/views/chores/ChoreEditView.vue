@@ -29,6 +29,7 @@ import {
   formFromChore,
   inputFromForm,
 } from '@/chores/form'
+import ScheduleEditor from './ScheduleEditor.vue'
 
 type Kid = components['schemas']['Kid']
 type Item = components['schemas']['CatalogItem']
@@ -191,6 +192,10 @@ function remove() {
         </div>
       </NCard>
 
+      <NCard :title="t('schedule.title')">
+        <ScheduleEditor v-model="form.schedule" :slots="form.slots" />
+      </NCard>
+
       <NCard :title="t('chores.whenTitle')">
         <div class="flex flex-col gap-3">
           <p class="hint">{{ t('chores.slotsHint') }}</p>
@@ -217,7 +222,6 @@ function remove() {
               {{ t('chores.addSlot') }}
             </NButton>
           </div>
-          <p class="hint">{{ t('chores.scheduleSoon') }}</p>
         </div>
       </NCard>
 

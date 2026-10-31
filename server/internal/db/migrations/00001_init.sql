@@ -89,7 +89,7 @@ CREATE TABLE equipment (
     created_at  TEXT    NOT NULL
 );
 
--- Chore definitions (internal/chores). Scheduling (#21) and assignment (#22) add their own columns.
+-- Chore definitions (internal/chores). Assignment (#22) adds its own columns.
 CREATE TABLE chores (
     id                INTEGER PRIMARY KEY,
     name              TEXT    NOT NULL,
@@ -100,6 +100,7 @@ CREATE TABLE chores (
     min_age           INTEGER CHECK (min_age BETWEEN 1 AND 25),
     steps             TEXT    NOT NULL DEFAULT '[]', -- JSON array of checklist step texts
     slots             TEXT    NOT NULL DEFAULT '[]', -- JSON array of HH:MM due times; empty = due at day close
+    schedule          TEXT,                          -- JSON schedule rule (internal/schedule); NULL = not scheduled
     requires_approval INTEGER NOT NULL DEFAULT 1 CHECK (requires_approval IN (0, 1)),
     escalate          INTEGER NOT NULL DEFAULT 0 CHECK (escalate IN (0, 1)),
     -- NULL = household default; 0 = never; N = approve after N hours

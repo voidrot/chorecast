@@ -341,6 +341,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chores/preview-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a schedule rule
+         * @description Validates a rule and returns its next occurrences from today in the household timezone, without saving anything. POST because the rule is a JSON body.
+         */
+        post: operations["previewSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chores/{id}": {
         parameters: {
             query?: never;
@@ -1046,6 +1066,8 @@ export interface components {
             points: number;
             /** @description A parent approves before points are credited */
             requiresApproval: boolean;
+            /** @description Which days it occurs; absent = not scheduled (kept for later or one-off assignment) */
+            schedule?: components["schemas"]["ScheduleRule"];
             /** @description Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance. */
             slots?: string[] | null;
             /** @description Checklist steps shown to the kid */
@@ -1090,6 +1112,8 @@ export interface components {
             points: number;
             /** @description A parent approves before points are credited */
             requiresApproval: boolean;
+            /** @description Which days it occurs; absent = not scheduled (kept for later or one-off assignment) */
+            schedule?: components["schemas"]["ScheduleRule"];
             /** @description Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance. */
             slots?: string[] | null;
             /** @description Checklist steps shown to the kid */
@@ -1425,6 +1449,15 @@ export interface components {
             /** @description Parents only */
             username?: string;
         };
+        NthWeekday: {
+            /**
+             * Format: int64
+             * @description 1-5, or -1 for the last one in the month
+             */
+            n: number;
+            /** @enum {string} */
+            weekday: "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+        };
         PairDeviceInputBody: {
             appVersion?: string;
             code: string;
@@ -1500,6 +1533,68 @@ export interface components {
         RecoveryCodesOutputBody: {
             /** @description Single-use codes for signing in without the authenticator app. Shown only now. */
             recoveryCodes: string[];
+        };
+        ScheduleOccurrence: {
+            /**
+             * Format: date
+             * @description The day it belongs to (flexible: the week's first active day)
+             */
+            date: string;
+            /** Format: date-time */
+            dueAt: string;
+            /** @description One of a flexible chore's completions for the week */
+            flexible?: boolean;
+            /** @description HH:MM due time; absent = due at day close (or week close when flexible) */
+            slot?: string;
+        };
+        SchedulePreview: {
+            occurrences: components["schemas"]["ScheduleOccurrence"][];
+            rule: components["schemas"]["ScheduleRule"];
+        };
+        SchedulePreviewInput: {
+            /**
+             * Format: int64
+             * @description How many occurrences (default 10)
+             */
+            count?: number;
+            rule: components["schemas"]["ScheduleRule"];
+            /** @description Due times (HH:MM); empty = due at day close */
+            slots?: string[] | null;
+        };
+        ScheduleRule: {
+            /**
+             * Format: date
+             * @description once: the day
+             */
+            date?: string;
+            /**
+             * Format: date
+             * @description Last day the rule applies (inclusive)
+             */
+            endDate?: string;
+            /**
+             * Format: int64
+             * @description daily, weekly, monthly: every N days/weeks/months (default 1)
+             */
+            interval?: number;
+            /** @description monthly: days of the month; -1 = last day. Days a month doesn't have (31 in a 30-day month) are skipped. */
+            monthDays?: number[] | null;
+            /** @description monthly: the Nth weekday instead of monthDays */
+            nthWeekday?: components["schemas"]["NthWeekday"];
+            /**
+             * Format: date
+             * @description First day the rule applies; anchors intervals. Required except for once.
+             */
+            startDate?: string;
+            /**
+             * Format: int64
+             * @description flexible_weekly: completions required per week, any day
+             */
+            timesPerWeek?: number;
+            /** @enum {string} */
+            type: "once" | "daily" | "weekly" | "monthly" | "flexible_weekly";
+            /** @description weekly: the days of the week */
+            weekdays?: ("sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat")[] | null;
         };
         SchoolHours: {
             /** @description Lowercase weekday names, e.g. monday */
@@ -2591,6 +2686,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Chore"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    previewSchedule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SchedulePreviewInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulePreview"];
                 };
             };
             /** @description Unprocessable Entity */

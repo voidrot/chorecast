@@ -6,14 +6,14 @@ SELECT * FROM chores WHERE id = ?;
 
 -- name: CreateChore :one
 INSERT INTO chores (name, description, points, penalty, estimated_minutes, min_age, steps, slots,
-    requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video,
+    schedule, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video,
     evidence_checklist, evidence_note, location_id, disabled, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateChore :exec
 UPDATE chores SET name = ?, description = ?, points = ?, penalty = ?, estimated_minutes = ?, min_age = ?,
-    steps = ?, slots = ?, requires_approval = ?, escalate = ?, auto_approve_hours = ?, evidence_photos = ?,
+    steps = ?, slots = ?, schedule = ?, requires_approval = ?, escalate = ?, auto_approve_hours = ?, evidence_photos = ?,
     evidence_before_after = ?, evidence_video = ?, evidence_checklist = ?, evidence_note = ?, location_id = ?,
     disabled = ?, updated_at = ?
 WHERE id = ?;

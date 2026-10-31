@@ -1,4 +1,13 @@
 import type { components } from '@/api/schema'
+import { householdTimeZone } from '@/format'
+import {
+  emptyScheduleForm,
+  ruleFromScheduleForm,
+  type ScheduleForm,
+  scheduleFormFromRule,
+  scheduleProblems,
+  todayIn,
+} from './schedule'
 
 export type Chore = components['schemas']['Chore']
 export type ChoreInput = components['schemas']['ChoreInput']
@@ -15,6 +24,7 @@ export interface ChoreForm {
   minAge: number | null
   steps: string[]
   slots: string[]
+  schedule: ScheduleForm
   requiresApproval: boolean
   escalate: boolean
   autoApprove: AutoApproveMode
@@ -30,7 +40,8 @@ export interface ChoreForm {
   disabled: boolean
 }
 
-export function emptyChoreForm(): ChoreForm {
+/** today defaults to the household's current date (the schedule's default start). */
+export function emptyChoreForm(today = todayIn(householdTimeZone.value)): ChoreForm {
   return {
     name: '',
     description: '',
@@ -40,6 +51,7 @@ export function emptyChoreForm(): ChoreForm {
     minAge: null,
     steps: [],
     slots: [],
+    schedule: emptyScheduleForm(today),
     requiresApproval: true,
     escalate: false,
     autoApprove: 'household',
@@ -56,7 +68,7 @@ export function emptyChoreForm(): ChoreForm {
   }
 }
 
-export function formFromChore(c: Chore): ChoreForm {
+export function formFromChore(c: Chore, today = todayIn(householdTimeZone.value)): ChoreForm {
   const hours = c.autoApproveHours
   return {
     name: c.name,
@@ -67,6 +79,7 @@ export function formFromChore(c: Chore): ChoreForm {
     minAge: c.minAge ?? null,
     steps: [...(c.steps ?? [])],
     slots: [...(c.slots ?? [])],
+    schedule: scheduleFormFromRule(c.schedule, today),
     requiresApproval: c.requiresApproval,
     escalate: c.escalate ?? false,
     autoApprove: hours == null ? 'household' : hours === 0 ? 'never' : 'hours',
@@ -86,6 +99,7 @@ export function formFromChore(c: Chore): ChoreForm {
 /** The request body; empty optional fields are left out (the server clears them). */
 export function inputFromForm(f: ChoreForm): ChoreInput {
   const steps = f.steps.map((s) => s.trim()).filter(Boolean)
+  const schedule = ruleFromScheduleForm(f.schedule)
   return {
     name: f.name.trim(),
     points: f.points,
@@ -103,6 +117,7 @@ export function inputFromForm(f: ChoreForm): ChoreInput {
     ...(f.minAge ? { minAge: f.minAge } : {}),
     ...(steps.length ? { steps } : {}),
     ...(f.slots.length ? { slots: [...new Set(f.slots)].sort() } : {}),
+    ...(schedule ? { schedule } : {}),
     ...(f.escalate ? { escalate: true } : {}),
     ...(f.autoApprove === 'never' ? { autoApproveHours: 0 } : {}),
     ...(f.autoApprove === 'hours' ? { autoApproveHours: f.autoApproveHours } : {}),
@@ -119,5 +134,6 @@ export function choreProblems(f: ChoreForm): string[] {
   if (!f.name.trim()) out.push('chores.errors.name')
   if (f.beforeAfter && f.photos < 2) out.push('chores.errors.beforeAfter')
   if (f.checklist && !f.steps.some((s) => s.trim())) out.push('chores.errors.checklist')
+  out.push(...scheduleProblems(f.schedule))
   return out
 }

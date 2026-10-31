@@ -17,6 +17,7 @@ const chore: Chore = {
   minAge: 9,
   steps: ['Scoop food', 'Fresh water'],
   slots: ['07:00', '18:00'],
+  schedule: { type: 'weekly', startDate: '2026-11-01', interval: 2, weekdays: ['mon', 'thu'] },
   requiresApproval: true,
   escalate: true,
   autoApproveHours: 0,
