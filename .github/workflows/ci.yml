@@ -30,7 +30,7 @@ jobs:
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses > /dev/null
-          sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.1.0'
+          sdkmanager 'platform-tools' 'platforms;android-37.2' 'build-tools;37.0.0'
       - run: mise run lint:android
       - run: mise run test:android
       - run: mise run build:android

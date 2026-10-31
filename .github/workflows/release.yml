@@ -69,7 +69,7 @@ jobs:
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses > /dev/null
-          sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.1.0'
+          sdkmanager 'platform-tools' 'platforms;android-37.2' 'build-tools;37.0.0'
       # TODO: configure release signing (keystore from secrets) before the first public release.
       - working-directory: android
         run: ./gradlew assembleRelease bundlePlayRelease

@@ -5,7 +5,11 @@ plugins {
 
 android {
     namespace = "dev.voidrot.chorecast"
-    compileSdk = 36
+    // AndroidX (core 1.19, Compose 1.12, lifecycle 2.11) requires compiling against API 37.
+    // targetSdk stays at 36 so runtime behavior doesn't change.
+    compileSdk {
+        version = release(37) { minorApiLevel = 2 }
+    }
 
     defaultConfig {
         // NOTE: the applicationId is permanent once published to Google Play.
