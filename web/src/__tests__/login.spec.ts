@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/errors'
-import { loginFailure, safeRedirect } from '@/auth/login'
+import { loginFailure, safeRedirect, ssoErrorKey, ssoStartURL } from '@/auth/login'
 
 const err = (status: number, code: string) => new ApiError(status, code, '')
 
@@ -38,5 +38,17 @@ describe('safeRedirect', () => {
     expect(safeRedirect('//evil.example')).toBe('/')
     expect(safeRedirect('https://evil.example')).toBe('/')
     expect(safeRedirect(undefined)).toBe('/')
+  })
+})
+
+describe('sso helpers', () => {
+  it('maps redirect error codes to messages', () => {
+    expect(ssoErrorKey(undefined)).toBeUndefined()
+    expect(ssoErrorKey('not_linked')).toBe('sso.errors.not_linked')
+    expect(ssoErrorKey('something_new')).toBe('sso.errors.failed')
+  })
+  it('builds the start URL', () => {
+    expect(ssoStartURL('/')).toBe('/api/v1/auth/oidc/start?client=web')
+    expect(ssoStartURL('/account')).toBe('/api/v1/auth/oidc/start?client=web&redirect=%2Faccount')
   })
 })
