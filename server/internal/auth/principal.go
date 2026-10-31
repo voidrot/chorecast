@@ -11,7 +11,12 @@ type Principal struct {
 	UserID  int64 // the parent or kid; 0 for shared devices, displays and API keys
 	Owner   bool  // parent with owner rights
 	TokenID int64
-	scopes  map[Scope]struct{}
+	// DeviceID is the paired device the request comes from (device tokens and device sessions).
+	DeviceID int64
+	// Elevated marks a parent acting on a device through a short PIN elevation: daily parent
+	// operations only, no account, parent or server management.
+	Elevated bool
+	scopes   map[Scope]struct{}
 }
 
 func newPrincipal(kind Kind, userID int64, owner bool, tokenID int64) *Principal {
@@ -20,6 +25,13 @@ func newPrincipal(kind Kind, userID int64, owner bool, tokenID int64) *Principal
 		p.scopes[s] = struct{}{}
 	}
 	return p
+}
+
+func (p *Principal) setScopes(ss []Scope) {
+	p.scopes = map[Scope]struct{}{}
+	for _, s := range ss {
+		p.scopes[s] = struct{}{}
+	}
 }
 
 // Has reports whether the principal holds scope s.

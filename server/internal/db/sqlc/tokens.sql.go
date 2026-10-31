@@ -11,15 +11,16 @@ import (
 )
 
 const createToken = `-- name: CreateToken :one
-INSERT INTO tokens (token_hash, kind, user_id, label, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, token_hash, kind, user_id, label, created_at, last_used_at, expires_at
+INSERT INTO tokens (token_hash, kind, user_id, device_id, label, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, token_hash, kind, user_id, device_id, label, created_at, last_used_at, expires_at
 `
 
 type CreateTokenParams struct {
 	TokenHash []byte         `json:"token_hash"`
 	Kind      string         `json:"kind"`
 	UserID    sql.NullInt64  `json:"user_id"`
+	DeviceID  sql.NullInt64  `json:"device_id"`
 	Label     string         `json:"label"`
 	CreatedAt string         `json:"created_at"`
 	ExpiresAt sql.NullString `json:"expires_at"`
@@ -30,6 +31,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		arg.TokenHash,
 		arg.Kind,
 		arg.UserID,
+		arg.DeviceID,
 		arg.Label,
 		arg.CreatedAt,
 		arg.ExpiresAt,
@@ -40,6 +42,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		&i.TokenHash,
 		&i.Kind,
 		&i.UserID,
+		&i.DeviceID,
 		&i.Label,
 		&i.CreatedAt,
 		&i.LastUsedAt,
@@ -79,7 +82,7 @@ func (q *Queries) DeleteTokensForUser(ctx context.Context, userID sql.NullInt64)
 }
 
 const getTokenByHash = `-- name: GetTokenByHash :one
-SELECT id, token_hash, kind, user_id, label, created_at, last_used_at, expires_at FROM tokens WHERE token_hash = ?
+SELECT id, token_hash, kind, user_id, device_id, label, created_at, last_used_at, expires_at FROM tokens WHERE token_hash = ?
 `
 
 func (q *Queries) GetTokenByHash(ctx context.Context, tokenHash []byte) (Token, error) {
@@ -90,6 +93,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, tokenHash []byte) (Token, 
 		&i.TokenHash,
 		&i.Kind,
 		&i.UserID,
+		&i.DeviceID,
 		&i.Label,
 		&i.CreatedAt,
 		&i.LastUsedAt,
@@ -99,7 +103,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, tokenHash []byte) (Token, 
 }
 
 const resolveToken = `-- name: ResolveToken :one
-SELECT t.id, t.kind, t.user_id, t.expires_at, t.last_used_at, u.role, u.is_owner
+SELECT t.id, t.kind, t.user_id, t.device_id, t.expires_at, t.last_used_at, u.role, u.is_owner
 FROM tokens t
 LEFT JOIN users u ON u.id = t.user_id
 WHERE t.token_hash = ?
@@ -109,6 +113,7 @@ type ResolveTokenRow struct {
 	ID         int64          `json:"id"`
 	Kind       string         `json:"kind"`
 	UserID     sql.NullInt64  `json:"user_id"`
+	DeviceID   sql.NullInt64  `json:"device_id"`
 	ExpiresAt  sql.NullString `json:"expires_at"`
 	LastUsedAt sql.NullString `json:"last_used_at"`
 	Role       sql.NullString `json:"role"`
@@ -122,6 +127,7 @@ func (q *Queries) ResolveToken(ctx context.Context, tokenHash []byte) (ResolveTo
 		&i.ID,
 		&i.Kind,
 		&i.UserID,
+		&i.DeviceID,
 		&i.ExpiresAt,
 		&i.LastUsedAt,
 		&i.Role,

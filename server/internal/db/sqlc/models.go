@@ -8,6 +8,16 @@ import (
 	"database/sql"
 )
 
+type Device struct {
+	ID                 int64          `json:"id"`
+	UserID             sql.NullInt64  `json:"user_id"`
+	Name               string         `json:"name"`
+	AppVersion         string         `json:"app_version"`
+	CreatedAt          string         `json:"created_at"`
+	ElevateFailures    int64          `json:"elevate_failures"`
+	ElevateLockedUntil sql.NullString `json:"elevate_locked_until"`
+}
+
 type Event struct {
 	ID           int64          `json:"id"`
 	Type         string         `json:"type"`
@@ -67,6 +77,16 @@ type Job struct {
 	FinishedAt     sql.NullString `json:"finished_at"`
 }
 
+type PairingCode struct {
+	ID        int64          `json:"id"`
+	CodeHash  []byte         `json:"code_hash"`
+	UserID    sql.NullInt64  `json:"user_id"`
+	CreatedBy sql.NullInt64  `json:"created_by"`
+	CreatedAt string         `json:"created_at"`
+	ExpiresAt string         `json:"expires_at"`
+	UsedAt    sql.NullString `json:"used_at"`
+}
+
 type RecoveryCode struct {
 	ID        int64          `json:"id"`
 	UserID    int64          `json:"user_id"`
@@ -91,6 +111,7 @@ type Token struct {
 	TokenHash  []byte         `json:"token_hash"`
 	Kind       string         `json:"kind"`
 	UserID     sql.NullInt64  `json:"user_id"`
+	DeviceID   sql.NullInt64  `json:"device_id"`
 	Label      string         `json:"label"`
 	CreatedAt  string         `json:"created_at"`
 	LastUsedAt sql.NullString `json:"last_used_at"`

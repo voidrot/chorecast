@@ -6,15 +6,30 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
 import java.io.IOException
+import java.time.LocalDate
+import java.time.OffsetDateTime
 
 /** Shared configuration for every generated API client. */
 object ApiClients {
-    /** Unknown fields are ignored: the server only adds fields within an API major. */
+    /**
+     * Unknown fields are ignored: the server only adds fields within an API major. The generated models
+     * mark date-times and dates `@Contextual`; their serializers are registered here.
+     */
     val json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
+        serializersModule = SerializersModule {
+            contextual(OffsetDateTime::class, OffsetDateTimeSerializer)
+            contextual(LocalDate::class, LocalDateSerializer)
+        }
     }
 
     val config: (HttpClientConfig<*>) -> Unit = {
@@ -56,4 +71,18 @@ class ServerChecker(private val engine: HttpClientEngine? = null) {
             ServerStatus.NotChorecast(url)
         }
     }
+}
+
+/** RFC 3339 date-times, as the server sends them. */
+object OffsetDateTimeSerializer : KSerializer<OffsetDateTime> {
+    override val descriptor = PrimitiveSerialDescriptor("OffsetDateTime", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: OffsetDateTime) = encoder.encodeString(value.toString())
+    override fun deserialize(decoder: Decoder): OffsetDateTime = OffsetDateTime.parse(decoder.decodeString())
+}
+
+/** YYYY-MM-DD civil dates. */
+object LocalDateSerializer : KSerializer<LocalDate> {
+    override val descriptor = PrimitiveSerialDescriptor("LocalDate", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: LocalDate) = encoder.encodeString(value.toString())
+    override fun deserialize(decoder: Decoder): LocalDate = LocalDate.parse(decoder.decodeString())
 }

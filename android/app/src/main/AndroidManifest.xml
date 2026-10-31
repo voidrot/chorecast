@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Scanning the pairing QR code. Pairing also works by typing the code. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <!-- usesCleartextTraffic: self-hosted servers often run plain HTTP on the home network. The app
          warns when a server URL is http:// because the token then travels unencrypted. -->

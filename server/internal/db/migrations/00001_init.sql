@@ -74,18 +74,46 @@ CREATE TABLE recovery_codes (
     UNIQUE (user_id, code_hash)
 );
 
+-- Paired Android devices (internal/devices): kid-bound (user_id = the kid) or shared (user_id NULL).
+-- The device authenticates with its `device` token; revoking it deletes this row.
+CREATE TABLE devices (
+    id                  INTEGER PRIMARY KEY,
+    user_id             INTEGER REFERENCES users (id) ON DELETE CASCADE,
+    name                TEXT    NOT NULL,
+    app_version         TEXT    NOT NULL DEFAULT '',
+    created_at          TEXT    NOT NULL,
+    elevate_failures    INTEGER NOT NULL DEFAULT 0, -- wrong parent PINs in a row on this device
+    elevate_locked_until TEXT                       -- 5 failures lock elevation for 15 minutes
+);
+
+-- Single-use pairing codes (5 minutes). Only the SHA-256 of the normalized code is stored.
+CREATE TABLE pairing_codes (
+    id         INTEGER PRIMARY KEY,
+    code_hash  BLOB    NOT NULL UNIQUE,
+    user_id    INTEGER REFERENCES users (id) ON DELETE CASCADE, -- the kid; NULL = shared family device
+    created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    created_at TEXT    NOT NULL,
+    expires_at TEXT    NOT NULL,
+    used_at    TEXT
+);
+
 -- Opaque bearer/session tokens. Only the SHA-256 of the token is stored.
 CREATE TABLE tokens (
     id           INTEGER PRIMARY KEY,
     token_hash   BLOB    NOT NULL UNIQUE,
-    kind         TEXT    NOT NULL CHECK (kind IN ('web_session', 'app', 'device', 'display', 'api')),
+    kind         TEXT    NOT NULL CHECK (kind IN ('web_session', 'app', 'device', 'device_session', 'display', 'api')),
     user_id      INTEGER REFERENCES users (id) ON DELETE CASCADE, -- NULL for shared-device tokens
+    -- device / device_session: the paired device this token or session belongs to. Deleting the
+    -- device revokes its token and ends its kid sessions and parent elevations.
+    device_id    INTEGER REFERENCES devices (id) ON DELETE CASCADE,
     label        TEXT    NOT NULL DEFAULT '',
     created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     last_used_at TEXT,
     expires_at   TEXT,
     -- Sessions and app tokens always belong to a person; devices, displays and API keys may not.
-    CHECK (user_id IS NOT NULL OR kind IN ('device', 'display', 'api'))
+    CHECK (user_id IS NOT NULL OR kind IN ('device', 'display', 'api')),
+    CHECK (kind != 'device_session' OR device_id IS NOT NULL),
+    CHECK (device_id IS NULL OR kind IN ('device', 'device_session'))
 );
 
 -- Background jobs (internal/jobs). Delivery is at-least-once: handlers must be idempotent.
@@ -141,6 +169,8 @@ DROP TABLE idempotency_keys;
 DROP TABLE schedule_cursors;
 DROP TABLE jobs;
 DROP TABLE tokens;
+DROP TABLE pairing_codes;
+DROP TABLE devices;
 DROP TABLE recovery_codes;
 DROP TABLE invites;
 DROP TABLE users;
