@@ -3,11 +3,17 @@ linters:
   enable:
     - bodyclose
     - errorlint
+    - forbidigo
     - gosec
     - misspell
     - noctx
     - revive
   settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.(Now|Since|Until)$
+          msg: take a clock.Clock instead so tests can control time
     revive:
       rules:
         - name: exported
@@ -15,6 +21,10 @@ linters:
   exclusions:
     paths:
       - internal/db/sqlc
+    rules:
+      - path: internal/clock/
+        linters:
+          - forbidigo
 formatters:
   enable:
     - gofmt
