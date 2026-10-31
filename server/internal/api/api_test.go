@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/voidrot/chorecast/server/internal/api"
+	"github.com/voidrot/chorecast/server/internal/auth"
+	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
 )
@@ -22,7 +24,7 @@ func TestSystemEndpoints(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	r := chi.NewRouter()
-	api.New(r, config.Config{}, store)
+	api.New(r, config.Config{}, store, clock.Real{})
 
 	for path, want := range map[string]string{
 		"/api/v1/health":  `"status":"ok"`,
@@ -40,5 +42,14 @@ func TestSystemEndpoints(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("%s: body %s missing %s", path, rec.Body, want)
 		}
+	}
+}
+
+// Every operation must declare required scopes or be explicitly public. api.New also panics
+// on violations; this test makes the failure visible in CI with the operation names.
+func TestEveryOperationDeclaresAccessPolicy(t *testing.T) {
+	hapi := api.New(chi.NewRouter(), config.Config{}, nil, clock.Real{})
+	if err := auth.CheckOperations(hapi.OpenAPI()); err != nil {
+		t.Fatal(err)
 	}
 }
