@@ -18,8 +18,20 @@ jobs:
       - run: mise run setup
       - run: mise run gen
       - name: Generated code is up to date
-        run: git diff --exit-code -- server/internal/db/sqlc api/openapi.json web/src/api/schema.d.ts
+        # status (not diff) so new, uncommitted generated files fail too. The Kotlin client is
+        # generated at build time from api/openapi-3.0.json, so the spec check covers it.
+        run: |
+          paths="server/internal/db/sqlc api/openapi.json api/openapi-3.0.json web/src/api/schema.d.ts"
+          if [ -n "$(git status --porcelain -- $paths)" ]; then
+            git status --porcelain -- $paths
+            git diff -- $paths
+            echo "::error::Generated code is stale: run 'mise run gen' and commit the result"
+            exit 1
+          fi
       - run: mise run ci
+      - name: Server tests with the race detector
+        working-directory: server
+        run: mise exec -- go test -race ./...
 
   android:
     runs-on: ubuntu-latest
@@ -34,6 +46,12 @@ jobs:
       - run: mise run lint:android
       - run: mise run test:android
       - run: mise run build:android
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: chorecast-debug-apks
+          path: android/app/build/outputs/apk/*/debug/*.apk
+          retention-days: 14
 
   image:
     runs-on: ubuntu-latest
