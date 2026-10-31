@@ -8,6 +8,15 @@ SELECT * FROM users ORDER BY role, display_name;
 SELECT count(*) FROM users;
 
 -- name: CreateUser :one
-INSERT INTO users (display_name, role, is_owner, username, password_hash, pin_hash)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO users (display_name, role, is_owner, slug, username, password_hash, pin_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
+
+-- name: GetKidByID :one
+SELECT * FROM users WHERE id = ? AND role = 'child';
+
+-- name: GetKidBySlug :one
+SELECT * FROM users WHERE slug = ? AND role = 'child';
+
+-- name: SlugTaken :one
+SELECT EXISTS (SELECT 1 FROM users WHERE slug = ?);

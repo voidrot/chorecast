@@ -4,6 +4,7 @@ CREATE TABLE users (
     display_name  TEXT    NOT NULL,
     role          TEXT    NOT NULL CHECK (role IN ('parent', 'child')),
     is_owner      INTEGER NOT NULL DEFAULT 0 CHECK (is_owner IN (0, 1) AND (is_owner = 0 OR role = 'parent')),
+    slug          TEXT    UNIQUE,          -- stable short name usable in place of the id (kids); see internal/kids
     username      TEXT    UNIQUE,          -- parents only; kids sign in via paired device + PIN
     password_hash TEXT,                    -- argon2id, parents only
     pin_hash      TEXT,                    -- argon2id, kids (optional)
@@ -49,7 +50,20 @@ CREATE TABLE schedule_cursors (
     last_fired_at TEXT NOT NULL
 );
 
+-- Stored responses for POSTs sent with an Idempotency-Key (internal/idempotency).
+CREATE TABLE idempotency_keys (
+    token_id     INTEGER NOT NULL,        -- scoped to the caller's token
+    key          TEXT    NOT NULL,
+    request_hash BLOB    NOT NULL,        -- SHA-256 of method, path and body
+    status       INTEGER,                 -- NULL while the first request is in progress
+    content_type TEXT,
+    body         BLOB,
+    created_at   TEXT    NOT NULL,
+    PRIMARY KEY (token_id, key)
+);
+
 -- +goose Down
+DROP TABLE idempotency_keys;
 DROP TABLE schedule_cursors;
 DROP TABLE jobs;
 DROP TABLE tokens;
