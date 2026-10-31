@@ -4,12 +4,16 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
 	Addr    string // listen address
 	DataDir string // SQLite database and uploads
 	Dev     bool   // relaxes cookie security, enables CORS for the Vite dev server
+	// PublicURL is how browsers and apps reach the server, e.g. https://chores.example.com. Used in
+	// links the server prints or shares (setup URL, invites, pairing). Optional.
+	PublicURL string
 
 	OIDC OIDCConfig
 }
@@ -25,9 +29,10 @@ func (o OIDCConfig) Enabled() bool { return o.Issuer != "" && o.ClientID != "" }
 
 func Load() Config {
 	return Config{
-		Addr:    env("CHORECAST_ADDR", ":8080"),
-		DataDir: env("CHORECAST_DATA_DIR", "./data"),
-		Dev:     envBool("CHORECAST_DEV"),
+		Addr:      env("CHORECAST_ADDR", ":8080"),
+		DataDir:   env("CHORECAST_DATA_DIR", "./data"),
+		Dev:       envBool("CHORECAST_DEV"),
+		PublicURL: strings.TrimRight(os.Getenv("CHORECAST_PUBLIC_URL"), "/"),
 		OIDC: OIDCConfig{
 			Issuer:       os.Getenv("CHORECAST_OIDC_ISSUER"),
 			ClientID:     os.Getenv("CHORECAST_OIDC_CLIENT_ID"),

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/version"
 )
 
@@ -28,7 +30,7 @@ func TestSystemEndpoints(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	r := chi.NewRouter()
-	api.New(r, config.Config{}, store, clock.Real{})
+	api.New(r, deps(t, store))
 
 	for path, want := range map[string]string{
 		"/api/v1/health":  `"status":"ok"`,
@@ -52,7 +54,7 @@ func TestSystemEndpoints(t *testing.T) {
 // Every operation must declare required scopes or be explicitly public. api.New also panics
 // on violations; this test makes the failure visible in CI with the operation names.
 func TestEveryOperationDeclaresAccessPolicy(t *testing.T) {
-	hapi := api.New(chi.NewRouter(), config.Config{}, nil, clock.Real{})
+	hapi := api.New(chi.NewRouter(), api.Deps{Clock: clock.Real{}})
 	if err := auth.CheckOperations(hapi.OpenAPI()); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +62,7 @@ func TestEveryOperationDeclaresAccessPolicy(t *testing.T) {
 
 func TestUnknownAPIRoutesReturnProblems(t *testing.T) {
 	r := chi.NewRouter()
-	api.New(r, config.Config{}, nil, clock.Real{})
+	api.New(r, api.Deps{Clock: clock.Real{}})
 	for _, tc := range []struct {
 		method, path string
 		status       int
@@ -102,7 +104,7 @@ func TestMe(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := chi.NewRouter()
-	api.New(r, config.Config{}, store, clock.Real{})
+	api.New(r, deps(t, store))
 
 	get := func(header string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/me", nil)
@@ -131,4 +133,19 @@ func TestMe(t *testing.T) {
 	if rec := get(""); rec.Code != 401 || !strings.Contains(rec.Body.String(), `"code":"unauthenticated"`) {
 		t.Errorf("anonymous GET /me = %d %s", rec.Code, rec.Body)
 	}
+}
+
+// deps returns API dependencies for a server whose first-run setup is already done.
+func deps(t *testing.T, store *db.DB) api.Deps {
+	t.Helper()
+	if err := store.CreateHousehold(t.Context(), sqlc.CreateHouseholdParams{
+		Name: "Test", Timezone: "UTC", DayEnd: "00:00", WeekStart: 1, CreatedAt: db.Timestamp(time.Unix(0, 0)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := setup.New(t.Context(), store, clock.Real{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return api.Deps{Config: config.Config{}, DB: store, Clock: clock.Real{}, Setup: svc}
 }

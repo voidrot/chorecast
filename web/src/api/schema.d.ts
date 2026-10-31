@@ -38,6 +38,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether first-run setup is still required */
+        get: operations["getSetupStatus"];
+        put?: never;
+        /**
+         * Complete first-run setup
+         * @description Creates the household, the first owner and any kids in one transaction, invalidates the setup token and signs the owner in (web session cookie).
+         */
+        post: operations["completeSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a setup token without using it
+         * @description Lets the wizard reject a stale setup link before any forms are filled in.
+         */
+        post: operations["verifySetupToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/version": {
         parameters: {
             query?: never;
@@ -59,6 +100,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CompleteSetupOutputBody: {
+            /**
+             * Format: int64
+             * @description The new owner
+             */
+            userId: number;
+        };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -122,6 +170,68 @@ export interface components {
              * @default about:blank
              */
             type: string;
+        };
+        SetupHousehold: {
+            /**
+             * @description When the household's day ends (HH:MM); 00:00 means midnight
+             * @default 00:00
+             * @example 00:00
+             */
+            dayEnd: string;
+            /** @example The Bradys */
+            name: string;
+            /**
+             * @description IANA timezone
+             * @example America/Chicago
+             */
+            timezone: string;
+            /**
+             * @default monday
+             * @enum {string}
+             */
+            weekStart: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
+        };
+        SetupKid: {
+            /**
+             * Format: date
+             * @description YYYY-MM-DD; used for age-based chore suggestions
+             */
+            birthDate?: string;
+            /** @example #3b82f6 */
+            color: string;
+            /**
+             * @description Nickname or first name
+             * @example Sam
+             */
+            displayName: string;
+            /** @description Require a PIN to open this kid's profile on shared devices */
+            pinRequired?: boolean;
+        };
+        SetupOwner: {
+            /** @example Mom */
+            displayName: string;
+            password: string;
+            /**
+             * @description 3-32 lowercase letters, digits, dot, underscore or hyphen
+             * @example mom
+             */
+            username: string;
+        };
+        SetupRequest: {
+            household: components["schemas"]["SetupHousehold"];
+            kids?: components["schemas"]["SetupKid"][] | null;
+            owner: components["schemas"]["SetupOwner"];
+            /** @description Setup token from the setup link in the server log */
+            token: string;
+        };
+        SetupStatusOutputBody: {
+            /** @description Whether SSO is configured (the owner may sign in with it later) */
+            oidc: boolean;
+            /** @description True until first-run setup completes */
+            required: boolean;
+        };
+        VerifySetupInputBody: {
+            token: string;
         };
         VersionOutputBody: {
             /**
@@ -193,6 +303,160 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSetupStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatusOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    completeSetup: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompleteSetupOutputBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    verifySetupToken: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifySetupInputBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
