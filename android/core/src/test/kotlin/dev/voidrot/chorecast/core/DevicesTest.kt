@@ -83,4 +83,36 @@ class DevicesTest {
         assertEquals("Sam", picker?.kids?.single()?.displayName)
         assertEquals("Mom", picker?.parents?.single()?.displayName)
     }
+
+    @Test
+    fun parentManagesDevices() = runTest {
+        val seen = mutableListOf<String>()
+        val engine = MockEngine { req ->
+            seen += "${req.method.value} ${req.url.encodedPath}${req.url.encodedQuery.let { if (it.isEmpty()) "" else "?$it" }}"
+            when {
+                req.url.encodedPath.endsWith("/devices") -> respond(
+                    """{"items":[{"id":4,"name":"Tab","shared":true,"createdAt":"2026-10-31T12:00:00Z",
+                       "lastSeen":"2026-10-31T12:05:00Z","sessionUser":"Sam"}]}""",
+                    HttpStatusCode.OK, json,
+                )
+                req.url.encodedPath.endsWith("/lock") -> respond("""{"endedSessions":1}""", HttpStatusCode.OK, json)
+                req.url.encodedPath.endsWith("/picker") -> respond(
+                    """{"device":{"id":4,"name":"Tab","shared":true,"createdAt":"2026-10-31T12:00:00Z"},"kids":[],"parents":[]}""",
+                    HttpStatusCode.OK, json,
+                )
+                else -> respond("", HttpStatusCode.NoContent)
+            }
+        }
+        val client = DeviceClient(engine)
+        val list = client.list(url, "app")
+        assertEquals("Sam", list?.single()?.sessionUser)
+        assertTrue(client.lockRemotely(url, "app", 4))
+        assertTrue(client.revoke(url, "app", 4))
+        client.picker(url, "dev", appVersion = "0.2.0")
+        assertEquals(
+            listOf("GET /api/v1/devices", "POST /api/v1/devices/4/lock", "DELETE /api/v1/devices/4", "GET /api/v1/devices/picker?appVersion=0.2.0"),
+            seen,
+        )
+        assertNull(DeviceClient(problem(HttpStatusCode.Forbidden, "insufficient_scope")).list(url, "app"))
+    }
 }

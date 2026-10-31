@@ -32,3 +32,7 @@ data class LoginRoute(val serverUrl: String)
  */
 @Serializable
 data class HomeRoute(val serverUrl: String, val recoveryCodesLeft: Long? = null)
+
+/** The parent's paired-devices list. */
+@Serializable
+data class DevicesRoute(val serverUrl: String)

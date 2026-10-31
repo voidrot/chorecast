@@ -176,3 +176,62 @@ func TestParentElevation(t *testing.T) {
 }
 
 func configWithPublicURL() config.Config { return config.Config{PublicURL: "http://chores.test"} }
+
+func TestDevicesPage(t *testing.T) {
+	s := newAuthServer(t)
+	mom := sessionCookie(t, s.do("POST", "/api/v1/auth/login", login(nil)))
+	_, kidDevice := pairDevice(t, s, pair(t, s, mom, "sam").Code)
+	tabletID, tablet := pairDevice(t, s, pair(t, s, mom, "").Code)
+
+	session := decode[struct{ Token string }](t, s.bearer("POST", "/api/v1/devices/session", tablet, map[string]string{"kid": "sam-2"})).Token
+	s.clk.Advance(2 * time.Minute)
+	wantCode(t, "picker reports version", s.bearer("GET", "/api/v1/devices/picker?appVersion=0.2.0", tablet, nil), 200, "")
+
+	type listed struct {
+		ID          int64
+		Name        string
+		Shared      bool
+		KidName     string
+		AppVersion  string
+		LastSeen    time.Time
+		SessionUser string
+	}
+	list := decode[struct{ Items []listed }](t, s.do("GET", "/api/v1/devices", nil, mom)).Items
+	if len(list) != 2 {
+		t.Fatalf("devices = %+v", list)
+	}
+	byShared := map[bool]listed{list[0].Shared: list[0], list[1].Shared: list[1]}
+	tab, kid := byShared[true], byShared[false]
+	if tab.ID != tabletID || tab.AppVersion != "0.2.0" || tab.SessionUser != "Sam" || !tab.LastSeen.Equal(s.clk.Now().Truncate(time.Millisecond)) {
+		t.Errorf("tablet = %+v (now %v)", tab, s.clk.Now())
+	}
+	if kid.KidName != "Sam" || kid.SessionUser != "" || kid.AppVersion != "0.1.0" {
+		t.Errorf("kid device = %+v", kid)
+	}
+
+	// Kids can't manage devices.
+	wantCode(t, "kid lists devices", s.bearer("GET", "/api/v1/devices", kidDevice, nil), 403, "insufficient_scope")
+
+	// Remote lock ends the session; the tablet stays paired.
+	rec := s.do("POST", "/api/v1/devices/"+itoa(tabletID)+"/lock", nil, mom)
+	wantCode(t, "remote lock", rec, 200, "")
+	if n := decode[struct{ EndedSessions int }](t, rec).EndedSessions; n != 1 {
+		t.Errorf("endedSessions = %d", n)
+	}
+	wantCode(t, "session after remote lock", s.bearer("GET", "/api/v1/me", session, nil), 401, "unauthenticated")
+	wantCode(t, "tablet still paired", s.bearer("GET", "/api/v1/devices/picker", tablet, nil), 200, "")
+	if decode[struct{ Items []listed }](t, s.do("GET", "/api/v1/devices", nil, mom)).Items[0].SessionUser != "" {
+		t.Error("session still listed after remote lock")
+	}
+
+	// Revoke unpairs at once, sessions included.
+	session = decode[struct{ Token string }](t, s.bearer("POST", "/api/v1/devices/session", tablet, map[string]string{"kid": "sam-2"})).Token
+	wantCode(t, "revoke", s.do("DELETE", "/api/v1/devices/"+itoa(tabletID), nil, mom), 204, "")
+	wantCode(t, "revoked device token", s.bearer("GET", "/api/v1/devices/picker", tablet, nil), 401, "unauthenticated")
+	wantCode(t, "revoked device's session", s.bearer("GET", "/api/v1/me", session, nil), 401, "unauthenticated")
+	wantCode(t, "revoke twice", s.do("DELETE", "/api/v1/devices/"+itoa(tabletID), nil, mom), 404, "not_found")
+	wantCode(t, "lock unknown", s.do("POST", "/api/v1/devices/999/lock", nil, mom), 404, "not_found")
+	if n := len(decode[struct{ Items []listed }](t, s.do("GET", "/api/v1/devices", nil, mom)).Items); n != 1 {
+		t.Errorf("devices after revoke = %d", n)
+	}
+}

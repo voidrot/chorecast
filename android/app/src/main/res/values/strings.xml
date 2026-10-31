@@ -50,6 +50,20 @@
     <string name="device_parent_soon">Reviews and quick actions will show up here soon.</string>
     <string name="device_lock">Lock</string>
 
+    <string name="devices_title">Devices</string>
+    <string name="devices_none">No devices paired yet. Pair one from the web admin\'s Devices page.</string>
+    <string name="devices_shared">Shared family device</string>
+    <string name="devices_for_kid">%1$s\'s device</string>
+    <string name="devices_in_use">%1$s is using it</string>
+    <string name="devices_last_seen">Last seen %1$s</string>
+    <string name="devices_version">app %1$s</string>
+    <string name="devices_revoke">Unpair</string>
+    <string name="devices_revoke_confirm">%1$s is signed out right away and goes back to the pairing screen.</string>
+    <string name="devices_locked">%1$s goes back to its profile picker within about 30 seconds.</string>
+    <string name="devices_revoked">%1$s was unpaired.</string>
+    <string name="devices_failed">That didn\'t work. Check your connection and try again.</string>
+    <string name="devices_hint">Devices can\'t be renamed or moved to another kid: unpair and pair again instead.</string>
+
     <string name="startup_checking">Checking your Chorecast server…</string>
 
     <string name="connect_title">Connect to your Chorecast server</string>

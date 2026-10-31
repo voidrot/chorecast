@@ -24,6 +24,7 @@ import java.time.Instant
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /** Who a PIN is being asked for. */
 sealed interface PinTarget {
@@ -69,6 +70,7 @@ class DeviceViewModel(
     private val client: DeviceClient,
     private val auth: ParentAuth,
     private val tokens: TokenStore,
+    private val appVersion: String,
     private val now: () -> Instant = Instant::now,
 ) : ViewModel() {
     private val _state = MutableStateFlow(DeviceState())
@@ -77,6 +79,46 @@ class DeviceViewModel(
 
     init {
         load()
+        heartbeat()
+    }
+
+    /**
+     * Until push exists (Phase 3), the device notices remote changes by checking in: every 30 s
+     * while a session is open (a parent's remote lock ends it), every 60 s at the picker (new kids,
+     * or the device was unpaired).
+     */
+    private fun heartbeat() = viewModelScope.launch {
+        var ticks = 0
+        while (true) {
+            delay(HEARTBEAT)
+            ticks++
+            val active = _state.value.active
+            when {
+                active != null -> if (auth.check(url, active.token) is SessionCheck.SignedOut) endLocally(active)
+                ticks % 2 == 0 && !_state.value.loading -> refreshPicker()
+            }
+        }
+    }
+
+    private fun endLocally(active: ActiveSession) {
+        if (_state.value.active != active) return
+        lockJob?.cancel()
+        _state.update { it.copy(active = null) }
+    }
+
+    private suspend fun refreshPicker() {
+        val token = tokens.read() ?: return
+        try {
+            val picker = client.picker(url, token, appVersion)
+            if (picker == null) {
+                tokens.clear()
+                _state.update { it.copy(unpaired = true) }
+            } else {
+                _state.update { it.copy(picker = picker, offline = null) }
+            }
+        } catch (_: IOException) {
+            // Offline: keep showing what we have.
+        }
     }
 
     fun load() {
@@ -84,7 +126,7 @@ class DeviceViewModel(
         _state.update { it.copy(loading = true, offline = null) }
         viewModelScope.launch {
             try {
-                val picker = client.picker(url, token)
+                val picker = client.picker(url, token, appVersion)
                 if (picker == null) {
                     tokens.clear()
                     _state.update { it.copy(loading = false, unpaired = true) }
@@ -184,5 +226,6 @@ class DeviceViewModel(
 
     companion object {
         val KID_IDLE = 2.minutes
+        val HEARTBEAT = 30.seconds
     }
 }
