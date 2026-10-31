@@ -31,6 +31,26 @@ const router = createRouter({
       children: [
         { path: '', name: 'home', component: HomeView },
         {
+          path: 'chores',
+          name: 'chores',
+          component: () => import('@/views/chores/ChoresView.vue'),
+        },
+        {
+          path: 'chores/new',
+          name: 'chore-new',
+          component: () => import('@/views/chores/ChoreEditView.vue'),
+        },
+        {
+          path: 'chores/catalog',
+          name: 'chore-catalog',
+          component: () => import('@/views/chores/CatalogView.vue'),
+        },
+        {
+          path: 'chores/:id(\\d+)',
+          name: 'chore-edit',
+          component: () => import('@/views/chores/ChoreEditView.vue'),
+        },
+        {
           path: 'kids',
           name: 'kids',
           component: () => import('@/views/kids/KidsView.vue'),
