@@ -144,8 +144,9 @@ run = "pnpm test"
 
 [tasks."test:android"]
 dir = "android"
-# Flavors (play/foss) mean there is no plain testDebugUnitTest task.
-run = "./gradlew testFossDebugUnitTest testPlayDebugUnitTest"
+# Flavors (play/foss) mean there is no plain testDebugUnitTest task. :core holds the
+# platform-independent logic and runs on any JVM.
+run = "./gradlew :core:test testFossDebugUnitTest testPlayDebugUnitTest"
 
 [tasks.test]
 description = "Run server and web tests"

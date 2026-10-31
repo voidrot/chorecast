@@ -1,3 +1,27 @@
 <resources>
     <string name="app_name">Chorecast</string>
+
+    <string name="action_retry">Try again</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_change_server">Change server</string>
+
+    <string name="startup_checking">Checking your Chorecast server…</string>
+
+    <string name="connect_title">Connect to your Chorecast server</string>
+    <string name="connect_explainer">Enter the address of your household\'s Chorecast server. Use http:// for servers without HTTPS.</string>
+    <string name="connect_url_label">Server address</string>
+    <string name="connect_url_placeholder">chores.example.com</string>
+    <string name="connect_checking">Checking…</string>
+    <string name="connect_cleartext_warning">This server doesn\'t use HTTPS. Only use it on a network you trust: sign-in tokens travel unencrypted.</string>
+    <string name="connect_error_empty">Enter your server\'s address.</string>
+    <string name="connect_error_scheme">Use an http:// or https:// address.</string>
+    <string name="connect_error_invalid">That doesn\'t look like a server address.</string>
+
+    <string name="server_unreachable">Couldn\'t reach %1$s (%2$s). Check the address and that the server is running.</string>
+    <string name="server_not_chorecast">%1$s answered, but it isn\'t a Chorecast server.</string>
+    <string name="server_app_too_old">Your server (version %1$s) is newer than this app supports. Update the Chorecast app.</string>
+    <string name="server_too_old">Your server (version %1$s) is older than this app supports. Ask whoever runs it to update Chorecast.</string>
+
+    <string name="home_connected">Connected to %1$s (server %2$s).</string>
+    <string name="home_pairing_next">Device pairing is coming next.</string>
 </resources>

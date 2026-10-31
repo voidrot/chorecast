@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "chorecast"
-include(":app")
+include(":app", ":core", ":api-client")
