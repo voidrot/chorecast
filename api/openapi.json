@@ -21,15 +21,6 @@
       "HealthOutputBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "/api/v1/schemas/HealthOutputBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "status": {
             "enum": [
               "ok",
@@ -46,15 +37,6 @@
       "MeOutputBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "/api/v1/schemas/MeOutputBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "kind": {
             "description": "What kind of caller this is",
             "enum": [
@@ -93,15 +75,6 @@
       "Problem": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "/api/v1/schemas/Problem.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "code": {
             "description": "Stable machine-readable error code. Clients should branch on this, not on detail.",
             "examples": [
@@ -161,15 +134,6 @@
       "VersionOutputBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "/api/v1/schemas/VersionOutputBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "apiVersion": {
             "examples": [
               1

@@ -36,6 +36,8 @@ func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.AP
 		"bearer":  {Type: "http", Scheme: "bearer", Description: "Opaque app/device token"},
 		"session": {Type: "apiKey", In: "cookie", Name: "chorecast_session"},
 	}
+	// No "$schema" links in responses: they bloat every body and generated clients can't decode them.
+	hcfg.CreateHooks = nil
 	hcfg.OnAddOperation = append(hcfg.OnAddOperation, idempotency.AddHeaderParam)
 
 	var hapi huma.API

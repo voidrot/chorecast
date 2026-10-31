@@ -68,22 +68,10 @@ export interface components {
             value?: unknown;
         };
         HealthOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/HealthOutputBody.json
-             */
-            readonly $schema?: string;
             /** @enum {string} */
             status: "ok" | "degraded";
         };
         MeOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/MeOutputBody.json
-             */
-            readonly $schema?: string;
             /**
              * @description What kind of caller this is
              * @enum {string}
@@ -100,12 +88,6 @@ export interface components {
             userId?: number;
         };
         Problem: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/Problem.json
-             */
-            readonly $schema?: string;
             /**
              * @description Stable machine-readable error code. Clients should branch on this, not on detail.
              * @example kid_not_found
@@ -142,12 +124,6 @@ export interface components {
             type: string;
         };
         VersionOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/VersionOutputBody.json
-             */
-            readonly $schema?: string;
             /**
              * Format: int64
              * @example 1
