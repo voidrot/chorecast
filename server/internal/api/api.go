@@ -17,6 +17,8 @@ import (
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/events"
+	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/kids"
 	"github.com/voidrot/chorecast/server/internal/parents"
@@ -34,6 +36,7 @@ type Deps struct {
 	DB     *db.DB
 	Clock  clock.Clock
 	Setup  *setup.Service
+	Bus    *events.Bus // nil in tests that don't need domain events
 }
 
 // New registers all API operations on r under Prefix and returns the Huma API.
@@ -75,7 +78,7 @@ func New(r chi.Router, deps Deps) huma.API {
 
 	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock),
 		sso: sso.New(deps.Config, deps.DB, deps.Clock), parents: parents.New(deps.DB, deps.Clock),
-		kids: kids.NewService(deps.DB, deps.Clock)}
+		kids: kids.NewService(deps.DB, deps.Clock), household: household.New(deps.DB, deps.Bus)}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
@@ -97,6 +100,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerSSO(hapi, h)
 	registerParents(hapi, h)
 	registerKids(hapi, h)
+	registerHousehold(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -114,13 +118,14 @@ func New(r chi.Router, deps Deps) huma.API {
 }
 
 type handlers struct {
-	cfg     config.Config
-	db      *db.DB
-	setup   *setup.Service
-	account *account.Service
-	sso     *sso.Service
-	parents *parents.Service
-	kids    *kids.Service
+	cfg       config.Config
+	db        *db.DB
+	setup     *setup.Service
+	account   *account.Service
+	sso       *sso.Service
+	parents   *parents.Service
+	kids      *kids.Service
+	household *household.Service
 }
 
 type HealthOutput struct {

@@ -7,6 +7,11 @@ CREATE TABLE household (
     timezone   TEXT    NOT NULL,                  -- IANA name
     day_end    TEXT    NOT NULL DEFAULT '00:00',  -- HH:MM; 00:00 = midnight at the end of the day
     week_start INTEGER NOT NULL DEFAULT 1 CHECK (week_start BETWEEN 0 AND 6), -- 0 = Sunday
+    allow_negative_balance INTEGER NOT NULL DEFAULT 0 CHECK (allow_negative_balance IN (0, 1)),
+    sibling_visibility     TEXT    NOT NULL DEFAULT 'private' CHECK (sibling_visibility IN ('private', 'leaderboard')),
+    media_retention_days   INTEGER NOT NULL DEFAULT 30 CHECK (media_retention_days BETWEEN 1 AND 3650),
+    auto_approve_hours     INTEGER CHECK (auto_approve_hours BETWEEN 1 AND 720), -- NULL = never
+    offline_grace_minutes  INTEGER NOT NULL DEFAULT 120 CHECK (offline_grace_minutes BETWEEN 0 AND 1440),
     created_at TEXT    NOT NULL
 );
 

@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/events"
+	"github.com/voidrot/chorecast/server/internal/jobs"
 	"github.com/voidrot/chorecast/server/internal/setup"
 )
 
@@ -45,7 +48,8 @@ func newSetupServerWith(t *testing.T, cfg config.Config) *setupServer {
 		t.Fatal(err)
 	}
 	r := chi.NewRouter()
-	api.New(r, api.Deps{Config: cfg, DB: store, Clock: clk, Setup: svc})
+	bus := events.NewBus(store, jobs.NewRunner(store.Queries, clk, slog.New(slog.DiscardHandler)), clk, slog.New(slog.DiscardHandler))
+	api.New(r, api.Deps{Config: cfg, DB: store, Clock: clk, Setup: svc, Bus: bus})
 	return &setupServer{t: t, store: store, svc: svc, clk: clk, r: r}
 }
 
