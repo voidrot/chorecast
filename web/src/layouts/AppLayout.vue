@@ -25,6 +25,9 @@ async function signOut() {
           <RouterLink :to="{ name: 'home' }" exact-active-class="font-semibold">{{
             t('nav.home')
           }}</RouterLink>
+          <RouterLink :to="{ name: 'parents' }" exact-active-class="font-semibold">{{
+            t('nav.parents')
+          }}</RouterLink>
         </nav>
       </div>
       <div class="flex items-center gap-3">

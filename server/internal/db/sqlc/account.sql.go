@@ -68,7 +68,7 @@ func (q *Queries) EnableTOTP(ctx context.Context, arg EnableTOTPParams) error {
 }
 
 const getParentByOIDCSubject = `-- name: GetParentByOIDCSubject :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at FROM users WHERE oidc_subject = ? AND role = 'parent'
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE oidc_subject = ? AND role = 'parent'
 `
 
 func (q *Queries) GetParentByOIDCSubject(ctx context.Context, oidcSubject sql.NullString) (User, error) {
@@ -91,13 +91,14 @@ func (q *Queries) GetParentByOIDCSubject(ctx context.Context, oidcSubject sql.Nu
 		&i.TotpSecret,
 		&i.TotpEnabled,
 		&i.TotpLastStep,
+		&i.RemovedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getParentByUsername = `-- name: GetParentByUsername :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at FROM users WHERE username = ? AND role = 'parent'
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE username = ? AND role = 'parent'
 `
 
 func (q *Queries) GetParentByUsername(ctx context.Context, username sql.NullString) (User, error) {
@@ -120,6 +121,7 @@ func (q *Queries) GetParentByUsername(ctx context.Context, username sql.NullStri
 		&i.TotpSecret,
 		&i.TotpEnabled,
 		&i.TotpLastStep,
+		&i.RemovedAt,
 		&i.CreatedAt,
 	)
 	return i, err

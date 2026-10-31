@@ -11,6 +11,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/events"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/jobs"
+	"github.com/voidrot/chorecast/server/internal/parents"
 )
 
 const (
@@ -29,6 +30,7 @@ func newBackground(store *db.DB, clk clock.Clock, log *slog.Logger) (*jobs.Runne
 	bus := events.NewBus(store, runner, clk, log)
 
 	tokens := auth.NewStore(store.Queries, clk)
+	household := parents.New(store, clk)
 	runner.Register(kindMaintenance, func(ctx context.Context, _ jobs.Job) error {
 		now := clk.Now()
 		purgedJobs, err := runner.PurgeFinished(ctx, now.Add(-keepDoneJobs), now.Add(-keepFailedJobs))
@@ -47,8 +49,12 @@ func newBackground(store *db.DB, clk clock.Clock, log *slog.Logger) (*jobs.Runne
 		if err != nil {
 			return err
 		}
+		purgedInvites, err := household.PurgeExpiredInvites(ctx)
+		if err != nil {
+			return err
+		}
 		log.Info("maintenance", "purged_jobs", purgedJobs, "purged_tokens", purgedTokens,
-			"purged_idempotency_keys", purgedKeys, "purged_events", purgedEvents)
+			"purged_idempotency_keys", purgedKeys, "purged_events", purgedEvents, "purged_invites", purgedInvites)
 		return nil
 	}, jobs.KindOptions{MaxAttempts: 3})
 	sched.Add(jobs.Every("maintenance", kindMaintenance, 24*time.Hour))

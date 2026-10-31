@@ -198,7 +198,7 @@ func (h *handlers) revokeSession(ctx context.Context, in *RevokeSessionInput) (*
 
 type ChangePasswordInput struct {
 	Body struct {
-		Current string `json:"currentPassword" minLength:"1" maxLength:"128"`
+		Current string `json:"currentPassword,omitempty" maxLength:"128" doc:"Required unless you have no password yet (joined with single sign-on)"`
 		New     string `json:"newPassword" minLength:"8" maxLength:"128"`
 	}
 }

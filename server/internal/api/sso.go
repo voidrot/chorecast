@@ -87,18 +87,24 @@ func stateCookie(ctx context.Context, value string, maxAge time.Duration) string
 type StartOIDCInput struct {
 	// Validated in the handler, not with an enum: openapi-generator's Kotlin client mishandles
 	// enum query parameters, and this browser-navigation endpoint isn't called through clients.
-	Client    string `query:"client" default:"web" doc:"web or app"`
+	Client    string `query:"client" default:"web" doc:"web, app or invite"`
 	Redirect  string `query:"redirect" doc:"web: path to return to after signing in"`
 	Challenge string `query:"challenge" doc:"app: base64url(SHA-256(verifier)), 43 characters"`
 	Label     string `query:"label" maxLength:"100" doc:"app: device name for the session list"`
+	Invite    string `query:"invite" doc:"invite: the invite token"`
+	Name      string `query:"displayName" maxLength:"40" doc:"invite: the new parent's name"`
+	Username  string `query:"username" maxLength:"32" doc:"invite: optional username for password sign-in later"`
 }
 
 func (h *handlers) startOIDC(ctx context.Context, in *StartOIDCInput) (*RedirectOutput, error) {
-	if in.Client != string(sso.ClientWeb) && in.Client != string(sso.ClientApp) {
-		return nil, apierr.New(http.StatusUnprocessableEntity, apierr.CodeValidationFailed, "client must be web or app")
+	switch sso.Client(in.Client) {
+	case sso.ClientWeb, sso.ClientApp, sso.ClientInvite:
+	default:
+		return nil, apierr.New(http.StatusUnprocessableEntity, apierr.CodeValidationFailed, "client must be web, app or invite")
 	}
 	authURL, state, err := h.sso.Start(ctx, sso.StartInput{
 		Client: sso.Client(in.Client), Redirect: in.Redirect, AppChallenge: in.Challenge, AppLabel: in.Label,
+		Invite: in.Invite, DisplayName: in.Name, Username: in.Username,
 	})
 	if err != nil {
 		return nil, err

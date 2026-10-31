@@ -18,6 +18,7 @@ const (
 	ScopePointsRead      Scope = "points:read"
 	ScopePointsManage    Scope = "points:manage"
 	ScopeAccountManage   Scope = "account:manage" // a parent's own password, 2FA, PIN and sessions
+	ScopeParentsManage   Scope = "parents:manage" // owner only: invite, promote/demote, remove, reset other parents
 )
 
 // Kind is what kind of caller a principal is.
@@ -37,7 +38,7 @@ var (
 		ScopeChoresRead, ScopeChoresManage, ScopeChoresComplete, ScopeChoresReview,
 		ScopePointsRead, ScopePointsManage, ScopeAccountManage,
 	}
-	ownerScopes        = append(append([]Scope{}, parentScopes...), ScopeServerManage)
+	ownerScopes        = append(append([]Scope{}, parentScopes...), ScopeServerManage, ScopeParentsManage)
 	kidScopes          = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopeChoresComplete, ScopePointsRead}
 	sharedDeviceScopes = []Scope{ScopeHouseholdRead, ScopeProfilesSelect}
 	displayScopes      = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopePointsRead}
