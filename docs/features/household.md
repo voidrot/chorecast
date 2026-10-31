@@ -52,6 +52,14 @@ kid avatars (#16), the pairing QR (#18), and starter chores (#20; behavior prese
 
 Server-level settings that also exist as env vars: **env wins** and the UI shows them read-only ("set by environment").
 
+Built (#17, `internal/household`): `GET/PUT /household` (read: any household principal; write: parents) with
+name, timezone, day end, week start, `allowNegativeBalance` (default off), `siblingVisibility`
+(`private`|`leaderboard`, default private), `mediaRetentionDays` (default 30), `autoApproveHours` (absent = never,
+the default) and `offlineGraceMinutes` (default 120). The day end can't move earlier than a kid's override.
+Changing the calendar emits `household.calendar_changed` in the same transaction; the horizon generator (#23)
+subscribes to it. `GET /server/settings` (owners) lists env-backed settings with `source: environment|default`;
+secrets are never returned. Swaps, nomination limits and streak milestones join the settings with their features.
+
 ## Parents
 
 - **Invites** (`internal/parents`): `invites(token_hash, role, created_by, expires_at, used_at, used_by)`. Shown

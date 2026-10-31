@@ -100,7 +100,7 @@ func serve() error {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
-	api.New(r, api.Deps{Config: cfg, DB: store, Clock: clk, Setup: setupSvc})
+	api.New(r, api.Deps{Config: cfg, DB: store, Clock: clk, Setup: setupSvc, Bus: bus})
 	r.Handle("/*", webui.Handler())
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: r, ReadHeaderTimeout: 10 * time.Second}

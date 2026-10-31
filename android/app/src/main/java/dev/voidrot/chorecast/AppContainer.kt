@@ -1,6 +1,7 @@
 package dev.voidrot.chorecast
 
 import android.content.Context
+import dev.voidrot.chorecast.core.HouseholdInfo
 import dev.voidrot.chorecast.core.ParentAuth
 import dev.voidrot.chorecast.core.ServerChecker
 import dev.voidrot.chorecast.core.TokenStore
@@ -21,5 +22,6 @@ class AppContainer(context: Context) {
     private val engine = OkHttp.create()
     val serverChecker = ServerChecker(engine)
     val parentAuth = ParentAuth(engine)
+    val householdInfo = HouseholdInfo(engine)
     val sso = SsoBridge()
 }

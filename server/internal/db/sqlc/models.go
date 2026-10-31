@@ -17,12 +17,17 @@ type Event struct {
 }
 
 type Household struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Timezone  string `json:"timezone"`
-	DayEnd    string `json:"day_end"`
-	WeekStart int64  `json:"week_start"`
-	CreatedAt string `json:"created_at"`
+	ID                   int64         `json:"id"`
+	Name                 string        `json:"name"`
+	Timezone             string        `json:"timezone"`
+	DayEnd               string        `json:"day_end"`
+	WeekStart            int64         `json:"week_start"`
+	AllowNegativeBalance int64         `json:"allow_negative_balance"`
+	SiblingVisibility    string        `json:"sibling_visibility"`
+	MediaRetentionDays   int64         `json:"media_retention_days"`
+	AutoApproveHours     sql.NullInt64 `json:"auto_approve_hours"`
+	OfflineGraceMinutes  int64         `json:"offline_grace_minutes"`
+	CreatedAt            string        `json:"created_at"`
 }
 
 type IdempotencyKey struct {

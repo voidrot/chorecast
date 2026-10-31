@@ -18,6 +18,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/household"
 )
 
 var (
@@ -207,15 +208,7 @@ func validWindow(start, end string, wrap bool) bool {
 }
 
 func (s *Service) household(ctx context.Context) (caltime.Household, error) {
-	hh, err := s.db.GetHousehold(ctx)
-	if err != nil {
-		return caltime.Household{}, fmt.Errorf("load household: %w", err)
-	}
-	end, err := caltime.ParseTimeOfDay(hh.DayEnd)
-	if err != nil {
-		return caltime.Household{}, err
-	}
-	return caltime.NewHousehold(hh.Timezone, end, time.Weekday(hh.WeekStart))
+	return household.Calendar(ctx, s.db.Queries)
 }
 
 var errSlugTaken = apierr.New(http.StatusConflict, apierr.CodeConflict, "that short name is used by someone else")
