@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Card from 'primevue/card'
-import Message from 'primevue/message'
+import { NAlert, NCard } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '@/stores/session'
 
@@ -9,31 +8,17 @@ const session = useSessionStore()
 </script>
 
 <template>
-  <main class="center">
-    <Card class="card">
-      <template #title>{{ t('login.title') }}</template>
-      <template #content>
-        <Message v-if="session.status === 'unknown' && session.error" severity="error">
+  <main class="grid min-h-screen place-items-center p-4">
+    <NCard :title="t('login.title')" class="w-full max-w-md">
+      <div class="flex flex-col gap-4">
+        <NAlert v-if="session.status === 'unknown' && session.error" type="error">
           {{ t('login.unreachable', { detail: session.error.detail }) }}
-        </Message>
-        <Message v-else-if="session.status === 'forbidden'" severity="warn">{{
-          t('login.notParent')
-        }}</Message>
+        </NAlert>
+        <NAlert v-else-if="session.status === 'forbidden'" type="warning">
+          {{ t('login.notParent') }}
+        </NAlert>
         <p>{{ t('login.comingSoon') }}</p>
-      </template>
-    </Card>
+      </div>
+    </NCard>
   </main>
 </template>
-
-<style scoped>
-.center {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  padding: 1rem;
-  font-family: system-ui, sans-serif;
-}
-.card {
-  width: min(28rem, 100%);
-}
-</style>

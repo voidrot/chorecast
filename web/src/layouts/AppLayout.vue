@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Tag from 'primevue/tag'
-import Toolbar from 'primevue/toolbar'
+import { NTag } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, RouterView } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
@@ -10,52 +9,24 @@ const session = useSessionStore()
 </script>
 
 <template>
-  <div class="layout">
-    <Toolbar class="toolbar">
-      <template #start>
-        <RouterLink to="/" class="brand">{{ t('app.name') }}</RouterLink>
-        <nav class="nav">
-          <RouterLink :to="{ name: 'home' }">{{ t('nav.home') }}</RouterLink>
+  <div class="min-h-screen">
+    <header
+      class="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900"
+    >
+      <div class="flex items-center gap-6">
+        <RouterLink to="/" class="font-bold">{{ t('app.name') }}</RouterLink>
+        <nav class="flex gap-4">
+          <RouterLink :to="{ name: 'home' }" exact-active-class="font-semibold">{{
+            t('nav.home')
+          }}</RouterLink>
         </nav>
-      </template>
-      <template #end>
-        <Tag
-          :value="session.isOwner ? t('session.owner') : t('session.parent')"
-          severity="secondary"
-        />
-      </template>
-    </Toolbar>
-    <main class="content">
+      </div>
+      <NTag size="small" :bordered="false">
+        {{ session.isOwner ? t('session.owner') : t('session.parent') }}
+      </NTag>
+    </header>
+    <main class="mx-auto max-w-5xl px-4 py-6">
       <RouterView />
     </main>
   </div>
 </template>
-
-<style scoped>
-.layout {
-  min-height: 100vh;
-  font-family: system-ui, sans-serif;
-}
-.toolbar {
-  border-radius: 0;
-  border-width: 0 0 1px;
-}
-.brand {
-  font-weight: 700;
-  margin-right: 1.5rem;
-  color: inherit;
-  text-decoration: none;
-}
-.nav a {
-  margin-right: 1rem;
-  color: inherit;
-}
-.nav a.router-link-exact-active {
-  font-weight: 600;
-}
-.content {
-  max-width: 64rem;
-  margin: 0 auto;
-  padding: 1.5rem 1rem;
-}
-</style>

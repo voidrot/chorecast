@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Naive UI injects its own (unlayered) styles at runtime, so they win over Tailwind's layered preflight. */
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+  body {
+    @apply min-h-screen bg-gray-50 text-gray-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+    font-family: system-ui, sans-serif;
+  }
+}
