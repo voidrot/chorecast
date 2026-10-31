@@ -1,6 +1,7 @@
 package caltime
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -238,5 +239,24 @@ func TestEffectiveDayEnd(t *testing.T) {
 func TestNewHouseholdRejectsUnknownZone(t *testing.T) {
 	if _, err := NewHousehold("Mars/Olympus_Mons", Midnight, time.Monday); err == nil {
 		t.Error("expected error for unknown timezone")
+	}
+}
+
+func TestDateJSONRoundTrip(t *testing.T) {
+	type payload struct {
+		D Date `json:"d"`
+	}
+	for _, in := range []Date{{}, {Year: 2026, Month: time.March, Day: 8}} {
+		b, err := json.Marshal(payload{D: in})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out payload
+		if err := json.Unmarshal(b, &out); err != nil || out.D != in {
+			t.Errorf("round trip of %#v via %s = %#v, %v", in, b, out.D, err)
+		}
+	}
+	if !(Date{}).IsZero() || (Date{Year: 2026, Month: 1, Day: 1}).IsZero() {
+		t.Error("IsZero")
 	}
 }

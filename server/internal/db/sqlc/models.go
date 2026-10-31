@@ -8,6 +8,27 @@ import (
 	"database/sql"
 )
 
+type Job struct {
+	ID             int64          `json:"id"`
+	Queue          string         `json:"queue"`
+	Kind           string         `json:"kind"`
+	Payload        string         `json:"payload"`
+	IdempotencyKey sql.NullString `json:"idempotency_key"`
+	Status         string         `json:"status"`
+	RunAt          string         `json:"run_at"`
+	Attempts       int64          `json:"attempts"`
+	MaxAttempts    int64          `json:"max_attempts"`
+	LastError      sql.NullString `json:"last_error"`
+	LockedAt       sql.NullString `json:"locked_at"`
+	CreatedAt      string         `json:"created_at"`
+	FinishedAt     sql.NullString `json:"finished_at"`
+}
+
+type ScheduleCursor struct {
+	Name        string `json:"name"`
+	LastFiredAt string `json:"last_fired_at"`
+}
+
 type Token struct {
 	ID         int64          `json:"id"`
 	TokenHash  []byte         `json:"token_hash"`
