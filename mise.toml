@@ -93,8 +93,11 @@ env = { CGO_ENABLED = "0" }
 run = "go build -trimpath -ldflags='-s -w' -o ../dist/chorecast ./cmd/chorecast"
 
 [tasks."build:image"]
-description = "Build the multi-arch container image"
-run = "docker buildx build --platform linux/amd64,linux/arm64 -f deploy/Dockerfile -t chorecast:dev ."
+description = "Build the multi-arch container images (default and -media)"
+run = [
+  "docker buildx build --platform linux/amd64,linux/arm64 -f deploy/Dockerfile --target runtime -t chorecast:dev .",
+  "docker buildx build --platform linux/amd64,linux/arm64 -f deploy/Dockerfile --target media -t chorecast:dev-media .",
+]
 
 [tasks."android:sdk"]
 description = "Install Android SDK packages (prompts to accept SDK licenses)"
@@ -107,6 +110,11 @@ run = [
 description = "Build the Android debug APK"
 dir = "android"
 run = "./gradlew assembleDebug"
+
+[tasks."build:android:release"]
+description = "Build release APKs (signed when CHORECAST_KEYSTORE_PATH etc. are set; see docs/releasing.md)"
+dir = "android"
+run = "./gradlew assembleRelease"
 
 [tasks.build]
 description = "Build server (incl. web)"

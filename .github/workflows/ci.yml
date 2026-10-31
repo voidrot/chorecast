@@ -46,6 +46,8 @@ jobs:
       - run: mise run lint:android
       - run: mise run test:android
       - run: mise run build:android
+      - name: Release build (unsigned; catches R8/minification problems)
+        run: mise run build:android:release
       - name: Upload debug APKs
         uses: actions/upload-artifact@v7
         with:
@@ -55,6 +57,9 @@ jobs:
 
   image:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [runtime, media]
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -63,7 +68,8 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile
+          target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}

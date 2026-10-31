@@ -18,6 +18,7 @@ jobs:
       server_tag: ${{ steps.rp.outputs['server--tag_name'] }}
       android: ${{ steps.rp.outputs['android--release_created'] }}
       android_tag: ${{ steps.rp.outputs['android--tag_name'] }}
+      android_version: ${{ steps.rp.outputs['android--version'] }}
     steps:
       - id: rp
         uses: googleapis/release-please-action@v5
@@ -29,6 +30,13 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.server == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: runtime
+            suffix: ""
+          - target: media
+            suffix: "-media"
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -42,6 +50,9 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
+          flavor: |
+            latest=false
+            suffix=${{ matrix.suffix }},onlatest=true
           tags: |
             type=semver,pattern={{version}},value=${{ needs.release-please.outputs.server_version }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.server_version }}
@@ -50,6 +61,7 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile
+          target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -70,9 +82,35 @@ jobs:
         run: |
           yes | sdkmanager --licenses > /dev/null
           sdkmanager 'platform-tools' 'platforms;android-37.2' 'build-tools;37.0.0'
-      # TODO: configure release signing (keystore from secrets) before the first public release.
-      - working-directory: android
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set; see docs/releasing.md"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "CHORECAST_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Build signed release
+        working-directory: android
+        env:
+          CHORECAST_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CHORECAST_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CHORECAST_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease bundlePlayRelease
-      - env:
+      - name: Verify signatures and name APKs
+        env:
+          VERSION: ${{ needs.release-please.outputs.android_version }}
+        run: |
+          apksigner="$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          mkdir -p dist
+          for apk in android/app/build/outputs/apk/*/release/*.apk; do
+            "$apksigner" verify --print-certs "$apk"
+            flavor=$(basename "$(dirname "$(dirname "$apk")")")
+            cp "$apk" "dist/chorecast-${flavor}-${VERSION}.apk"
+          done
+      - name: Upload to the release
+        env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload ${{ needs.release-please.outputs.android_tag }} android/app/build/outputs/apk/*/release/*.apk
+        run: gh release upload ${{ needs.release-please.outputs.android_tag }} dist/*.apk

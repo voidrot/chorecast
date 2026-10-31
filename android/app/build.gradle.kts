@@ -28,10 +28,25 @@ android {
         create("foss") { dimension = "distribution" }
     }
 
+    // Release signing comes from the environment (CI secrets; see docs/releasing.md). Without it,
+    // release builds are produced unsigned, which is what CI's release check builds.
+    val keystorePath = providers.environmentVariable("CHORECAST_KEYSTORE_PATH").orNull
+    if (keystorePath != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = providers.environmentVariable("CHORECAST_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("CHORECAST_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("CHORECAST_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
