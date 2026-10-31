@@ -55,7 +55,10 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
             val route = entry.toRoute<LoginRoute>()
             LoginScreen(
                 viewModel = viewModel {
-                    LoginViewModel(currentUrl(), container.parentAuth, container.tokenStore, deviceLabel)
+                    LoginViewModel(
+                        currentUrl(), container.parentAuth, container.tokenStore, deviceLabel,
+                        container.serverChecker, container.sso,
+                    )
                 },
                 serverUrl = route.serverUrl,
                 onSignedIn = { nav.reset(HomeRoute(route.serverUrl, it.recoveryCodesLeft)) },

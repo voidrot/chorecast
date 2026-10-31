@@ -67,6 +67,35 @@ func (q *Queries) EnableTOTP(ctx context.Context, arg EnableTOTPParams) error {
 	return err
 }
 
+const getParentByOIDCSubject = `-- name: GetParentByOIDCSubject :one
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at FROM users WHERE oidc_subject = ? AND role = 'parent'
+`
+
+func (q *Queries) GetParentByOIDCSubject(ctx context.Context, oidcSubject sql.NullString) (User, error) {
+	row := q.db.QueryRowContext(ctx, getParentByOIDCSubject, oidcSubject)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.Role,
+		&i.IsOwner,
+		&i.Slug,
+		&i.Username,
+		&i.PasswordHash,
+		&i.PinHash,
+		&i.PinRequired,
+		&i.Color,
+		&i.BirthDate,
+		&i.OidcSubject,
+		&i.ParentPinHash,
+		&i.TotpSecret,
+		&i.TotpEnabled,
+		&i.TotpLastStep,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getParentByUsername = `-- name: GetParentByUsername :one
 SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at FROM users WHERE username = ? AND role = 'parent'
 `
@@ -180,6 +209,20 @@ func (q *Queries) ListSessionsForUser(ctx context.Context, arg ListSessionsForUs
 		return nil, err
 	}
 	return items, nil
+}
+
+const setOIDCSubject = `-- name: SetOIDCSubject :exec
+UPDATE users SET oidc_subject = ? WHERE id = ?
+`
+
+type SetOIDCSubjectParams struct {
+	OidcSubject sql.NullString `json:"oidc_subject"`
+	ID          int64          `json:"id"`
+}
+
+func (q *Queries) SetOIDCSubject(ctx context.Context, arg SetOIDCSubjectParams) error {
+	_, err := q.db.ExecContext(ctx, setOIDCSubject, arg.OidcSubject, arg.ID)
+	return err
 }
 
 const setParentPINHash = `-- name: SetParentPINHash :exec

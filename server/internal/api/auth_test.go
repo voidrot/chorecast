@@ -13,6 +13,8 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"github.com/voidrot/chorecast/server/internal/auth"
+	"github.com/voidrot/chorecast/server/internal/config"
+	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 )
 
 const ownerPassword = "correct horse battery"
@@ -20,7 +22,12 @@ const ownerPassword = "correct horse battery"
 // newAuthServer is a set-up server whose owner is "mom" (password ownerPassword).
 func newAuthServer(t *testing.T) *setupServer {
 	t.Helper()
-	s := newSetupServer(t)
+	return newAuthServerWith(t, config.Config{})
+}
+
+func newAuthServerWith(t *testing.T, cfg config.Config) *setupServer {
+	t.Helper()
+	s := newSetupServerWith(t, cfg)
 	token, err := s.svc.Begin(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -283,3 +290,7 @@ func TestAccountEndpointsAreParentOnly(t *testing.T) {
 }
 
 func sqlNull(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
+
+func createParent(name, username, hash string) sqlc.CreateUserParams {
+	return sqlc.CreateUserParams{DisplayName: name, Role: "parent", Username: sqlNull(username), PasswordHash: sqlNull(hash)}
+}

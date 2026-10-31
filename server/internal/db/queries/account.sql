@@ -41,3 +41,9 @@ SELECT id, kind FROM tokens WHERE id = ? AND user_id = ?;
 
 -- name: DeleteOtherSessionsForUser :exec
 DELETE FROM tokens WHERE user_id = ? AND kind IN ('web_session', 'app') AND id != ?;
+
+-- name: GetParentByOIDCSubject :one
+SELECT * FROM users WHERE oidc_subject = ? AND role = 'parent';
+
+-- name: SetOIDCSubject :exec
+UPDATE users SET oidc_subject = ? WHERE id = ?;
