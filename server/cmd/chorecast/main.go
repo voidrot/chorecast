@@ -32,6 +32,7 @@ const usage = `usage: chorecast <command>
 
 commands:
   serve     run the server (default)
+  admin     account recovery: reset-password, disable-2fa (run "chorecast admin" for help)
   openapi   print the OpenAPI spec as JSON (-3.0 for an OpenAPI 3.0 copy, for client generators)
   version   print the version`
 
@@ -44,6 +45,8 @@ func main() {
 	switch cmd {
 	case "serve":
 		err = serve()
+	case "admin":
+		err = admin(context.Background(), os.Args[2:], os.Stdout)
 	case "openapi":
 		err = printOpenAPI(len(os.Args) > 2 && os.Args[2] == "-3.0")
 	case "version":

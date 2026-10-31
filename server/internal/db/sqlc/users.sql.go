@@ -24,7 +24,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at
+RETURNING id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at
 `
 
 type CreateUserParams struct {
@@ -71,13 +71,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.TotpSecret,
 		&i.TotpEnabled,
 		&i.TotpLastStep,
+		&i.RemovedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getKidByID = `-- name: GetKidByID :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at FROM users WHERE id = ? AND role = 'child'
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE id = ? AND role = 'child'
 `
 
 func (q *Queries) GetKidByID(ctx context.Context, id int64) (User, error) {
@@ -100,13 +101,14 @@ func (q *Queries) GetKidByID(ctx context.Context, id int64) (User, error) {
 		&i.TotpSecret,
 		&i.TotpEnabled,
 		&i.TotpLastStep,
+		&i.RemovedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getKidBySlug = `-- name: GetKidBySlug :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at FROM users WHERE slug = ? AND role = 'child'
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE slug = ? AND role = 'child'
 `
 
 func (q *Queries) GetKidBySlug(ctx context.Context, slug sql.NullString) (User, error) {
@@ -129,13 +131,14 @@ func (q *Queries) GetKidBySlug(ctx context.Context, slug sql.NullString) (User, 
 		&i.TotpSecret,
 		&i.TotpEnabled,
 		&i.TotpLastStep,
+		&i.RemovedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at FROM users WHERE id = ?
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -158,13 +161,14 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.TotpSecret,
 		&i.TotpEnabled,
 		&i.TotpLastStep,
+		&i.RemovedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, created_at FROM users ORDER BY role, display_name
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users ORDER BY role, display_name
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -193,6 +197,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.TotpSecret,
 			&i.TotpEnabled,
 			&i.TotpLastStep,
+			&i.RemovedAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

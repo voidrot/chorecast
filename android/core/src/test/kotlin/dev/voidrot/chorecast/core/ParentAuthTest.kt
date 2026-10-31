@@ -72,7 +72,7 @@ class ParentAuthTest {
         val seen = mutableListOf<HttpRequestData>()
         val ok = MockEngine { req ->
             seen += req
-            respond("""{"kind":"parent","userId":7,"owner":true,"scopes":[],"totpEnabled":false,"pinSet":false,"oidcLinked":false,"displayName":"Mom"}""", HttpStatusCode.OK, json)
+            respond("""{"kind":"parent","userId":7,"owner":true,"scopes":[],"totpEnabled":false,"pinSet":false,"oidcLinked":false,"hasPassword":true,"displayName":"Mom"}""", HttpStatusCode.OK, json)
         }
         val res = ParentAuth(ok).check(url, "tok")
         assertTrue(res is SessionCheck.SignedIn && res.me.displayName == "Mom")

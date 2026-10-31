@@ -41,6 +41,10 @@ const (
 	CodeOIDCDisabled        = "oidc_disabled"          // SSO isn't configured (404)
 	CodeOIDCInvalidCode     = "oidc_invalid_code"      // app exchange: unknown, expired or mismatched code (400)
 	CodeOIDCNotLinked       = "oidc_not_linked"        // unlink when no SSO identity is linked (409)
+	CodeInvalidInvite       = "invalid_invite"         // unknown, used, revoked or expired invite (410)
+	CodeUsernameTaken       = "username_taken"         // (409)
+	CodeLastOwner           = "last_owner"             // the household must keep at least one owner (409)
+	CodeParentNotFound      = "parent_not_found"       // (404)
 	CodeInvalidCursor       = "invalid_cursor"
 	CodeKidNotFound         = "kid_not_found"
 	CodeInvalidIdempotency  = "invalid_idempotency_key"
