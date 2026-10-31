@@ -3,7 +3,7 @@
 Self hosted chore and behavior system.
 
 - **server/** — Go API server (chi + Huma, SQLite) that also serves the web admin
-- **web/** — Vue 3 + PrimeVue admin SPA, embedded into the server binary
+- **web/** — Vue 3 + Naive UI + Tailwind admin SPA, embedded into the server binary
 - **android/** — Kotlin + Jetpack Compose app for parents, kids and shared family tablets
 
 See [docs/architecture.md](docs/architecture.md) for the stack and auth decisions.

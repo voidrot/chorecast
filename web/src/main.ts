@@ -1,8 +1,6 @@
-import Aura from '@primeuix/themes/aura'
 import { createPinia } from 'pinia'
-import PrimeVue from 'primevue/config'
 import { createApp } from 'vue'
-import 'primeicons/primeicons.css'
+import './style.css'
 
 import App from './App.vue'
 import { apiEvents } from './api/client'
@@ -10,11 +8,7 @@ import { i18n } from './i18n'
 import router from './router'
 import { useSessionStore } from './stores/session'
 
-const app = createApp(App)
-  .use(createPinia())
-  .use(router)
-  .use(i18n)
-  .use(PrimeVue, { theme: { preset: Aura } })
+const app = createApp(App).use(createPinia()).use(router).use(i18n)
 
 const session = useSessionStore()
 // Only a session that was valid and expired mid-use is handled here; on the first load the router

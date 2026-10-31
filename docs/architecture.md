@@ -23,7 +23,7 @@ Status: accepted (initial planning session, 2026-10-30). Revisit any item by add
 | Database | **SQLite** (`modernc.org/sqlite`, pure Go, WAL) | Zero extra containers, trivial backups (copy one file), fine at household scale. |
 | DB access | **sqlc** (type-safe generated Go from SQL) | Write real SQL, get typed functions; no ORM magic. |
 | Migrations | **goose**, embedded and run at startup | Self-hosters never run a migration step by hand. `mise run db:new <name>` creates one. |
-| Web admin | **Vue 3 + Vite + TypeScript SPA**, **PrimeVue** (Aura theme), Pinia, Vue Router | Built into `server/internal/webui/dist` and embedded with `go:embed` → one artifact. |
+| Web admin | **Vue 3 + Vite + TypeScript SPA**, **Naive UI** + **Tailwind CSS 4**, Pinia, Vue Router | Built into `server/internal/webui/dist` and embedded with `go:embed` → one artifact. |
 | Web API client | **openapi-typescript + openapi-fetch** | Typed `api.GET('/health')` from the generated spec, tiny runtime. |
 | Web lint/format | **Biome** (with experimental full Vue support) | One fast tool replaces ESLint + Prettier. |
 | TypeScript | **TS 7** (native compiler) as `tsc`; `vue-tsc` checks `.vue` files | Volar/vue-tsc and openapi-typescript still need the TS 6 JS API, so `web/.pnpmfile.cjs` gives just those packages a private TS 6. Remove the shim once they support TS 7. |
@@ -189,7 +189,11 @@ Three Gradle modules (`android/`):
 
 ## Web admin structure
 
-Vue 3 + PrimeVue SPA in `web/`, embedded in the server binary:
+Vue 3 SPA in `web/`, embedded in the server binary. Components come from Naive UI (MIT; light/dark theme follows
+the OS via `NConfigProvider` in `App.vue`, brand colors in `src/theme.ts`); layout and spacing use Tailwind 4
+utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they win over Tailwind's layered preflight.
+(PrimeVue was dropped: v5 moved to a commercial license that needs a key.)
+
 
 - `src/api/client.ts`: typed `openapi-fetch` client (types generated from `api/openapi.json`). A response
   middleware reports a 401 on an established session (`apiEvents.onUnauthorized`) and 503 `setup_required`
