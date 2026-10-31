@@ -6,6 +6,7 @@ import dev.voidrot.chorecast.core.ServerChecker
 import dev.voidrot.chorecast.core.TokenStore
 import dev.voidrot.chorecast.data.KeystoreTokenStore
 import dev.voidrot.chorecast.data.SettingsStore
+import dev.voidrot.chorecast.data.SsoBridge
 import io.ktor.client.engine.okhttp.OkHttp
 
 /**
@@ -20,4 +21,5 @@ class AppContainer(context: Context) {
     private val engine = OkHttp.create()
     val serverChecker = ServerChecker(engine)
     val parentAuth = ParentAuth(engine)
+    val sso = SsoBridge()
 }

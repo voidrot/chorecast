@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { NAlert, NButton, NCard, NFormItem, NInput, useMessage } from 'naive-ui'
-import { ref } from 'vue'
+import { NAlert, NButton, NCard, NDivider, NFormItem, NInput, useMessage } from 'naive-ui'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
-import { type LoginFailure, type LoginStep, loginFailure, safeRedirect } from '@/auth/login'
+import {
+  type LoginFailure,
+  type LoginStep,
+  loginFailure,
+  safeRedirect,
+  ssoErrorKey,
+  ssoStartURL,
+} from '@/auth/login'
+import { useServerInfo } from '@/composables/useServerInfo'
 import { useSessionStore } from '@/stores/session'
 
 const { t } = useI18n()
@@ -20,6 +28,12 @@ const password = ref('')
 const code = ref('')
 const submitting = ref(false)
 const failure = ref<LoginFailure>()
+const server = useServerInfo()
+const ssoError = computed(() => ssoErrorKey(route.query.sso_error))
+
+function signInWithSSO() {
+  window.location.assign(ssoStartURL(safeRedirect(route.query.redirect)))
+}
 
 async function submit() {
   if (!username.value || !password.value) return
@@ -86,6 +100,10 @@ function startOver() {
         {{ t('login.notParent') }}
       </NAlert>
 
+      <NAlert v-if="ssoError" type="error" :show-icon="false" class="mb-4">{{
+        t(ssoError)
+      }}</NAlert>
+
       <form class="flex flex-col gap-4" @submit.prevent="submit">
         <template v-if="step === 'password'">
           <NFormItem
@@ -151,6 +169,11 @@ function startOver() {
           {{ step === 'password' ? t('login.submit') : t('login.verify') }}
         </NButton>
       </form>
+
+      <template v-if="server?.oidc && step === 'password'">
+        <NDivider>{{ t('sso.or') }}</NDivider>
+        <NButton block secondary @click="signInWithSSO">{{ t('sso.signIn') }}</NButton>
+      </template>
     </NCard>
   </main>
 </template>

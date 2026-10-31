@@ -19,6 +19,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/setup"
+	"github.com/voidrot/chorecast/server/internal/sso"
 	"github.com/voidrot/chorecast/server/internal/version"
 )
 
@@ -70,7 +71,8 @@ func New(r chi.Router, deps Deps) huma.API {
 		idempotency.Middleware(hapi, queries, deps.Clock),
 	)
 
-	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock)}
+	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock),
+		sso: sso.New(deps.Config, deps.DB, deps.Clock)}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
@@ -89,6 +91,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	}, h.version)
 	registerSetup(hapi, h)
 	registerAuth(hapi, h)
+	registerSSO(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -110,6 +113,7 @@ type handlers struct {
 	db      *db.DB
 	setup   *setup.Service
 	account *account.Service
+	sso     *sso.Service
 }
 
 type HealthOutput struct {
@@ -156,6 +160,7 @@ type MeOutput struct {
 		Username    string `json:"username,omitempty" doc:"Parents only"`
 		TOTPEnabled bool   `json:"totpEnabled" doc:"Parents: two-factor sign-in is on"`
 		PINSet      bool   `json:"pinSet" doc:"Parents: a parent PIN is set"`
+		OIDCLinked  bool   `json:"oidcLinked" doc:"Parents: an identity provider account is linked for single sign-on"`
 	}
 }
 
@@ -179,6 +184,7 @@ func (h *handlers) me(ctx context.Context, _ *struct{}) (*MeOutput, error) {
 			out.Body.Username = u.Username.String
 			out.Body.TOTPEnabled = u.TotpEnabled == 1
 			out.Body.PINSet = u.ParentPinHash.Valid
+			out.Body.OIDCLinked = u.OidcSubject.Valid
 		}
 	}
 	return out, nil

@@ -167,5 +167,25 @@
       "saved": "I've saved them",
       "fileHeader": "Chorecast recovery codes. Each code works once."
     }
+  },
+  "sso": {
+    "or": "or",
+    "signIn": "Sign in with single sign-on",
+    "title": "Single sign-on",
+    "on": "Linked",
+    "off": "Not linked",
+    "hint": "Sign in with your household's identity provider (such as Authentik or Keycloak) instead of a password. Link your account once, here.",
+    "linkedHint": "You can sign in with your identity provider. Your password still works too.",
+    "link": "Link account",
+    "unlink": "Unlink",
+    "linked": "Single sign-on linked.",
+    "unlinked": "Single sign-on unlinked.",
+    "errors": {
+      "not_linked": "That identity provider account isn't linked to a parent. Sign in with your password, then link it on your account page.",
+      "already_linked": "That identity provider account is already linked to another parent.",
+      "expired": "Single sign-on took too long or was interrupted. Try again.",
+      "denied": "The identity provider didn't sign you in.",
+      "failed": "Single sign-on failed. Try again, or sign in with your password."
+    }
   }
 }

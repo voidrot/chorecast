@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { useServerInfo } from '@/composables/useServerInfo'
 import { useSessionStore } from '@/stores/session'
 import PasswordCard from './PasswordCard.vue'
 import PinCard from './PinCard.vue'
 import SessionsCard from './SessionsCard.vue'
+import SsoCard from './SsoCard.vue'
 import TotpCard from './TotpCard.vue'
 
 const { t } = useI18n()
 const session = useSessionStore()
+const server = useServerInfo()
 </script>
 
 <template>
@@ -24,6 +27,7 @@ const session = useSessionStore()
       <TotpCard />
       <PasswordCard />
       <PinCard />
+      <SsoCard v-if="server?.oidc || session.me?.oidcLinked" />
       <SessionsCard class="lg:col-span-2" />
     </div>
   </div>

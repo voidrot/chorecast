@@ -114,11 +114,20 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
    password change (signs out other sessions), parent PIN, TOTP setup/enable/disable, recovery code
    regeneration; sensitive changes re-check the password (403 `invalid_password`, never 401, so clients don't
    treat it as a lost session). `POST /auth/logout` revokes the calling session or app token.
-4. **Parent login in the app, OIDC (server-brokered).** App opens a Custom Tab to
-   `/api/v1/auth/oidc/start?client=android&challenge=<pkce>`. The server does the full OIDC code flow with the
-   IdP, then redirects to `chorecast://auth?code=<one-time>`. The app exchanges `code + verifier` at
-   `/api/v1/auth/oidc/exchange` for an `app` token. The app never talks to the IdP and needs no IdP client
-   registration of its own.
+4. **Single sign-on (OIDC, server-brokered;** `internal/sso`**).** Enabled by `CHORECAST_OIDC_ISSUER`,
+   `_CLIENT_ID`, `_CLIENT_SECRET`; register `<server URL>/api/v1/auth/oidc/callback` as the redirect URI (the base
+   URL is `CHORECAST_PUBLIC_URL`, else the request's scheme and host). The server is the only OIDC client and runs
+   the code flow with PKCE and a nonce; the flow's state is bound to the browser by a short-lived
+   `chorecast_oidc` cookie. Parents are matched by `users.oidc_subject`, which a signed-in parent sets by
+   linking on the Account page (`GET /account/oidc/link`); nobody is provisioned automatically, and SSO
+   sign-in skips Chorecast's TOTP (the IdP owns second factors).
+   - Web: `GET /auth/oidc/start?client=web&redirect=/path` → IdP → callback sets the session cookie and returns
+     to the path (errors: `/login?sso_error=not_linked|denied|expired|failed`).
+   - App: Custom Tab to `/auth/oidc/start?client=app&challenge=<S256>&label=<device>` → IdP → callback redirects
+     to `chorecast://auth?code=<one-time, 2 min>` (or `?error=…`). The app exchanges `code + verifier` at
+     `POST /auth/oidc/exchange` for an `app` token. It never talks to the IdP and needs no IdP registration.
+   - Pending flows and codes are in memory (10 min / 2 min): a restart only cancels sign-ins in progress.
+   - Dev: `deploy/dev/compose.oidc.yaml` runs Dex with a test parent.
 5. **Web login.** Same password/OIDC handlers, issuing the cookie session instead. The TOTP secret is stored in
    plain base32 in the database (needed to verify codes); protect the data directory and backups accordingly.
 
