@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import Card from 'primevue/card'
-import Message from 'primevue/message'
-import Tag from 'primevue/tag'
+import { NAlert, NCard, NTag } from 'naive-ui'
 import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
@@ -20,18 +18,16 @@ onMounted(() => server.run())
 </script>
 
 <template>
-  <h1>{{ t('home.title') }}</h1>
-  <Message v-if="server.error.value" severity="error">{{ server.error.value.detail }}</Message>
-  <Card v-else-if="server.data.value">
-    <template #title>{{ t('home.server') }}</template>
-    <template #content>
-      <p>
-        <Tag
-          :value="t(`home.status.${server.data.value.status}`)"
-          :severity="server.data.value.status === 'ok' ? 'success' : 'warn'"
-        />
-      </p>
+  <h1 class="mb-4 text-2xl font-semibold">{{ t('home.title') }}</h1>
+  <NAlert v-if="server.error.value" type="error">{{ server.error.value.detail }}</NAlert>
+  <NCard v-else-if="server.data.value" :title="t('home.server')" class="max-w-md">
+    <div class="flex flex-col gap-2">
+      <div>
+        <NTag :type="server.data.value.status === 'ok' ? 'success' : 'warning'" :bordered="false">
+          {{ t(`home.status.${server.data.value.status}`) }}
+        </NTag>
+      </div>
       <p>{{ t('home.version', { version: server.data.value.version }) }}</p>
-    </template>
-  </Card>
+    </div>
+  </NCard>
 </template>

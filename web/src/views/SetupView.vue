@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import Card from 'primevue/card'
-import InputText from 'primevue/inputtext'
-import Message from 'primevue/message'
-import Password from 'primevue/password'
-import ProgressSpinner from 'primevue/progressspinner'
-import Select from 'primevue/select'
-import Step from 'primevue/step'
-import StepList from 'primevue/steplist'
-import StepPanel from 'primevue/steppanel'
-import StepPanels from 'primevue/steppanels'
-import Stepper from 'primevue/stepper'
-import ToggleSwitch from 'primevue/toggleswitch'
+import {
+  NAlert,
+  NButton,
+  NCard,
+  NDatePicker,
+  NFormItem,
+  NInput,
+  NSelect,
+  NSpin,
+  NStep,
+  NSteps,
+  NSwitch,
+  NTimePicker,
+} from 'naive-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -51,6 +52,7 @@ const submitting = ref(false)
 const submitError = ref<ApiError>()
 const shown = ref<Record<number, boolean>>({}) // steps whose problems are shown (after a "next" click)
 
+const zoneOptions = zones.map((z) => ({ value: z, label: z }))
 const weekStartOptions = weekStarts.map((value) => ({
   value,
   label: t(`setup.household.weekdays.${value}`),
@@ -93,11 +95,13 @@ onMounted(async () => {
   }
 })
 
-function next(from: number, activate: (value: number) => void) {
+function next(from: number) {
   shown.value[from] = true
   if (problems.value[from]?.length) return
-  activate(from + 1)
+  step.value = from + 1
 }
+
+const isFuture = (ts: number) => ts > Date.now()
 
 function addKid() {
   form.value.kids.push(newKid(form.value.kids))
@@ -141,347 +145,254 @@ async function openAdmin() {
 </script>
 
 <template>
-  <main class="center">
-    <Card class="card">
-      <template #title>{{ t('setup.title') }}</template>
-      <template #content>
-        <div v-if="phase === 'checking'" class="checking">
-          <ProgressSpinner style="width: 2rem; height: 2rem" />
-        </div>
+  <main class="grid min-h-screen place-items-center p-4">
+    <NCard :title="t('setup.title')" class="w-full max-w-2xl">
+      <div v-if="phase === 'checking'" class="grid place-items-center p-8">
+        <NSpin />
+      </div>
 
-        <p v-else-if="phase === 'no_token'">{{ t('setup.body') }}</p>
+      <p v-else-if="phase === 'no_token'">{{ t('setup.body') }}</p>
 
-        <Message v-else-if="phase === 'invalid'" severity="error">{{
-          t('setup.invalidToken')
-        }}</Message>
+      <NAlert v-else-if="phase === 'invalid'" type="error">{{ t('setup.invalidToken') }}</NAlert>
 
-        <div v-else-if="phase === 'done'" class="stack">
-          <Message severity="success">{{
-            t('setup.done.created', { name: form.household.name })
-          }}</Message>
-          <h3>{{ t('setup.done.devicesTitle') }}</h3>
-          <p>{{ t('setup.done.devicesBody') }}</p>
-          <p>
-            <a :href="releasesURL" target="_blank" rel="noopener">{{ t('setup.done.download') }}</a>
-          </p>
-          <p class="hint">{{ t('setup.done.pairingLater') }}</p>
-          <Button
-            :label="t('setup.done.open')"
-            icon="pi pi-arrow-right"
-            icon-pos="right"
-            @click="openAdmin"
-          />
-        </div>
+      <div v-else-if="phase === 'done'" class="flex flex-col gap-4">
+        <NAlert type="success">{{ t('setup.done.created', { name: form.household.name }) }}</NAlert>
+        <h3 class="text-lg font-semibold">{{ t('setup.done.devicesTitle') }}</h3>
+        <p>{{ t('setup.done.devicesBody') }}</p>
+        <a
+          :href="releasesURL"
+          target="_blank"
+          rel="noopener"
+          class="text-emerald-600 underline dark:text-emerald-400"
+          >{{
+            t('setup.done.download')
+          }}</a
+        >
+        <p class="text-sm text-gray-500 dark:text-neutral-400">
+          {{ t('setup.done.pairingLater') }}
+        </p>
+        <NButton type="primary" block @click="openAdmin">{{ t('setup.done.open') }}</NButton>
+      </div>
 
-        <Stepper v-else v-model:value="step" linear>
-          <StepList>
-            <Step :value="1">{{ t('setup.household.title') }}</Step>
-            <Step :value="2">{{ t('setup.owner.title') }}</Step>
-            <Step :value="3">{{ t('setup.kids.title') }}</Step>
-          </StepList>
-          <StepPanels>
-            <StepPanel v-slot="{ activateCallback }" :value="1">
-              <form class="stack" @submit.prevent="next(1, activateCallback)">
-                <div class="field">
-                  <label for="household-name">{{ t('setup.household.name') }}</label>
-                  <InputText id="household-name" v-model="form.household.name" maxlength="60" />
-                </div>
-                <div class="field">
-                  <label for="household-timezone">{{ t('setup.household.timezone') }}</label>
-                  <Select
-                    input-id="household-timezone"
-                    v-model="form.household.timezone"
-                    :options="zones"
-                    filter
-                  />
-                </div>
-                <div class="row">
-                  <div class="field">
-                    <label for="household-dayEnd">{{ t('setup.household.dayEnd') }}</label>
-                    <InputText id="household-dayEnd" v-model="form.household.dayEnd" type="time" />
-                  </div>
-                  <div class="field">
-                    <label for="household-weekStart">{{ t('setup.household.weekStart') }}</label>
-                    <Select
-                      input-id="household-weekStart"
-                      v-model="form.household.weekStart"
-                      :options="weekStartOptions"
-                      option-label="label"
-                      option-value="value"
-                    />
-                  </div>
-                </div>
-                <p class="hint">{{ t('setup.household.dayEndHint') }}</p>
-                <Message v-for="p in shown[1] ? problems[1] : []" :key="p" severity="warn">{{
-                  t(p)
-                }}</Message>
-                <div class="actions">
-                  <Button
-                    type="submit"
-                    :label="t('setup.next')"
-                    icon="pi pi-arrow-right"
-                    icon-pos="right"
-                  />
-                </div>
-              </form>
-            </StepPanel>
+      <div v-else class="flex flex-col gap-6">
+        <NSteps :current="step" size="small">
+          <NStep :title="t('setup.household.title')" />
+          <NStep :title="t('setup.owner.title')" />
+          <NStep :title="t('setup.kids.title')" />
+        </NSteps>
 
-            <StepPanel v-slot="{ activateCallback }" :value="2">
-              <form class="stack" @submit.prevent="next(2, activateCallback)">
-                <p class="hint">{{ t('setup.owner.intro') }}</p>
-                <div class="field">
-                  <label for="owner-displayName">{{ t('setup.owner.displayName') }}</label>
-                  <InputText
-                    id="owner-displayName"
-                    v-model="form.owner.displayName"
-                    maxlength="40"
-                  />
-                </div>
-                <div class="field">
-                  <label for="owner-username">{{ t('setup.owner.username') }}</label>
-                  <InputText
-                    id="owner-username"
-                    v-model="form.owner.username"
-                    autocomplete="username"
-                    autocapitalize="none"
-                    maxlength="32"
-                    @update:model-value="form.owner.username = String($event ?? '').toLowerCase()"
-                  />
-                </div>
-                <div class="field">
-                  <label for="owner-password">{{ t('setup.owner.password') }}</label>
-                  <Password
-                    input-id="owner-password"
-                    v-model="form.owner.password"
-                    :feedback="false"
-                    toggle-mask
-                    fluid
-                    :input-props="{ autocomplete: 'new-password' }"
-                  />
-                </div>
-                <div class="field">
-                  <label for="owner-confirm">{{ t('setup.owner.confirm') }}</label>
-                  <Password
-                    input-id="owner-confirm"
-                    v-model="form.owner.confirm"
-                    :feedback="false"
-                    toggle-mask
-                    fluid
-                    :input-props="{ autocomplete: 'new-password' }"
-                  />
-                </div>
-                <p class="hint">{{ t('setup.owner.laterHint') }}</p>
-                <Message v-for="p in shown[2] ? problems[2] : []" :key="p" severity="warn">{{
-                  t(p)
-                }}</Message>
-                <div class="actions">
-                  <Button
-                    :label="t('setup.back')"
-                    severity="secondary"
-                    text
-                    @click="activateCallback(1)"
-                  />
-                  <Button
-                    type="submit"
-                    :label="t('setup.next')"
-                    icon="pi pi-arrow-right"
-                    icon-pos="right"
-                  />
-                </div>
-              </form>
-            </StepPanel>
+        <form v-if="step === 1" class="flex flex-col" @submit.prevent="next(1)">
+          <NFormItem
+            :label="t('setup.household.name')"
+            :label-props="{ for: 'household-name' }"
+            :show-feedback="false"
+            class="mb-4"
+          >
+            <NInput
+              v-model:value="form.household.name"
+              :maxlength="60"
+              :input-props="{ id: 'household-name' }"
+            />
+          </NFormItem>
+          <NFormItem :label="t('setup.household.timezone')" :show-feedback="false" class="mb-4">
+            <NSelect v-model:value="form.household.timezone" :options="zoneOptions" filterable />
+          </NFormItem>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <NFormItem :label="t('setup.household.dayEnd')" :show-feedback="false">
+              <NTimePicker
+                :formatted-value="form.household.dayEnd"
+                value-format="HH:mm"
+                format="HH:mm"
+                :clearable="false"
+                class="w-full"
+                @update:formatted-value="form.household.dayEnd = $event ?? ''"
+              />
+            </NFormItem>
+            <NFormItem :label="t('setup.household.weekStart')" :show-feedback="false">
+              <NSelect v-model:value="form.household.weekStart" :options="weekStartOptions" />
+            </NFormItem>
+          </div>
+          <p class="hint mt-2">{{ t('setup.household.dayEndHint') }}</p>
+          <div v-if="shown[1] && problems[1]?.length" class="mt-4 flex flex-col gap-2">
+            <NAlert v-for="p in problems[1]" :key="p" type="warning" :show-icon="false">{{
+              t(p)
+            }}</NAlert>
+          </div>
+          <div class="mt-6 flex justify-end gap-2">
+            <NButton type="primary" attr-type="submit">{{ t('setup.next') }}</NButton>
+          </div>
+        </form>
 
-            <StepPanel v-slot="{ activateCallback }" :value="3">
-              <form class="stack" @submit.prevent="submit">
-                <p class="hint">{{ t('setup.kids.intro') }}</p>
-                <div v-for="(kid, i) in form.kids" :key="i" class="kid">
-                  <div class="row">
-                    <div class="field">
-                      <label :for="`kid-${i}-name`">{{ t('setup.kids.name') }}</label>
-                      <InputText :id="`kid-${i}-name`" v-model="kid.displayName" maxlength="40" />
-                    </div>
-                    <div class="field">
-                      <label :for="`kid-${i}-birthDate`">{{ t('setup.kids.birthDate') }}</label>
-                      <InputText
-                        :id="`kid-${i}-birthDate`"
-                        v-model="kid.birthDate"
-                        type="date"
-                        :max="today"
-                      />
-                    </div>
-                  </div>
-                  <div class="row kid-options">
-                    <fieldset class="swatches">
-                      <legend class="sr-only">{{ t('setup.kids.color') }}</legend>
-                      <label
-                        v-for="c in kidColors"
-                        :key="c"
-                        class="swatch"
-                        :for="`kid-${i}-color-${c.slice(1)}`"
-                        :class="{ selected: kid.color === c }"
-                        :style="{ background: c }"
-                      >
-                        <input
-                          v-model="kid.color"
-                          class="sr-only"
-                          type="radio"
-                          :id="`kid-${i}-color-${c.slice(1)}`"
-                          :name="`kid-${i}-color`"
-                          :value="c"
-                        >
-                        <span class="sr-only">{{ c }}</span>
-                      </label>
-                    </fieldset>
-                    <div class="toggle">
-                      <ToggleSwitch v-model="kid.pinRequired" :input-id="`kid-${i}-pin`" />
-                      <label :for="`kid-${i}-pin`">{{ t('setup.kids.pinRequired') }}</label>
-                    </div>
-                    <Button
-                      icon="pi pi-trash"
-                      severity="danger"
-                      text
-                      :aria-label="t('setup.kids.remove')"
-                      @click="form.kids.splice(i, 1)"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Button
-                    :label="t('setup.kids.add')"
-                    icon="pi pi-plus"
-                    severity="secondary"
-                    outlined
-                    @click="addKid"
-                  />
-                </div>
-                <p class="hint">{{ t('setup.kids.laterHint') }}</p>
-                <Message v-for="p in shown[3] ? problems[3] : []" :key="p" severity="warn">{{
-                  t(p)
-                }}</Message>
-                <Message v-if="submitError" severity="error">
-                  {{ submitError.detail || submitError.code }}
-                  <ul v-if="submitError.fieldErrors?.length">
-                    <li v-for="(fe, j) in submitError.fieldErrors" :key="j">
-                      {{ fe.location }}: {{ fe.message }}
-                    </li>
-                  </ul>
-                </Message>
-                <div class="actions">
-                  <Button
-                    :label="t('setup.back')"
-                    severity="secondary"
-                    text
-                    @click="activateCallback(2)"
-                  />
-                  <Button
-                    type="submit"
-                    :label="form.kids.length ? t('setup.finish') : t('setup.finishWithoutKids')"
-                    icon="pi pi-check"
-                    :loading="submitting"
-                  />
-                </div>
-              </form>
-            </StepPanel>
-          </StepPanels>
-        </Stepper>
-      </template>
-    </Card>
+        <form v-else-if="step === 2" class="flex flex-col" @submit.prevent="next(2)">
+          <p class="hint mb-4">{{ t('setup.owner.intro') }}</p>
+          <NFormItem
+            :label="t('setup.owner.displayName')"
+            :label-props="{ for: 'owner-name' }"
+            :show-feedback="false"
+            class="mb-4"
+          >
+            <NInput
+              v-model:value="form.owner.displayName"
+              :maxlength="40"
+              :input-props="{ id: 'owner-name' }"
+            />
+          </NFormItem>
+          <NFormItem
+            :label="t('setup.owner.username')"
+            :label-props="{ for: 'owner-username' }"
+            :show-feedback="false"
+            class="mb-4"
+          >
+            <NInput
+              :value="form.owner.username"
+              :maxlength="32"
+              :input-props="{
+                autocomplete: 'username',
+                autocapitalize: 'none',
+                id: 'owner-username',
+              }"
+              @update:value="form.owner.username = $event.toLowerCase()"
+            />
+          </NFormItem>
+          <NFormItem
+            :label="t('setup.owner.password')"
+            :label-props="{ for: 'owner-password' }"
+            :show-feedback="false"
+            class="mb-4"
+          >
+            <NInput
+              v-model:value="form.owner.password"
+              type="password"
+              show-password-on="click"
+              :input-props="{ autocomplete: 'new-password', id: 'owner-password' }"
+            />
+          </NFormItem>
+          <NFormItem
+            :label="t('setup.owner.confirm')"
+            :label-props="{ for: 'owner-confirm' }"
+            :show-feedback="false"
+          >
+            <NInput
+              v-model:value="form.owner.confirm"
+              type="password"
+              show-password-on="click"
+              :input-props="{ autocomplete: 'new-password', id: 'owner-confirm' }"
+            />
+          </NFormItem>
+          <p class="hint mt-2">{{ t('setup.owner.laterHint') }}</p>
+          <div v-if="shown[2] && problems[2]?.length" class="mt-4 flex flex-col gap-2">
+            <NAlert v-for="p in problems[2]" :key="p" type="warning" :show-icon="false">{{
+              t(p)
+            }}</NAlert>
+          </div>
+          <div class="mt-6 flex justify-end gap-2">
+            <NButton quaternary @click="step = 1">{{ t('setup.back') }}</NButton>
+            <NButton type="primary" attr-type="submit">{{ t('setup.next') }}</NButton>
+          </div>
+        </form>
+
+        <form v-else class="flex flex-col gap-4" @submit.prevent="submit">
+          <p class="hint">{{ t('setup.kids.intro') }}</p>
+          <div
+            v-for="(kid, i) in form.kids"
+            :key="i"
+            class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4 dark:border-neutral-700"
+          >
+            <div class="grid gap-4 sm:grid-cols-2">
+              <NFormItem
+                :label="t('setup.kids.name')"
+                :label-props="{ for: `kid-${i}-name` }"
+                :show-feedback="false"
+              >
+                <NInput
+                  v-model:value="kid.displayName"
+                  :maxlength="40"
+                  :input-props="{ id: `kid-${i}-name` }"
+                />
+              </NFormItem>
+              <NFormItem :label="t('setup.kids.birthDate')" :show-feedback="false">
+                <NDatePicker
+                  :formatted-value="kid.birthDate || null"
+                  type="date"
+                  value-format="yyyy-MM-dd"
+                  clearable
+                  class="w-full"
+                  :is-date-disabled="isFuture"
+                  :input-readonly="false"
+                  @update:formatted-value="kid.birthDate = $event ?? ''"
+                />
+              </NFormItem>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <fieldset class="flex gap-1.5">
+                <legend class="sr-only">{{ t('setup.kids.color') }}</legend>
+                <label
+                  v-for="c in kidColors"
+                  :key="c"
+                  :for="`kid-${i}-color-${c.slice(1)}`"
+                  class="size-7 cursor-pointer rounded-full outline-offset-2 focus-within:outline-2"
+                  :class="kid.color === c ? 'outline-2 outline-gray-900 dark:outline-white' : ''"
+                  :style="{ background: c }"
+                >
+                  <input
+                    :id="`kid-${i}-color-${c.slice(1)}`"
+                    v-model="kid.color"
+                    class="sr-only"
+                    type="radio"
+                    :name="`kid-${i}-color`"
+                    :value="c"
+                  >
+                  <span class="sr-only">{{ c }}</span>
+                </label>
+              </fieldset>
+              <div class="flex items-center gap-2">
+                <NSwitch v-model:value="kid.pinRequired" :aria-labelledby="`kid-${i}-pin-label`" />
+                <span :id="`kid-${i}-pin-label`">{{ t('setup.kids.pinRequired') }}</span>
+              </div>
+              <NButton
+                quaternary
+                type="error"
+                size="small"
+                :aria-label="t('setup.kids.remove')"
+                @click="form.kids.splice(i, 1)"
+                >{{
+                  t('setup.kids.remove')
+                }}</NButton
+              >
+            </div>
+          </div>
+          <div>
+            <NButton dashed @click="addKid">{{ t('setup.kids.add') }}</NButton>
+          </div>
+          <p class="hint">{{ t('setup.kids.laterHint') }}</p>
+          <div v-if="shown[3] && problems[3]?.length" class="flex flex-col gap-2">
+            <NAlert v-for="p in problems[3]" :key="p" type="warning" :show-icon="false">{{
+              t(p)
+            }}</NAlert>
+          </div>
+          <NAlert v-if="submitError" type="error">
+            {{ submitError.detail || submitError.code }}
+            <ul v-if="submitError.fieldErrors?.length" class="mt-1 list-disc pl-5">
+              <li v-for="(fe, j) in submitError.fieldErrors" :key="j">
+                {{ fe.location }}: {{ fe.message }}
+              </li>
+            </ul>
+          </NAlert>
+          <div class="flex justify-end gap-2">
+            <NButton quaternary @click="step = 2">{{ t('setup.back') }}</NButton>
+            <NButton type="primary" attr-type="submit" :loading="submitting">
+              {{ form.kids.length ? t('setup.finish') : t('setup.finishWithoutKids') }}
+            </NButton>
+          </div>
+        </form>
+      </div>
+    </NCard>
   </main>
 </template>
 
 <style scoped>
-.center {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  padding: 1rem;
-  font-family: system-ui, sans-serif;
-}
-.card {
-  width: min(40rem, 100%);
-}
-.checking {
-  display: grid;
-  place-items: center;
-  padding: 2rem;
-}
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-.stack > h3,
-.stack > p {
-  margin: 0;
-}
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-.field > label {
-  font-weight: 500;
-}
-.row > .field {
-  flex: 1 1 12rem;
-}
+@reference "../style.css";
 .hint {
-  margin: 0;
-  color: var(--p-text-muted-color);
-  font-size: 0.875rem;
-}
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-.kid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
-  border: 1px solid var(--p-content-border-color);
-  border-radius: var(--p-content-border-radius);
-}
-.kid-options {
-  align-items: center;
-  justify-content: space-between;
-}
-.swatches {
-  display: flex;
-  gap: 0.375rem;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.swatch {
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-}
-.swatch.selected,
-.swatch:focus-within {
-  outline: 2px solid var(--p-text-color);
-  outline-offset: 2px;
-}
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  @apply text-sm text-gray-500 dark:text-neutral-400;
 }
 </style>

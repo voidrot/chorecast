@@ -13,6 +13,9 @@
   "javascript": {
     "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" }
   },
+  "css": {
+    "parser": { "tailwindDirectives": true }
+  },
   "html": {
     "experimentalFullSupportEnabled": true,
     "formatter": { "enabled": true }
