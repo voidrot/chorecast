@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 	_ "time/tzdata" // embed the timezone database so household timezones work in any image
@@ -66,9 +67,24 @@ func serve() error {
 	}
 	defer func() { _ = store.Close() }()
 
+	clk := clock.Real{}
+	runner, sched := newJobs(store, clk, slog.Default())
+	if err := runner.Recover(ctx); err != nil {
+		return err
+	}
+	// Background work gets its own context so it also stops when the HTTP server fails.
+	bgCtx, stopBackground := context.WithCancel(ctx)
+	var background sync.WaitGroup
+	background.Go(func() { runner.Start(bgCtx) })
+	background.Go(func() { sched.Start(bgCtx, schedulerInterval) })
+	defer func() {
+		stopBackground()
+		background.Wait()
+	}()
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
-	api.New(r, cfg, store, clock.Real{})
+	api.New(r, cfg, store, clk)
 	r.Handle("/*", webui.Handler())
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: r, ReadHeaderTimeout: 10 * time.Second}

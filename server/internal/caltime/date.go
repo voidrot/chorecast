@@ -50,9 +50,23 @@ func (d Date) Compare(o Date) int { return d.noonUTC().Compare(o.noonUTC()) }
 func (d Date) Before(o Date) bool { return d.Compare(o) < 0 }
 func (d Date) After(o Date) bool  { return d.Compare(o) > 0 }
 
-func (d Date) MarshalText() ([]byte, error) { return []byte(d.String()), nil }
+// IsZero reports whether d is the zero Date (unset).
+func (d Date) IsZero() bool { return d == Date{} }
 
+// MarshalText encodes YYYY-MM-DD; the zero Date encodes as "" so it round-trips.
+func (d Date) MarshalText() ([]byte, error) {
+	if d.IsZero() {
+		return []byte{}, nil
+	}
+	return []byte(d.String()), nil
+}
+
+// UnmarshalText decodes YYYY-MM-DD; "" decodes to the zero Date.
 func (d *Date) UnmarshalText(b []byte) error {
+	if len(b) == 0 {
+		*d = Date{}
+		return nil
+	}
 	p, err := ParseDate(string(b))
 	if err != nil {
 		return err

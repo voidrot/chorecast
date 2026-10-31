@@ -25,6 +25,32 @@ CREATE TABLE tokens (
     CHECK (user_id IS NOT NULL OR kind IN ('device', 'display', 'api'))
 );
 
+-- Background jobs (internal/jobs). Delivery is at-least-once: handlers must be idempotent.
+CREATE TABLE jobs (
+    id              INTEGER PRIMARY KEY,
+    queue           TEXT    NOT NULL,
+    kind            TEXT    NOT NULL,
+    payload         TEXT    NOT NULL DEFAULT '{}',   -- JSON
+    idempotency_key TEXT    UNIQUE,                  -- NULL = no dedup
+    status          TEXT    NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done', 'failed')),
+    run_at          TEXT    NOT NULL,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    max_attempts    INTEGER NOT NULL,
+    last_error      TEXT,
+    locked_at       TEXT,
+    created_at      TEXT    NOT NULL,
+    finished_at     TEXT
+);
+CREATE INDEX jobs_due ON jobs (queue, status, run_at);
+
+-- Last occurrence each recurring schedule enqueued (internal/jobs scheduler).
+CREATE TABLE schedule_cursors (
+    name          TEXT PRIMARY KEY,
+    last_fired_at TEXT NOT NULL
+);
+
 -- +goose Down
+DROP TABLE schedule_cursors;
+DROP TABLE jobs;
 DROP TABLE tokens;
 DROP TABLE users;

@@ -142,6 +142,23 @@ Implemented in `internal/auth`:
   the end of the gap (Go's `time.Date` resolves gap times backwards, which would close a day early).
 - The timezone database is embedded in the binary (`time/tzdata`), so any container image works.
 
+## Background jobs
+
+`internal/jobs`, running inside the server process (no Redis or worker containers):
+
+- **Queue**: the `jobs` table. `Runner.Enqueue(kind, payload, {Key, RunAt})`; a non-empty `Key` makes the
+  enqueue idempotent. Kinds are registered with a queue and max attempts; each queue has its own worker count
+  (`SetConcurrency`, e.g. `media` = 1 so transcoding never swamps a Pi).
+- **Delivery is at-least-once**: failed jobs retry with backoff (30s, 1m, 2m, ... capped at 1h), panics count as
+  failures, and jobs left `running` by a crash are requeued at startup (`Recover`). **Handlers must be idempotent.**
+- **Recurring work**: `Scheduler` providers return `Recurring` schedules (`KidDayCloses`, `KidWeekCloses`,
+  `HouseholdDayCloses`, `Every`). A cursor per schedule records the last occurrence enqueued; each tick enqueues
+  every due occurrence after it with key `<schedule>:<occurrence>`, so runs missed while the server was down are
+  caught up and duplicates are impossible. New schedules start from now (no backfill).
+- Kinds and schedules are wired in `cmd/chorecast/jobs.go`. Today: `maintenance.daily` (purge finished jobs and
+  expired tokens).
+- Tests drive time with `clock.Fake` and call `Scheduler.Tick` / `Runner.RunDue` directly.
+
 ## Push notifications
 
 See [features/notifications.md](features/notifications.md). In short: push payloads carry no content (wake-up
