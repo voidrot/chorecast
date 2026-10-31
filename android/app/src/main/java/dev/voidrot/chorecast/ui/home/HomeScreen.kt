@@ -39,6 +39,10 @@ fun HomeScreen(
         state.displayName?.let {
             Text(stringResource(R.string.home_signed_in, it), style = MaterialTheme.typography.headlineSmall)
         }
+        state.household?.let {
+            Text(it.name, style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.home_household, it.timezone, it.dayEnd), style = MaterialTheme.typography.bodyMedium)
+        }
         Text(stringResource(R.string.home_server, serverUrl), style = MaterialTheme.typography.bodyMedium)
         if (recoveryCodesLeft != null && recoveryCodesLeft <= 3) {
             Text(

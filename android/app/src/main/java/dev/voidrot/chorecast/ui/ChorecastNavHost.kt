@@ -68,7 +68,9 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
         composable<HomeRoute> { entry ->
             val route = entry.toRoute<HomeRoute>()
             HomeScreen(
-                viewModel = viewModel { HomeViewModel(currentUrl(), container.parentAuth, container.tokenStore) },
+                viewModel = viewModel {
+                    HomeViewModel(currentUrl(), container.parentAuth, container.tokenStore, container.householdInfo)
+                },
                 serverUrl = route.serverUrl,
                 recoveryCodesLeft = route.recoveryCodesLeft,
                 onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
