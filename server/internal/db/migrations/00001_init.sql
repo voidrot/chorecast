@@ -74,6 +74,61 @@ CREATE TABLE recovery_codes (
     UNIQUE (user_id, code_hash)
 );
 
+-- Where a chore happens and what it needs (simple catalogs; photos come with the media pipeline).
+CREATE TABLE locations (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT    NOT NULL UNIQUE,
+    description TEXT    NOT NULL DEFAULT '',
+    created_at  TEXT    NOT NULL
+);
+
+CREATE TABLE equipment (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT    NOT NULL UNIQUE,
+    description TEXT    NOT NULL DEFAULT '',
+    created_at  TEXT    NOT NULL
+);
+
+-- Chore definitions (internal/chores). Scheduling (#21) and assignment (#22) add their own columns.
+CREATE TABLE chores (
+    id                INTEGER PRIMARY KEY,
+    name              TEXT    NOT NULL,
+    description       TEXT    NOT NULL DEFAULT '',
+    points            INTEGER NOT NULL DEFAULT 0 CHECK (points BETWEEN 0 AND 100000),
+    penalty           INTEGER NOT NULL DEFAULT 0 CHECK (penalty BETWEEN 0 AND 100000), -- deducted when missed
+    estimated_minutes INTEGER CHECK (estimated_minutes BETWEEN 1 AND 1440),
+    min_age           INTEGER CHECK (min_age BETWEEN 1 AND 25),
+    steps             TEXT    NOT NULL DEFAULT '[]', -- JSON array of checklist step texts
+    slots             TEXT    NOT NULL DEFAULT '[]', -- JSON array of HH:MM due times; empty = due at day close
+    requires_approval INTEGER NOT NULL DEFAULT 1 CHECK (requires_approval IN (0, 1)),
+    escalate          INTEGER NOT NULL DEFAULT 0 CHECK (escalate IN (0, 1)),
+    -- NULL = household default; 0 = never; N = approve after N hours
+    auto_approve_hours INTEGER CHECK (auto_approve_hours BETWEEN 0 AND 720),
+    evidence_photos       INTEGER NOT NULL DEFAULT 0 CHECK (evidence_photos BETWEEN 0 AND 5),
+    evidence_before_after INTEGER NOT NULL DEFAULT 0 CHECK (evidence_before_after IN (0, 1)),
+    evidence_video        INTEGER NOT NULL DEFAULT 0 CHECK (evidence_video IN (0, 1)),
+    evidence_checklist    INTEGER NOT NULL DEFAULT 0 CHECK (evidence_checklist IN (0, 1)),
+    evidence_note         INTEGER NOT NULL DEFAULT 0 CHECK (evidence_note IN (0, 1)),
+    location_id       INTEGER REFERENCES locations (id) ON DELETE SET NULL,
+    disabled          INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
+    created_at        TEXT    NOT NULL,
+    updated_at        TEXT    NOT NULL
+);
+
+CREATE TABLE chore_equipment (
+    chore_id     INTEGER NOT NULL REFERENCES chores (id) ON DELETE CASCADE,
+    equipment_id INTEGER NOT NULL REFERENCES equipment (id) ON DELETE CASCADE,
+    PRIMARY KEY (chore_id, equipment_id)
+);
+
+-- Per-kid exceptions to a chore's minimum age: allow a younger kid, or exclude a kid.
+CREATE TABLE chore_eligibility (
+    chore_id INTEGER NOT NULL REFERENCES chores (id) ON DELETE CASCADE,
+    kid_id   INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    allow    INTEGER NOT NULL CHECK (allow IN (0, 1)),
+    PRIMARY KEY (chore_id, kid_id)
+);
+
 -- Paired Android devices (internal/devices): kid-bound (user_id = the kid) or shared (user_id NULL).
 -- The device authenticates with its `device` token; revoking it deletes this row.
 CREATE TABLE devices (
@@ -171,6 +226,11 @@ DROP TABLE jobs;
 DROP TABLE tokens;
 DROP TABLE pairing_codes;
 DROP TABLE devices;
+DROP TABLE chore_eligibility;
+DROP TABLE chore_equipment;
+DROP TABLE chores;
+DROP TABLE equipment;
+DROP TABLE locations;
 DROP TABLE recovery_codes;
 DROP TABLE invites;
 DROP TABLE users;

@@ -13,6 +13,6 @@ export const themeOverrides: GlobalThemeOverrides = {
 
 /** Naive's English strings, minus its generic placeholders: our labels say what to enter. */
 export const naiveLocale = createLocale(
-  { Input: { placeholder: '' }, Select: { placeholder: '' } },
+  { Input: { placeholder: '' }, InputNumber: { placeholder: '' }, Select: { placeholder: '' } },
   enUS,
 )
