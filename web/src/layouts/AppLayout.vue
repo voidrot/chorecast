@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { NButton, NTag } from 'naive-ui'
+import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { api } from '@/api/client'
+import { householdTimeZone } from '@/format'
 import { useSessionStore } from '@/stores/session'
 
 const { t } = useI18n()
 const router = useRouter()
 const session = useSessionStore()
+
+// Show dates in household time everywhere in the admin.
+onMounted(async () => {
+  const { data } = await api.GET('/household')
+  if (data) householdTimeZone.value = data.timezone
+})
 
 async function signOut() {
   await session.logout()
@@ -30,6 +39,9 @@ async function signOut() {
           }}</RouterLink>
           <RouterLink :to="{ name: 'parents' }" exact-active-class="font-semibold">{{
             t('nav.parents')
+          }}</RouterLink>
+          <RouterLink :to="{ name: 'settings' }" exact-active-class="font-semibold">{{
+            t('nav.settings')
           }}</RouterLink>
         </nav>
       </div>

@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createHousehold = `-- name: CreateHousehold :exec
@@ -43,7 +44,7 @@ func (q *Queries) DeleteSetupToken(ctx context.Context) error {
 }
 
 const getHousehold = `-- name: GetHousehold :one
-SELECT id, name, timezone, day_end, week_start, created_at FROM household WHERE id = 1
+SELECT id, name, timezone, day_end, week_start, allow_negative_balance, sibling_visibility, media_retention_days, auto_approve_hours, offline_grace_minutes, created_at FROM household WHERE id = 1
 `
 
 func (q *Queries) GetHousehold(ctx context.Context) (Household, error) {
@@ -55,6 +56,11 @@ func (q *Queries) GetHousehold(ctx context.Context) (Household, error) {
 		&i.Timezone,
 		&i.DayEnd,
 		&i.WeekStart,
+		&i.AllowNegativeBalance,
+		&i.SiblingVisibility,
+		&i.MediaRetentionDays,
+		&i.AutoApproveHours,
+		&i.OfflineGraceMinutes,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -94,5 +100,38 @@ type SetSetupTokenParams struct {
 
 func (q *Queries) SetSetupToken(ctx context.Context, arg SetSetupTokenParams) error {
 	_, err := q.db.ExecContext(ctx, setSetupToken, arg.TokenHash, arg.CreatedAt)
+	return err
+}
+
+const updateHousehold = `-- name: UpdateHousehold :exec
+UPDATE household SET name = ?, timezone = ?, day_end = ?, week_start = ?, allow_negative_balance = ?,
+    sibling_visibility = ?, media_retention_days = ?, auto_approve_hours = ?, offline_grace_minutes = ?
+WHERE id = 1
+`
+
+type UpdateHouseholdParams struct {
+	Name                 string        `json:"name"`
+	Timezone             string        `json:"timezone"`
+	DayEnd               string        `json:"day_end"`
+	WeekStart            int64         `json:"week_start"`
+	AllowNegativeBalance int64         `json:"allow_negative_balance"`
+	SiblingVisibility    string        `json:"sibling_visibility"`
+	MediaRetentionDays   int64         `json:"media_retention_days"`
+	AutoApproveHours     sql.NullInt64 `json:"auto_approve_hours"`
+	OfflineGraceMinutes  int64         `json:"offline_grace_minutes"`
+}
+
+func (q *Queries) UpdateHousehold(ctx context.Context, arg UpdateHouseholdParams) error {
+	_, err := q.db.ExecContext(ctx, updateHousehold,
+		arg.Name,
+		arg.Timezone,
+		arg.DayEnd,
+		arg.WeekStart,
+		arg.AllowNegativeBalance,
+		arg.SiblingVisibility,
+		arg.MediaRetentionDays,
+		arg.AutoApproveHours,
+		arg.OfflineGraceMinutes,
+	)
 	return err
 }

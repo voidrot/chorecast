@@ -266,6 +266,83 @@
         ],
         "type": "object"
       },
+      "HouseholdSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "allowNegativeBalance": {
+            "description": "Deductions may take a kid below zero; otherwise they're clamped",
+            "type": "boolean"
+          },
+          "autoApproveHours": {
+            "description": "Approve submitted chores after this many hours; absent = never",
+            "format": "int64",
+            "maximum": 720,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "dayEnd": {
+            "description": "HH:MM; 00:00 means midnight",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "type": "string"
+          },
+          "mediaRetentionDays": {
+            "description": "Evidence photos and videos are deleted this long after a chore is resolved",
+            "format": "int64",
+            "maximum": 3650,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "type": "string"
+          },
+          "offlineGraceMinutes": {
+            "description": "Completions made offline count if done within this long after day close",
+            "format": "int64",
+            "maximum": 1440,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "siblingVisibility": {
+            "description": "private: kids see only their own data; leaderboard: a weekly family ranking",
+            "enum": [
+              "private",
+              "leaderboard"
+            ],
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA timezone",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "weekStart": {
+            "enum": [
+              "sunday",
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "timezone",
+          "dayEnd",
+          "weekStart",
+          "allowNegativeBalance",
+          "siblingVisibility",
+          "mediaRetentionDays",
+          "offlineGraceMinutes"
+        ],
+        "type": "object"
+      },
       "Invite": {
         "additionalProperties": false,
         "properties": {
@@ -787,6 +864,60 @@
           "days",
           "start",
           "end"
+        ],
+        "type": "object"
+      },
+      "ServerSetting": {
+        "additionalProperties": false,
+        "properties": {
+          "env": {
+            "description": "The environment variable that sets it",
+            "type": "string"
+          },
+          "key": {
+            "description": "Stable identifier, e.g. publicUrl",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The value is hidden; Value is empty",
+            "type": "boolean"
+          },
+          "source": {
+            "description": "environment: read-only here",
+            "enum": [
+              "environment",
+              "default"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "Current value; secrets are never returned",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "env",
+          "source"
+        ],
+        "type": "object"
+      },
+      "ServerSettingsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ServerSetting"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "items"
         ],
         "type": "object"
       },
@@ -2535,6 +2666,111 @@
         ]
       }
     },
+    "/household": {
+      "get": {
+        "operationId": "getHousehold",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:read"
+            ]
+          },
+          {
+            "session": [
+              "household:read"
+            ]
+          }
+        ],
+        "summary": "Household settings",
+        "tags": [
+          "household"
+        ]
+      },
+      "put": {
+        "description": "Replaces all settings. Changing the timezone, day end or week start regenerates untouched upcoming chores. The day end can't be earlier than a kid's day-end override.",
+        "operationId": "updateHousehold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseholdSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:manage"
+            ]
+          },
+          {
+            "session": [
+              "household:manage"
+            ]
+          }
+        ],
+        "summary": "Change household settings",
+        "tags": [
+          "household"
+        ]
+      }
+    },
     "/invites": {
       "get": {
         "operationId": "listInvites",
@@ -3677,6 +3913,50 @@
         "summary": "Make a parent an owner, or an owner a parent (owners only)",
         "tags": [
           "parents"
+        ]
+      }
+    },
+    "/server/settings": {
+      "get": {
+        "description": "Settings that come from environment variables are read-only here (`source: environment`).",
+        "operationId": "getServerSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettingsOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "server:manage"
+            ]
+          },
+          {
+            "session": [
+              "server:manage"
+            ]
+          }
+        ],
+        "summary": "Server-level settings (owners only)",
+        "tags": [
+          "server"
         ]
       }
     },

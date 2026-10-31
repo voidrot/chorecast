@@ -56,6 +56,7 @@
 
     <string name="home_signed_in">Signed in as %1$s</string>
     <string name="home_server">Server: %1$s</string>
+    <string name="home_household">%1$s · day ends at %2$s</string>
     <string name="home_parent_next">Parent screens and device pairing are coming next.</string>
     <plurals name="home_recovery_codes_left">
         <item quantity="one">You have %d recovery code left. Create new ones in the web admin.</item>

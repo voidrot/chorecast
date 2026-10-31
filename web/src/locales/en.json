@@ -7,7 +7,8 @@
     "account": "Account",
     "signOut": "Sign out",
     "parents": "Parents",
-    "kids": "Kids"
+    "kids": "Kids",
+    "settings": "Settings"
   },
   "session": {
     "parent": "Parent",
@@ -282,5 +283,42 @@
     "archivedMsg": "{name} archived.",
     "unarchivedMsg": "{name} is back. Pair their devices again.",
     "avatarN": "Avatar {n}"
+  },
+  "settings": {
+    "title": "Settings",
+    "household": "Household",
+    "saved": "Settings saved.",
+    "calendarHint": "Changing the timezone, day end or week start reschedules upcoming chores that haven't been started.",
+    "points": "Points and visibility",
+    "allowNegative": "Allow negative balances",
+    "allowNegativeHint": "When off, a deduction never takes a kid below zero.",
+    "visibility": {
+      "label": "What kids see of each other",
+      "private": "Private: only their own points and chores",
+      "leaderboard": "Family leaderboard: a weekly ranking by points earned"
+    },
+    "approvals": "Approvals and evidence",
+    "autoApprove": "Approve submitted chores automatically after",
+    "hours": "Hours",
+    "hoursSuffix": "h",
+    "autoApproveHint": "Chores can override this. Off means a parent always decides.",
+    "retention": "Keep photos and videos for",
+    "daysSuffix": "days",
+    "grace": "Offline grace",
+    "minutesSuffix": "min",
+    "retentionHint": "Evidence media is deleted this long after a chore is resolved; the record stays.",
+    "graceHint": "Chores completed offline count if they were done within this long after the day ended.",
+    "server": "Server",
+    "serverHint": "Chorecast {version}. These come from environment variables on the server; change them there and restart.",
+    "setByEnv": "set by environment",
+    "notSet": "not set",
+    "secretSet": "set (hidden)",
+    "keys": {
+      "publicUrl": "Public URL",
+      "dataDir": "Data directory",
+      "oidcIssuer": "SSO issuer",
+      "oidcClientId": "SSO client ID",
+      "oidcClientSecret": "SSO client secret"
+    }
   }
 }

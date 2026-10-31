@@ -16,6 +16,10 @@ type Config struct {
 	PublicURL string
 
 	OIDC OIDCConfig
+
+	// FromEnv records which CHORECAST_* variables were set, so the admin can show those settings
+	// as "set by environment".
+	FromEnv map[string]bool
 }
 
 // OIDCConfig enables optional SSO for parent accounts (Authentik, Authelia, Keycloak, PocketID...).
@@ -28,7 +32,17 @@ type OIDCConfig struct {
 func (o OIDCConfig) Enabled() bool { return o.Issuer != "" && o.ClientID != "" }
 
 func Load() Config {
+	fromEnv := map[string]bool{}
+	for _, k := range []string{
+		"CHORECAST_ADDR", "CHORECAST_DATA_DIR", "CHORECAST_DEV", "CHORECAST_PUBLIC_URL",
+		"CHORECAST_OIDC_ISSUER", "CHORECAST_OIDC_CLIENT_ID", "CHORECAST_OIDC_CLIENT_SECRET",
+	} {
+		if v, ok := os.LookupEnv(k); ok && v != "" {
+			fromEnv[k] = true
+		}
+	}
 	return Config{
+		FromEnv:   fromEnv,
 		Addr:      env("CHORECAST_ADDR", ":8080"),
 		DataDir:   env("CHORECAST_DATA_DIR", "./data"),
 		Dev:       envBool("CHORECAST_DEV"),
