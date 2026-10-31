@@ -9,8 +9,11 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/voidrot/chorecast/server/internal/auth"
+	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/version"
 )
 
@@ -18,7 +21,8 @@ const Prefix = "/api/v1"
 
 // New registers all API operations on r under Prefix and returns the Huma API.
 // store may be nil when only the spec is needed (e.g. `chorecast openapi`).
-func New(r chi.Router, cfg config.Config, store *db.DB) huma.API {
+// It panics if an operation declares no access policy (see auth.CheckOperations).
+func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.API {
 	hcfg := huma.DefaultConfig("Chorecast API", version.Version)
 	hcfg.Info.Description = "Self-hosted chore and behavior system."
 	hcfg.Servers = []*huma.Server{{URL: Prefix}}
@@ -35,6 +39,12 @@ func New(r chi.Router, cfg config.Config, store *db.DB) huma.API {
 		hapi = humachi.New(r, hcfg)
 	})
 
+	var queries *sqlc.Queries
+	if store != nil {
+		queries = store.Queries
+	}
+	hapi.UseMiddleware(auth.Middleware(hapi, auth.NewStore(queries, clk)))
+
 	h := &handlers{cfg: cfg, db: store}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
@@ -42,6 +52,7 @@ func New(r chi.Router, cfg config.Config, store *db.DB) huma.API {
 		Path:        "/health",
 		Summary:     "Liveness and readiness check",
 		Tags:        []string{"system"},
+		Metadata:    auth.Public(),
 	}, h.health)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getVersion",
@@ -49,8 +60,12 @@ func New(r chi.Router, cfg config.Config, store *db.DB) huma.API {
 		Path:        "/version",
 		Summary:     "Server and API version (used by clients for compatibility checks)",
 		Tags:        []string{"system"},
+		Metadata:    auth.Public(),
 	}, h.version)
 
+	if err := auth.CheckOperations(hapi.OpenAPI()); err != nil {
+		panic(err)
+	}
 	return hapi
 }
 

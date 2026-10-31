@@ -8,6 +8,6 @@ SELECT * FROM users ORDER BY role, display_name;
 SELECT count(*) FROM users;
 
 -- name: CreateUser :one
-INSERT INTO users (display_name, role, username, password_hash, pin_hash)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO users (display_name, role, is_owner, username, password_hash, pin_hash)
+VALUES (?, ?, ?, ?, ?, ?)
 RETURNING *;
