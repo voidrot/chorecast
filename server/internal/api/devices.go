@@ -65,6 +65,36 @@ func registerDevices(hapi huma.API, h *handlers) {
 		Security: auth.Require(),
 		Errors:   []int{http.StatusForbidden, http.StatusTooManyRequests},
 	}, h.elevateParent)
+	manage := auth.Require(auth.ScopeDevicesManage)
+	huma.Register(hapi, huma.Operation{
+		OperationID: "listDevices",
+		Method:      http.MethodGet,
+		Path:        "/devices",
+		Summary:     "Paired devices",
+		Tags:        []string{"devices"},
+		Security:    manage,
+	}, h.listDevices)
+	huma.Register(hapi, huma.Operation{
+		OperationID:   "revokeDevice",
+		Method:        http.MethodDelete,
+		Path:          "/devices/{id}",
+		Summary:       "Unpair a device",
+		Description:   "Its token and sessions stop working immediately; the app returns to pairing. To give a device to someone else, revoke it and pair it again.",
+		Tags:          []string{"devices"},
+		Security:      manage,
+		DefaultStatus: http.StatusNoContent,
+		Errors:        []int{http.StatusNotFound},
+	}, h.revokeDevice)
+	huma.Register(hapi, huma.Operation{
+		OperationID: "lockDeviceRemotely",
+		Method:      http.MethodPost,
+		Path:        "/devices/{id}/lock",
+		Summary:     "Send a device back to its profile picker",
+		Description: "Ends any kid session or parent elevation on it. The app notices on its next contact (within about 30 seconds while a session is open).",
+		Tags:        []string{"devices"},
+		Security:    manage,
+		Errors:      []int{http.StatusNotFound},
+	}, h.lockDeviceRemotely)
 	huma.Register(hapi, huma.Operation{
 		OperationID:   "lockDevice",
 		Method:        http.MethodPost,
@@ -125,8 +155,15 @@ type PickerOutput struct {
 	Body devices.DevicePicker
 }
 
-func (h *handlers) devicePicker(ctx context.Context, _ *struct{}) (*PickerOutput, error) {
+type PickerInput struct {
+	AppVersion string `query:"appVersion" maxLength:"30" doc:"The app's version, recorded for the devices page"`
+}
+
+func (h *handlers) devicePicker(ctx context.Context, in *PickerInput) (*PickerOutput, error) {
 	p, _ := auth.PrincipalFrom(ctx)
+	if err := h.devices.ReportVersion(ctx, p, in.AppVersion); err != nil {
+		return nil, err
+	}
 	picker, err := h.devices.Picker(ctx, p)
 	if err != nil {
 		return nil, err
@@ -173,4 +210,44 @@ func (h *handlers) elevateParent(ctx context.Context, in *ElevateInput) (*Device
 func (h *handlers) lockDevice(ctx context.Context, _ *struct{}) (*struct{}, error) {
 	p, _ := auth.PrincipalFrom(ctx)
 	return nil, h.devices.Lock(ctx, p)
+}
+
+type DevicesOutput struct {
+	Body struct {
+		Items []devices.ListedDevice `json:"items" nullable:"false"`
+	}
+}
+
+func (h *handlers) listDevices(ctx context.Context, _ *struct{}) (*DevicesOutput, error) {
+	items, err := h.devices.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &DevicesOutput{}
+	out.Body.Items = items
+	return out, nil
+}
+
+type DeviceIDInput struct {
+	ID int64 `path:"id"`
+}
+
+func (h *handlers) revokeDevice(ctx context.Context, in *DeviceIDInput) (*struct{}, error) {
+	return nil, h.devices.Revoke(ctx, in.ID)
+}
+
+type LockRemoteOutput struct {
+	Body struct {
+		EndedSessions int64 `json:"endedSessions" doc:"How many sessions were open"`
+	}
+}
+
+func (h *handlers) lockDeviceRemotely(ctx context.Context, in *DeviceIDInput) (*LockRemoteOutput, error) {
+	n, err := h.devices.LockRemote(ctx, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := &LockRemoteOutput{}
+	out.Body.EndedSessions = n
+	return out, nil
 }

@@ -112,6 +112,11 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
 - **Remote lock to picker**: sends a push (or applied on next sync) that ends the active kid or parent session
   on a shared tablet.
 - To change who a device belongs to, revoke it and pair again (no reassign by design).
+- Built (#19): `GET /devices` (last seen = latest request from the device or its sessions; the open session's user),
+  `DELETE /devices/{id}` (revoke: deletes the device row, its token and sessions), `POST /devices/{id}/lock`
+  (ends sessions). Until push (Phase 3) the app checks in every 30 s while a session is open and every 60 s at
+  the picker, so a remote lock or revoke applies within about a minute. The app reports its version with each
+  picker request. Parents get the list in the web admin and the parent app.
 - **Kiosk mode** (shared devices): parent enables it on the device itself after PIN elevation. The app calls
   `startLockTask()` (screen pinning; no device-owner setup needed). Leaving requires parent PIN elevation.
   Optional "keep screen on" schedule (e.g. 06:30–20:30), applied via a window flag while in the foreground.

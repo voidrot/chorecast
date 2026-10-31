@@ -76,6 +76,30 @@ func (q *Queries) CreatePairingCode(ctx context.Context, arg CreatePairingCodePa
 	return i, err
 }
 
+const deleteDevice = `-- name: DeleteDevice :execrows
+DELETE FROM devices WHERE id = ?
+`
+
+func (q *Queries) DeleteDevice(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteDevice, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteDeviceSessions = `-- name: DeleteDeviceSessions :execrows
+DELETE FROM tokens WHERE device_id = ? AND kind = 'device_session'
+`
+
+func (q *Queries) DeleteDeviceSessions(ctx context.Context, deviceID sql.NullInt64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteDeviceSessions, deviceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteExpiredPairingCodes = `-- name: DeleteExpiredPairingCodes :execrows
 DELETE FROM pairing_codes WHERE expires_at <= ?
 `
@@ -124,6 +148,60 @@ func (q *Queries) GetPairingCode(ctx context.Context, codeHash []byte) (PairingC
 		&i.UsedAt,
 	)
 	return i, err
+}
+
+const listDevices = `-- name: ListDevices :many
+SELECT d.id, d.user_id, d.name, d.app_version, d.created_at,
+    coalesce(k.display_name, '') AS kid_name,
+    CAST(coalesce((SELECT max(coalesce(t.last_used_at, t.created_at)) FROM tokens t WHERE t.device_id = d.id), d.created_at) AS TEXT) AS last_seen,
+    CAST(coalesce((SELECT u.display_name FROM tokens t JOIN users u ON u.id = t.user_id
+        WHERE t.device_id = d.id AND t.kind = 'device_session' AND t.expires_at > ?1
+        ORDER BY t.created_at DESC LIMIT 1), '') AS TEXT) AS session_user
+FROM devices d LEFT JOIN users k ON k.id = d.user_id
+ORDER BY d.created_at DESC
+`
+
+type ListDevicesRow struct {
+	ID          int64         `json:"id"`
+	UserID      sql.NullInt64 `json:"user_id"`
+	Name        string        `json:"name"`
+	AppVersion  string        `json:"app_version"`
+	CreatedAt   string        `json:"created_at"`
+	KidName     string        `json:"kid_name"`
+	LastSeen    string        `json:"last_seen"`
+	SessionUser string        `json:"session_user"`
+}
+
+func (q *Queries) ListDevices(ctx context.Context, now sql.NullString) ([]ListDevicesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDevices, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDevicesRow{}
+	for rows.Next() {
+		var i ListDevicesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.AppVersion,
+			&i.CreatedAt,
+			&i.KidName,
+			&i.LastSeen,
+			&i.SessionUser,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listElevatableParents = `-- name: ListElevatableParents :many
@@ -203,6 +281,20 @@ func (q *Queries) ListProfileKids(ctx context.Context) ([]ListProfileKidsRow, er
 		return nil, err
 	}
 	return items, nil
+}
+
+const setDeviceAppVersion = `-- name: SetDeviceAppVersion :exec
+UPDATE devices SET app_version = ? WHERE id = ?
+`
+
+type SetDeviceAppVersionParams struct {
+	AppVersion string `json:"app_version"`
+	ID         int64  `json:"id"`
+}
+
+func (q *Queries) SetDeviceAppVersion(ctx context.Context, arg SetDeviceAppVersionParams) error {
+	_, err := q.db.ExecContext(ctx, setDeviceAppVersion, arg.AppVersion, arg.ID)
+	return err
 }
 
 const setDeviceElevateFailures = `-- name: SetDeviceElevateFailures :exec

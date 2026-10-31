@@ -6,6 +6,7 @@ import dev.voidrot.chorecast.api.models.Device
 import dev.voidrot.chorecast.api.models.DevicePicker
 import dev.voidrot.chorecast.api.models.ElevateInputBody
 import dev.voidrot.chorecast.api.models.KidSessionInputBody
+import dev.voidrot.chorecast.api.models.ListedDevice
 import dev.voidrot.chorecast.api.models.PairDeviceInputBody
 import dev.voidrot.chorecast.api.models.Problem
 import io.ktor.client.engine.HttpClientEngine
@@ -79,9 +80,12 @@ class DeviceClient(private val engine: HttpClientEngine? = null) {
         }
     }
 
-    /** The picker, or null if the device token stopped working. Throws IOException when offline. */
-    suspend fun picker(url: ServerUrl, deviceToken: String): DevicePicker? {
-        val resp = api(url, deviceToken).getDevicePicker()
+    /**
+     * The picker, or null if the device token stopped working. Throws IOException when offline.
+     * [appVersion] is recorded for the parents' devices page.
+     */
+    suspend fun picker(url: ServerUrl, deviceToken: String, appVersion: String? = null): DevicePicker? {
+        val resp = api(url, deviceToken).getDevicePicker(appVersion)
         return when {
             resp.success -> resp.body()
             resp.status == 401 || resp.status == 403 -> null
@@ -100,6 +104,28 @@ class DeviceClient(private val engine: HttpClientEngine? = null) {
     /** Ends a kid session or elevation on the server. Best effort: the app forgets it either way. */
     suspend fun lock(url: ServerUrl, sessionToken: String) {
         guard({}, {}) { api(url, sessionToken).lockDevice() }
+    }
+
+    // Parents managing devices (app token).
+
+    /** All paired devices, or null if the parent's token stopped working. Throws IOException when offline. */
+    suspend fun list(url: ServerUrl, appToken: String): List<ListedDevice>? {
+        val resp = api(url, appToken).listDevices()
+        return when {
+            resp.success -> resp.body().items
+            resp.status == 401 || resp.status == 403 -> null
+            else -> throw IOException("HTTP ${resp.status}")
+        }
+    }
+
+    /** Sends a shared device back to its picker. True when the server accepted it. */
+    suspend fun lockRemotely(url: ServerUrl, appToken: String, deviceId: Long): Boolean =
+        guard({ false }, { false }) { api(url, appToken).lockDeviceRemotely(deviceId).success }
+
+    /** Unpairs a device. True when it's gone (including already gone). */
+    suspend fun revoke(url: ServerUrl, appToken: String, deviceId: Long): Boolean = guard({ false }, { false }) {
+        val resp = api(url, appToken).revokeDevice(deviceId)
+        resp.success || resp.status == 404
     }
 
     private suspend fun session(call: suspend () -> HttpResponse<dev.voidrot.chorecast.api.models.DeviceSession>): SessionResult =

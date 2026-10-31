@@ -26,6 +26,7 @@ fun HomeScreen(
     recoveryCodesLeft: Long?,
     onSignedOut: () -> Unit,
     onChangeServer: () -> Unit,
+    onDevices: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -51,6 +52,7 @@ fun HomeScreen(
             )
         }
         Text(stringResource(R.string.home_parent_next), style = MaterialTheme.typography.bodyMedium)
+        OutlinedButton(onClick = onDevices) { Text(stringResource(R.string.devices_title)) }
         OutlinedButton(onClick = viewModel::signOut) { Text(stringResource(R.string.action_sign_out)) }
         OutlinedButton(onClick = onChangeServer) { Text(stringResource(R.string.action_change_server)) }
     }

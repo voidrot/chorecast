@@ -14,6 +14,8 @@ import dev.voidrot.chorecast.BuildConfig
 import dev.voidrot.chorecast.ui.connect.ConnectScreen
 import dev.voidrot.chorecast.ui.device.DeviceScreen
 import dev.voidrot.chorecast.ui.device.DeviceViewModel
+import dev.voidrot.chorecast.ui.devices.DevicesScreen
+import dev.voidrot.chorecast.ui.devices.DevicesViewModel
 import dev.voidrot.chorecast.ui.pair.PairScreen
 import dev.voidrot.chorecast.ui.pair.PairViewModel
 import dev.voidrot.chorecast.ui.welcome.WelcomeScreen
@@ -67,7 +69,7 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
         composable<DeviceRoute> {
             DeviceScreen(
                 viewModel = viewModel {
-                    DeviceViewModel(currentUrl(), container.deviceClient, container.parentAuth, container.tokenStore)
+                    DeviceViewModel(currentUrl(), container.deviceClient, container.parentAuth, container.tokenStore, BuildConfig.VERSION_NAME)
                 },
                 onUnpaired = {
                     container.settings.mode = null
@@ -105,6 +107,15 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 recoveryCodesLeft = route.recoveryCodesLeft,
                 onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
                 onChangeServer = { nav.navigate(ConnectRoute) },
+                onDevices = { nav.navigate(DevicesRoute(route.serverUrl)) },
+            )
+        }
+        composable<DevicesRoute> { entry ->
+            val route = entry.toRoute<DevicesRoute>()
+            DevicesScreen(
+                viewModel = viewModel { DevicesViewModel(currentUrl(), container.deviceClient, container.tokenStore) },
+                onBack = { nav.popBackStack() },
+                onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
             )
         }
     }
