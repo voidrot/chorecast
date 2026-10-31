@@ -194,6 +194,24 @@ Implemented in `internal/auth`:
   expired tokens).
 - Tests drive time with `clock.Fake` and call `Scheduler.Tick` / `Runner.RunDue` directly.
 
+## Domain events
+
+`internal/events`, a transactional outbox on top of the job runner:
+
+- Domain code changes state and emits events in one transaction:
+  `bus.InTx(ctx, func(tx *events.Tx) error { ...tx.Q.UpdateX...; return tx.Emit(ctx, ChoreSubmitted{...}) })`.
+  If the function errors or panics, both the state change and the events roll back; if it commits, the events
+  are durable even if the process dies a moment later.
+- **Inside `InTx`, use only `tx.Q`.** SQLite runs on a single connection, so any other query blocks until the
+  transaction ends.
+- Events are typed structs with a stable `EventType()` (e.g. `assignment.submitted`); subscribers decode with
+  `events.Decode[T]`.
+- The dispatcher (woken on commit, polling every second) turns each event into one job per subscriber (key
+  `event:<id>:<subscriber>`) and marks it dispatched. Each subscriber therefore retries independently with job
+  backoff, and a crash mid-dispatch can't duplicate deliveries.
+- Delivery is at-least-once; subscribers must be idempotent (use `Envelope.ID`). Subscribers are registered in
+  `cmd/chorecast/background.go`. Dispatched events are purged after 30 days by daily maintenance.
+
 ## Push notifications
 
 See [features/notifications.md](features/notifications.md). In short: push payloads carry no content (wake-up
