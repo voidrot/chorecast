@@ -323,6 +323,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chore definitions */
+        get: operations["listChores"];
+        put?: never;
+        /** Add a chore */
+        post: operations["createChore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chores/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A chore definition */
+        get: operations["getChore"];
+        /**
+         * Edit a chore
+         * @description Replaces the definition; optional fields left out are cleared. Upcoming untouched instances are regenerated once scheduling exists.
+         */
+        put: operations["updateChore"];
+        post?: never;
+        /** Delete a chore */
+        delete: operations["deleteChore"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices": {
         parameters: {
             query?: never;
@@ -492,6 +532,42 @@ export interface paths {
          */
         post: operations["lockDeviceRemotely"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The equipment catalog */
+        get: operations["listEquipment"];
+        put?: never;
+        /** Add to the equipment catalog */
+        post: operations["createEquipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/equipment/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Edit a equipment catalog entry */
+        put: operations["updateEquipment"];
+        post?: never;
+        /** Delete a equipment catalog entry (chores using it lose the link) */
+        delete: operations["deleteEquipment"];
         options?: never;
         head?: never;
         patch?: never;
@@ -667,6 +743,42 @@ export interface paths {
         /** Unarchive a kid (devices must be paired again) */
         post: operations["unarchiveKid"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/locations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The locations catalog */
+        get: operations["listLocation"];
+        put?: never;
+        /** Add to the locations catalog */
+        post: operations["createLocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/locations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Edit a locations catalog entry */
+        put: operations["updateLocation"];
+        post?: never;
+        /** Delete a locations catalog entry (chores using it lose the link) */
+        delete: operations["deleteLocation"];
         options?: never;
         head?: never;
         patch?: never;
@@ -881,10 +993,110 @@ export interface components {
             /** @description Base32 secret, for typing into an authenticator app */
             secret: string;
         };
+        CatalogInput: {
+            description?: string;
+            name: string;
+        };
+        CatalogItem: {
+            description?: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        CatalogOutputBody: {
+            items: components["schemas"]["CatalogItem"][];
+        };
         ChangePasswordInputBody: {
             /** @description Required unless you have no password yet (joined with single sign-on) */
             currentPassword?: string;
             newPassword: string;
+        };
+        Chore: {
+            /**
+             * Format: int64
+             * @description Absent = household default; 0 = never; N = approve after N hours
+             */
+            autoApproveHours?: number;
+            /** Format: date-time */
+            createdAt: string;
+            description?: string;
+            /** @description Kept, but not scheduled */
+            disabled?: boolean;
+            /** @description Per-kid exceptions to minAge */
+            eligibility?: components["schemas"]["ChoreEligibility"][] | null;
+            equipmentIds?: number[] | null;
+            /** @description Remind parents if still open 30 minutes before day close (meds, pets) */
+            escalate?: boolean;
+            /** Format: int64 */
+            estimatedMinutes?: number;
+            evidence: components["schemas"]["EvidenceRules"];
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            locationId?: number;
+            /** Format: int64 */
+            minAge?: number;
+            name: string;
+            /**
+             * Format: int64
+             * @description Points deducted when the chore is missed
+             */
+            penalty?: number;
+            /** Format: int64 */
+            points: number;
+            /** @description A parent approves before points are credited */
+            requiresApproval: boolean;
+            /** @description Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance. */
+            slots?: string[] | null;
+            /** @description Checklist steps shown to the kid */
+            steps?: string[] | null;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ChoreEligibility: {
+            /** @description true: allowed even if younger than minAge; false: never gets this chore */
+            allow: boolean;
+            /** Format: int64 */
+            kidId: number;
+        };
+        ChoreInput: {
+            /**
+             * Format: int64
+             * @description Absent = household default; 0 = never; N = approve after N hours
+             */
+            autoApproveHours?: number;
+            description?: string;
+            /** @description Kept, but not scheduled */
+            disabled?: boolean;
+            /** @description Per-kid exceptions to minAge */
+            eligibility?: components["schemas"]["ChoreEligibility"][] | null;
+            equipmentIds?: number[] | null;
+            /** @description Remind parents if still open 30 minutes before day close (meds, pets) */
+            escalate?: boolean;
+            /** Format: int64 */
+            estimatedMinutes?: number;
+            evidence: components["schemas"]["EvidenceRules"];
+            /** Format: int64 */
+            locationId?: number;
+            /** Format: int64 */
+            minAge?: number;
+            name: string;
+            /**
+             * Format: int64
+             * @description Points deducted when the chore is missed
+             */
+            penalty?: number;
+            /** Format: int64 */
+            points: number;
+            /** @description A parent approves before points are credited */
+            requiresApproval: boolean;
+            /** @description Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance. */
+            slots?: string[] | null;
+            /** @description Checklist steps shown to the kid */
+            steps?: string[] | null;
+        };
+        ChoresOutputBody: {
+            items: components["schemas"]["Chore"][];
         };
         CompleteSetupOutputBody: {
             /**
@@ -984,6 +1196,21 @@ export interface components {
             message?: string;
             /** @description The value at the given location */
             value?: unknown;
+        };
+        EvidenceRules: {
+            /** @description The photos include a before and an after (needs photos >= 2) */
+            beforeAfter?: boolean;
+            /** @description Every step must be ticked (needs steps) */
+            checklist?: boolean;
+            /** @description A written note is required */
+            note?: boolean;
+            /**
+             * Format: int64
+             * @description Minimum number of photos (taken in the app)
+             */
+            photos: number;
+            /** @description A short video is required */
+            video?: boolean;
         };
         ExchangeOIDCInputBody: {
             code: string;
@@ -2312,6 +2539,229 @@ export interface operations {
             };
         };
     };
+    listChores: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChoresOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createChore: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChoreInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chore"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getChore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chore"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateChore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChoreInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chore"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteChore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listDevices: {
         parameters: {
             query?: never;
@@ -2760,6 +3210,198 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LockRemoteOutputBody"];
                 };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createEquipment: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Not Found */
             404: {
@@ -3327,6 +3969,198 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Kid"];
                 };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listLocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createLocation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateLocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteLocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Not Found */
             404: {
