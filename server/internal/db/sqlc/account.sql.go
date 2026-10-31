@@ -68,7 +68,7 @@ func (q *Queries) EnableTOTP(ctx context.Context, arg EnableTOTPParams) error {
 }
 
 const getParentByOIDCSubject = `-- name: GetParentByOIDCSubject :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE oidc_subject = ? AND role = 'parent'
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, avatar, day_end_override, quiet_start, quiet_end, school_days, school_start, school_end, archived_at, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE oidc_subject = ? AND role = 'parent'
 `
 
 func (q *Queries) GetParentByOIDCSubject(ctx context.Context, oidcSubject sql.NullString) (User, error) {
@@ -86,6 +86,14 @@ func (q *Queries) GetParentByOIDCSubject(ctx context.Context, oidcSubject sql.Nu
 		&i.PinRequired,
 		&i.Color,
 		&i.BirthDate,
+		&i.Avatar,
+		&i.DayEndOverride,
+		&i.QuietStart,
+		&i.QuietEnd,
+		&i.SchoolDays,
+		&i.SchoolStart,
+		&i.SchoolEnd,
+		&i.ArchivedAt,
 		&i.OidcSubject,
 		&i.ParentPinHash,
 		&i.TotpSecret,
@@ -98,7 +106,7 @@ func (q *Queries) GetParentByOIDCSubject(ctx context.Context, oidcSubject sql.Nu
 }
 
 const getParentByUsername = `-- name: GetParentByUsername :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE username = ? AND role = 'parent'
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, avatar, day_end_override, quiet_start, quiet_end, school_days, school_start, school_end, archived_at, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE username = ? AND role = 'parent'
 `
 
 func (q *Queries) GetParentByUsername(ctx context.Context, username sql.NullString) (User, error) {
@@ -116,6 +124,14 @@ func (q *Queries) GetParentByUsername(ctx context.Context, username sql.NullStri
 		&i.PinRequired,
 		&i.Color,
 		&i.BirthDate,
+		&i.Avatar,
+		&i.DayEndOverride,
+		&i.QuietStart,
+		&i.QuietEnd,
+		&i.SchoolDays,
+		&i.SchoolStart,
+		&i.SchoolEnd,
+		&i.ArchivedAt,
 		&i.OidcSubject,
 		&i.ParentPinHash,
 		&i.TotpSecret,

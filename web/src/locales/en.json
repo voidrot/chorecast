@@ -6,7 +6,8 @@
     "home": "Home",
     "account": "Account",
     "signOut": "Sign out",
-    "parents": "Parents"
+    "parents": "Parents",
+    "kids": "Kids"
   },
   "session": {
     "parent": "Parent",
@@ -241,5 +242,45 @@
       "usernameTaken": "That username is taken. Choose another.",
       "sso": "Joining with single sign-on didn't work. Try again, or create a password instead."
     }
+  },
+  "kids": {
+    "title": "Kids",
+    "add": "Add a kid",
+    "showArchived": "Show archived",
+    "archived": "Archived",
+    "age": "age {age}",
+    "empty": "No kids yet. Add one to get started.",
+    "newTitle": "Add a kid",
+    "profile": "Profile",
+    "name": "Name (nickname or first name)",
+    "slug": "Short name",
+    "slugHint": "Used in links and scripts, e.g. /kids/sam. Changing it breaks old links.",
+    "birthDate": "Birth date (optional)",
+    "avatar": "Avatar",
+    "noAvatar": "None",
+    "pinTitle": "PIN",
+    "pinIsSet": "A PIN is set.",
+    "pinNotSet": "No PIN set yet.",
+    "savePin": "Save PIN",
+    "clearPin": "Remove PIN",
+    "pinAfterCreate": "You can set the PIN after creating the profile.",
+    "pinSaved": "PIN saved.",
+    "pinCleared": "PIN removed.",
+    "schedule": "Day and quiet times",
+    "dayEnd": "End this kid's day earlier",
+    "dayEndHint": "Their chores count as missed at this time instead of at the household's day end.",
+    "quietHours": "Quiet hours",
+    "quietHint": "No notifications to this kid in this window (it can cross midnight).",
+    "schoolHours": "School hours",
+    "schoolHint": "Extra quiet time on school days.",
+    "create": "Add kid",
+    "save": "Save",
+    "saved": "{name} saved.",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "archiveConfirm": "{name} is hidden, their devices are signed out, and no new chores are scheduled. Their history is kept, and you can unarchive them later.",
+    "archivedMsg": "{name} archived.",
+    "unarchivedMsg": "{name} is back. Pair their devices again.",
+    "avatarN": "Avatar {n}"
   }
 }
