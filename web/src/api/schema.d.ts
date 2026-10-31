@@ -340,6 +340,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/household": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household settings */
+        get: operations["getHousehold"];
+        /**
+         * Change household settings
+         * @description Replaces all settings. Changing the timezone, day end or week start regenerates untouched upcoming chores. The day end can't be earlier than a kid's day-end override.
+         */
+        put: operations["updateHousehold"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/invites": {
         parameters: {
             query?: never;
@@ -588,6 +609,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/server/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server-level settings (owners only)
+         * @description Settings that come from environment variables are read-only here (`source: environment`).
+         */
+        get: operations["getServerSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup": {
         parameters: {
             query?: never;
@@ -730,6 +771,37 @@ export interface components {
         HealthOutputBody: {
             /** @enum {string} */
             status: "ok" | "degraded";
+        };
+        HouseholdSettings: {
+            /** @description Deductions may take a kid below zero; otherwise they're clamped */
+            allowNegativeBalance: boolean;
+            /**
+             * Format: int64
+             * @description Approve submitted chores after this many hours; absent = never
+             */
+            autoApproveHours?: number;
+            /** @description HH:MM; 00:00 means midnight */
+            dayEnd: string;
+            /**
+             * Format: int64
+             * @description Evidence photos and videos are deleted this long after a chore is resolved
+             */
+            mediaRetentionDays: number;
+            name: string;
+            /**
+             * Format: int64
+             * @description Completions made offline count if done within this long after day close
+             */
+            offlineGraceMinutes: number;
+            /**
+             * @description private: kids see only their own data; leaderboard: a weekly family ranking
+             * @enum {string}
+             */
+            siblingVisibility: "private" | "leaderboard";
+            /** @description IANA timezone */
+            timezone: string;
+            /** @enum {string} */
+            weekStart: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
         };
         Invite: {
             /** Format: date-time */
@@ -916,6 +988,25 @@ export interface components {
             end: string;
             /** @example 08:00 */
             start: string;
+        };
+        ServerSetting: {
+            /** @description The environment variable that sets it */
+            env: string;
+            /** @description Stable identifier, e.g. publicUrl */
+            key: string;
+            /** @description The value is hidden; Value is empty */
+            secret?: boolean;
+            /**
+             * @description environment: read-only here
+             * @enum {string}
+             */
+            source: "environment" | "default";
+            /** @description Current value; secrets are never returned */
+            value?: string;
+        };
+        ServerSettingsOutputBody: {
+            items: components["schemas"]["ServerSetting"][];
+            version: string;
         };
         Session: {
             /** Format: date-time */
@@ -1957,6 +2048,77 @@ export interface operations {
             };
         };
     };
+    getHousehold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateHousehold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HouseholdSettings"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdSettings"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listInvites: {
         parameters: {
             query?: never;
@@ -2693,6 +2855,35 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getServerSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettingsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
                 headers: {
                     [name: string]: unknown;
                 };
