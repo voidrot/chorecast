@@ -68,7 +68,7 @@ func serve() error {
 	defer func() { _ = store.Close() }()
 
 	clk := clock.Real{}
-	runner, sched := newJobs(store, clk, slog.Default())
+	runner, sched, bus := newBackground(store, clk, slog.Default())
 	if err := runner.Recover(ctx); err != nil {
 		return err
 	}
@@ -77,6 +77,7 @@ func serve() error {
 	var background sync.WaitGroup
 	background.Go(func() { runner.Start(bgCtx) })
 	background.Go(func() { sched.Start(bgCtx, schedulerInterval) })
+	background.Go(func() { bus.Start(bgCtx) })
 	defer func() {
 		stopBackground()
 		background.Wait()

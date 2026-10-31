@@ -62,7 +62,19 @@ CREATE TABLE idempotency_keys (
     PRIMARY KEY (token_id, key)
 );
 
+-- Domain event outbox (internal/events). Rows are written in the same transaction as the state
+-- change; the dispatcher fans each one out to subscriber jobs, then sets dispatched_at.
+CREATE TABLE events (
+    id            INTEGER PRIMARY KEY,
+    type          TEXT    NOT NULL,
+    payload       TEXT    NOT NULL,   -- JSON
+    occurred_at   TEXT    NOT NULL,
+    dispatched_at TEXT
+);
+CREATE INDEX events_undispatched ON events (id) WHERE dispatched_at IS NULL;
+
 -- +goose Down
+DROP TABLE events;
 DROP TABLE idempotency_keys;
 DROP TABLE schedule_cursors;
 DROP TABLE jobs;
