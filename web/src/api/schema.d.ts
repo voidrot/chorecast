@@ -189,6 +189,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check an invite before accepting it
+         * @description POST so the token stays out of URLs and logs.
+         */
+        post: operations["getInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/invite/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an invite with a username and password
+         * @description Creates the parent and signs them in (session cookie). To join with single sign-on instead, navigate to /auth/oidc/start?client=invite&invite=…&displayName=….
+         */
+        post: operations["acceptInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -300,6 +340,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pending invites (owners only) */
+        get: operations["listInvites"];
+        put?: never;
+        /**
+         * Invite a parent (owners only)
+         * @description Returns a single-use link (valid 7 days) to share or show as a QR code. The token is shown only now.
+         */
+        post: operations["createInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a pending invite (owners only) */
+        delete: operations["revokeInvite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -310,6 +388,100 @@ export interface paths {
         /** The authenticated caller: kind, user and granted scopes */
         get: operations["getMe"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The household's parents */
+        get: operations["listParents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a parent (owners only)
+         * @description Signs them out everywhere and deletes their credentials; their name stays on past entries.
+         */
+        delete: operations["removeParent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parents/{id}/disable-totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn off a parent's two-factor sign-in (owners only) */
+        post: operations["disableParentTotp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parents/{id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give a parent a temporary password (owners only)
+         * @description Returns a new random password, shown once, and signs the parent out everywhere.
+         */
+        post: operations["resetParentPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parents/{id}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Make a parent an owner, or an owner a parent (owners only)
+         * @description The household always keeps at least one owner (409 last_owner).
+         */
+        put: operations["setParentRole"];
         post?: never;
         delete?: never;
         options?: never;
@@ -379,6 +551,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AcceptInviteInputBody: {
+            displayName: string;
+            password: string;
+            token: string;
+            username: string;
+        };
+        AcceptInviteOutputBody: {
+            /** Format: int64 */
+            userId: number;
+        };
         BeginTOTPOutputBody: {
             /** @description otpauth:// URL to show as a QR code */
             otpauthUrl: string;
@@ -386,7 +568,8 @@ export interface components {
             secret: string;
         };
         ChangePasswordInputBody: {
-            currentPassword: string;
+            /** @description Required unless you have no password yet (joined with single sign-on) */
+            currentPassword?: string;
             newPassword: string;
         };
         CompleteSetupOutputBody: {
@@ -395,6 +578,26 @@ export interface components {
              * @description The new owner
              */
             userId: number;
+        };
+        CreateInviteInputBody: {
+            /**
+             * @default parent
+             * @enum {string}
+             */
+            role: "parent" | "owner";
+        };
+        CreateInviteOutputBody: {
+            /** Format: date-time */
+            createdAt: string;
+            createdBy?: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            role: "parent" | "owner";
+            /** @description Link to share or show as a QR code; contains the token, shown only now */
+            url: string;
         };
         EnableTOTPInputBody: {
             code: string;
@@ -422,6 +625,33 @@ export interface components {
         HealthOutputBody: {
             /** @enum {string} */
             status: "ok" | "degraded";
+        };
+        Invite: {
+            /** Format: date-time */
+            createdAt: string;
+            createdBy?: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            role: "parent" | "owner";
+        };
+        InviteInfoOutputBody: {
+            /** Format: date-time */
+            expiresAt: string;
+            householdName: string;
+            invitedBy?: string;
+            /** @description Single sign-on is available for joining */
+            oidc: boolean;
+            /** @enum {string} */
+            role: "parent" | "owner";
+        };
+        InviteTokenInputBody: {
+            token: string;
+        };
+        InvitesOutputBody: {
+            items: components["schemas"]["Invite"][];
         };
         LoginInputBody: {
             /**
@@ -452,6 +682,8 @@ export interface components {
         MeOutputBody: {
             /** @description Parents and kids */
             displayName?: string;
+            /** @description Parents: false for parents who only use single sign-on */
+            hasPassword: boolean;
             /**
              * @description What kind of caller this is
              * @enum {string}
@@ -474,6 +706,22 @@ export interface components {
             userId?: number;
             /** @description Parents only */
             username?: string;
+        };
+        Parent: {
+            /** Format: date-time */
+            createdAt: string;
+            displayName: string;
+            hasPassword: boolean;
+            /** Format: int64 */
+            id: number;
+            oidcLinked: boolean;
+            owner: boolean;
+            totpEnabled: boolean;
+            /** @description Absent for parents who only use single sign-on */
+            username?: string;
+        };
+        ParentsOutputBody: {
+            items: components["schemas"]["Parent"][];
         };
         PasswordInputBody: {
             /** @description Your account password, to confirm */
@@ -543,6 +791,9 @@ export interface components {
             /** @description 4-8 digits; empty clears the PIN */
             pin: string;
         };
+        SetParentRoleInputBody: {
+            owner: boolean;
+        };
         SetupHousehold: {
             /**
              * @description When the household's day ends (HH:MM); 00:00 means midnight
@@ -601,6 +852,10 @@ export interface components {
             oidc: boolean;
             /** @description True until first-run setup completes */
             required: boolean;
+        };
+        TemporaryPasswordOutputBody: {
+            /** @description Temporary password to pass on; shown only now */
+            password: string;
         };
         VerifySetupInputBody: {
             token: string;
@@ -1127,6 +1382,124 @@ export interface operations {
             };
         };
     };
+    getInvite: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteTokenInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteInfoOutputBody"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    acceptInvite: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInviteInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptInviteOutputBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -1324,7 +1697,7 @@ export interface operations {
     startOidc: {
         parameters: {
             query?: {
-                /** @description web or app */
+                /** @description web, app or invite */
                 client?: string;
                 /** @description web: path to return to after signing in */
                 redirect?: string;
@@ -1332,6 +1705,12 @@ export interface operations {
                 challenge?: string;
                 /** @description app: device name for the session list */
                 label?: string;
+                /** @description invite: the invite token */
+                invite?: string;
+                /** @description invite: the new parent's name */
+                displayName?: string;
+                /** @description invite: optional username for password sign-in later */
+                username?: string;
             };
             header?: never;
             path?: never;
@@ -1424,6 +1803,118 @@ export interface operations {
             };
         };
     };
+    listInvites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitesOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createInvite: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInviteInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateInviteOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revokeInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getMe: {
         parameters: {
             query?: never;
@@ -1444,6 +1935,255 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listParents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParentsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    removeParent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    disableParentTotp: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resetParentPassword: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryPasswordOutputBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    setParentRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetParentRoleInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Parent"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

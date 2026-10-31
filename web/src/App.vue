@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { darkTheme, NConfigProvider, NMessageProvider, useOsTheme } from 'naive-ui'
+import { darkTheme, NConfigProvider, NDialogProvider, NMessageProvider, useOsTheme } from 'naive-ui'
 import { computed } from 'vue'
 import { RouterView } from 'vue-router'
 import { naiveLocale, themeOverrides } from './theme'
@@ -11,7 +11,9 @@ const theme = computed(() => (os.value === 'dark' ? darkTheme : null))
 <template>
   <NConfigProvider :theme="theme" :theme-overrides="themeOverrides" :locale="naiveLocale">
     <NMessageProvider>
-      <RouterView />
+      <NDialogProvider>
+        <RouterView />
+      </NDialogProvider>
     </NMessageProvider>
   </NConfigProvider>
 </template>

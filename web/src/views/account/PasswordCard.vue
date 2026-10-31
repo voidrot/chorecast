@@ -6,9 +6,13 @@ import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
 import { useAsync } from '@/composables/useAsync'
 import { minPasswordLength } from '@/setup/wizard'
+import { useSessionStore } from '@/stores/session'
 
 const { t } = useI18n()
 const message = useMessage()
+const session = useSessionStore()
+/** Parents who joined with single sign-on set their first password without a current one. */
+const hasPassword = computed(() => session.me?.hasPassword !== false)
 const current = ref('')
 const next = ref('')
 const confirm = ref('')
@@ -20,24 +24,34 @@ const problem = computed(() => {
   return ''
 })
 const ready = computed(
-  () => current.value && next.value.length >= minPasswordLength && next.value === confirm.value,
+  () =>
+    (current.value || !hasPassword.value) &&
+    next.value.length >= minPasswordLength &&
+    next.value === confirm.value,
 )
 
 const change = useAsync(async () => {
   const { error, response } = await api.PUT('/account/password', {
-    body: { currentPassword: current.value, newPassword: next.value },
+    body: {
+      ...(hasPassword.value ? { currentPassword: current.value } : {}),
+      newPassword: next.value,
+    },
   })
   if (error) throw ApiError.fromProblem(response.status, error)
   current.value = next.value = confirm.value = ''
+  await session.load()
   message.success(t('account.password.changed'))
 })
 </script>
 
 <template>
-  <NCard :title="t('account.password.title')">
+  <NCard :title="hasPassword ? t('account.password.title') : t('account.password.setTitle')">
     <form class="flex flex-col gap-3" @submit.prevent="ready && change.run()">
-      <p class="text-sm text-gray-600 dark:text-neutral-400">{{ t('account.password.hint') }}</p>
+      <p class="text-sm text-gray-600 dark:text-neutral-400">
+        {{ hasPassword ? t('account.password.hint') : t('account.password.setHint') }}
+      </p>
       <NFormItem
+        v-if="hasPassword"
         :label="t('account.password.current')"
         :label-props="{ for: 'pw-current' }"
         :show-feedback="false"
