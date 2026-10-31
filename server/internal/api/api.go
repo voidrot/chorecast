@@ -4,16 +4,19 @@ package api
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/version"
 )
 
@@ -33,17 +36,25 @@ func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.AP
 		"bearer":  {Type: "http", Scheme: "bearer", Description: "Opaque app/device token"},
 		"session": {Type: "apiKey", In: "cookie", Name: "chorecast_session"},
 	}
+	hcfg.OnAddOperation = append(hcfg.OnAddOperation, idempotency.AddHeaderParam)
 
 	var hapi huma.API
 	r.Route(Prefix, func(r chi.Router) {
 		hapi = humachi.New(r, hcfg)
+		// Unknown paths and methods under the API prefix answer in the same problem format.
+		r.NotFound(apierr.Handler(http.StatusNotFound).ServeHTTP)
+		r.MethodNotAllowed(apierr.Handler(http.StatusMethodNotAllowed).ServeHTTP)
 	})
 
 	var queries *sqlc.Queries
 	if store != nil {
 		queries = store.Queries
 	}
-	hapi.UseMiddleware(auth.Middleware(hapi, auth.NewStore(queries, clk)))
+	// Order matters: idempotency needs the principal resolved by auth.
+	hapi.UseMiddleware(
+		auth.Middleware(hapi, auth.NewStore(queries, clk)),
+		idempotency.Middleware(hapi, queries, clk),
+	)
 
 	h := &handlers{cfg: cfg, db: store}
 	huma.Register(hapi, huma.Operation{

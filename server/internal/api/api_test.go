@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/version"
 )
 
 func TestSystemEndpoints(t *testing.T) {
@@ -51,5 +53,34 @@ func TestEveryOperationDeclaresAccessPolicy(t *testing.T) {
 	hapi := api.New(chi.NewRouter(), config.Config{}, nil, clock.Real{})
 	if err := auth.CheckOperations(hapi.OpenAPI()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestUnknownAPIRoutesReturnProblems(t *testing.T) {
+	r := chi.NewRouter()
+	api.New(r, config.Config{}, nil, clock.Real{})
+	for _, tc := range []struct {
+		method, path string
+		status       int
+		code         string
+	}{
+		{http.MethodGet, "/api/v1/nope", http.StatusNotFound, "not_found"},
+		{http.MethodDelete, "/api/v1/health", http.StatusMethodNotAllowed, "method_not_allowed"},
+	} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil))
+		if rec.Code != tc.status || rec.Header().Get("Content-Type") != "application/problem+json" {
+			t.Errorf("%s %s = %d %q", tc.method, tc.path, rec.Code, rec.Header().Get("Content-Type"))
+		}
+		if !strings.Contains(rec.Body.String(), `"code":"`+tc.code+`"`) {
+			t.Errorf("%s %s body = %s", tc.method, tc.path, rec.Body)
+		}
+	}
+}
+
+// The compatibility contract: apiVersion is the major version in the URL prefix.
+func TestAPIVersionMatchesPrefix(t *testing.T) {
+	if want := fmt.Sprintf("/api/v%d", version.APIVersion); api.Prefix != want {
+		t.Errorf("Prefix = %s but APIVersion = %d (want prefix %s)", api.Prefix, version.APIVersion, want)
 	}
 }

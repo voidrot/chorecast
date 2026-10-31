@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/voidrot/chorecast/server/internal/apierr"
 )
 
 // SessionCookie carries the web admin's session token.
@@ -69,11 +71,13 @@ func Middleware(api huma.API, store *Store) func(huma.Context, func(huma.Context
 		scopes, declared := requiredScopes(op)
 		switch {
 		case !declared:
-			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "operation has no access policy")
+			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "operation has no access policy",
+				apierr.WithCode(apierr.CodeNoAccessPolicy))
 		case p == nil:
 			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "authentication required")
 		case !p.HasAll(scopes):
-			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "insufficient permissions")
+			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "insufficient permissions",
+				apierr.WithCode(apierr.CodeInsufficientScope))
 		default:
 			next(ctx)
 		}

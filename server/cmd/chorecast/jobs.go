@@ -8,6 +8,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/jobs"
 )
 
@@ -35,7 +36,11 @@ func newJobs(store *db.DB, clk clock.Clock, log *slog.Logger) (*jobs.Runner, *jo
 		if err != nil {
 			return err
 		}
-		log.Info("maintenance", "purged_jobs", purgedJobs, "purged_tokens", purgedTokens)
+		purgedKeys, err := idempotency.Purge(ctx, store.Queries, now)
+		if err != nil {
+			return err
+		}
+		log.Info("maintenance", "purged_jobs", purgedJobs, "purged_tokens", purgedTokens, "purged_idempotency_keys", purgedKeys)
 		return nil
 	}, jobs.KindOptions{MaxAttempts: 3})
 	sched.Add(jobs.Every("maintenance", kindMaintenance, 24*time.Hour))
