@@ -1,8 +1,10 @@
 package api_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/voidrot/chorecast/server/internal/auth"
 )
@@ -29,6 +31,7 @@ type choreJSON struct {
 		KidID int64
 		Allow bool
 	}
+	Schedule map[string]any
 	Disabled bool
 }
 
@@ -87,6 +90,8 @@ func TestChoreDefinitions(t *testing.T) {
 		"unknown equipment":           {map[string]any{"equipmentIds": []int{999}}, "body.equipmentIds[0]"},
 		"unknown kid":                 {map[string]any{"eligibility": []map[string]any{{"kidId": 999, "allow": false}}}, "body.eligibility[0].kidId"},
 		"blank name":                  {map[string]any{"name": "  "}, "body.name"},
+		"schedule without days":       {map[string]any{"schedule": map[string]any{"type": "weekly", "startDate": "2026-11-01"}}, "body.schedule.weekdays"},
+		"schedule unknown weekday":    {map[string]any{"schedule": map[string]any{"type": "weekly", "weekdays": []string{"fun"}, "startDate": "2026-11-01"}}, "body.schedule.weekdays[0]"},
 	} {
 		body := map[string]any{"name": "Chore", "points": 1, "requiresApproval": true, "evidence": map[string]any{"photos": 0}}
 		for k, v := range tc.body {
@@ -115,4 +120,69 @@ func TestChoreDefinitions(t *testing.T) {
 	}
 	wantCode(t, "delete chore", s.do("DELETE", "/api/v1/chores/"+itoa(c.ID), nil, mom), 204, "")
 	wantCode(t, "get deleted", s.do("GET", "/api/v1/chores/"+itoa(c.ID), nil, mom), 404, "not_found")
+}
+
+func TestChoreSchedules(t *testing.T) {
+	s := newAuthServer(t) // America/Chicago, day end 21:00, weeks start Sunday; now = Sat 2026-10-31 07:00 CDT
+	mom := sessionCookie(t, s.do("POST", "/api/v1/auth/login", login(nil)))
+
+	rec := s.do("POST", "/api/v1/chores", map[string]any{
+		"name": "Trash", "points": 2, "requiresApproval": false, "evidence": map[string]any{"photos": 0},
+		"schedule": map[string]any{"type": "weekly", "weekdays": []string{"thu", "mon", "thu"}, "startDate": "2026-11-01", "monthDays": []int{3}},
+	}, mom)
+	wantCode(t, "create scheduled", rec, 201, "")
+	c := decode[choreJSON](t, rec)
+	if got := fmt.Sprint(c.Schedule); got != "map[interval:1 startDate:2026-11-01 type:weekly weekdays:[mon thu]]" {
+		t.Errorf("stored schedule = %s", got)
+	}
+	// Leaving the schedule out of an update unschedules the chore.
+	rec = s.do("PUT", "/api/v1/chores/"+itoa(c.ID), map[string]any{"name": "Trash", "points": 2, "requiresApproval": false, "evidence": map[string]any{"photos": 0}}, mom)
+	if u := decode[choreJSON](t, rec); u.Schedule != nil {
+		t.Errorf("schedule after update = %v", u.Schedule)
+	}
+
+	type preview struct {
+		Rule        map[string]any
+		Occurrences []struct {
+			Date, Slot string
+			DueAt      time.Time
+			Flexible   bool
+		}
+	}
+	rec = s.do("POST", "/api/v1/chores/preview-schedule", map[string]any{
+		"rule": map[string]any{"type": "daily", "interval": 2, "startDate": "2026-10-29"}, "slots": []string{"18:00", "07:30"}, "count": 3,
+	}, mom)
+	wantCode(t, "preview", rec, 200, "")
+	p := decode[preview](t, rec)
+	if len(p.Occurrences) != 3 {
+		t.Fatalf("preview = %+v", p)
+	}
+	// From today (10-31, every other day from 10-29); 11-02 is after the fall-back, so CST.
+	want := []string{"2026-10-31 07:30 2026-10-31T12:30:00Z", "2026-10-31 18:00 2026-10-31T23:00:00Z", "2026-11-02 07:30 2026-11-02T13:30:00Z"}
+	for i, o := range p.Occurrences {
+		if got := o.Date + " " + o.Slot + " " + o.DueAt.UTC().Format(time.RFC3339); got != want[i] {
+			t.Errorf("[%d] = %s, want %s", i, got, want[i])
+		}
+	}
+
+	// Flexible: the current week (Sunday 10-25) is included, due at its close (Sat 21:00 CDT).
+	p = decode[preview](t, s.do("POST", "/api/v1/chores/preview-schedule", map[string]any{
+		"rule": map[string]any{"type": "flexible_weekly", "timesPerWeek": 2, "startDate": "2026-10-01"}, "count": 2,
+	}, mom))
+	if len(p.Occurrences) != 2 || p.Occurrences[0].Date != "2026-10-25" || !p.Occurrences[0].Flexible ||
+		p.Occurrences[0].DueAt.UTC().Format(time.RFC3339) != "2026-11-01T02:00:00Z" {
+		t.Errorf("flexible preview = %+v", p)
+	}
+
+	rec = s.do("POST", "/api/v1/chores/preview-schedule", map[string]any{"rule": map[string]any{"type": "monthly", "startDate": "2026-11-01"}, "slots": []string{"7pm"}}, mom)
+	wantCode(t, "invalid preview", rec, 422, "validation_failed")
+	for _, loc := range []string{"body.rule.monthDays", "body.slots[0]"} {
+		if !strings.Contains(rec.Body.String(), loc) {
+			t.Errorf("invalid preview missing %s: %s", loc, rec.Body)
+		}
+	}
+	rec = s.do("POST", "/api/v1/chores/preview-schedule", map[string]any{"rule": map[string]any{"type": "once", "date": "2026-10-01"}}, mom)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"occurrences":[]`) {
+		t.Errorf("past once preview = %d %s", rec.Code, rec.Body)
+	}
 }

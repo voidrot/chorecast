@@ -45,13 +45,27 @@ it's easy to render in a form, without supporting arbitrary RRULE strings.
 { "type": "flexible_weekly", "timesPerWeek": 2 }
 ```
 
-Common fields on every rule: `startDate` (anchor for intervals), optional `endDate`, and `slots`: a list of due times
-(`["07:00", "18:00"]`; empty = due at day close). All in the household timezone.
+Common fields on every rule except `once`: `startDate` (required; anchors intervals) and optional `endDate`
+(inclusive). Due times within a day are the chore's `slots` (`["07:00", "18:00"]`; empty = due at day close), not part
+of the rule. All in the household timezone. A chore with no rule is unscheduled.
 
-- Day 31 in a 30-day month: skipped (use `-1` for "last day"). Documented in the editor.
+Implemented in `server/internal/schedule`:
+
+- **Normalize** fills defaults (`interval` 1), drops fields that don't apply to the type, and sorts/dedupes lists, so
+  equal rules store identically. **Validate** reports problems at their JSON location (`body.schedule.weekdays`).
+- **Intervals** are anchored on `startDate`: every N days counts days from it; every N weeks counts weeks from the week
+  containing it (so `week_start` matters); every N months counts calendar months from its month.
+- **Due instants**: `slot` on the date via the household calendar (a slot in a DST gap resolves to the gap's end; a
+  repeated wall time to the earlier instant), or the household day close without slots.
+- **Preview**: `POST /chores/preview-schedule` `{rule, slots, count ≤ 50}` returns the normalized rule and the next
+  occurrences from today (POST because the rule is a body). The web editor shows it live as the rule is edited.
+
+- Day 31 in a 30-day month: skipped (use `-1` for "last day"). Documented in the editor. The same goes for a 5th
+  weekday in a month that has only four.
 - **Week boundaries**: household setting `week_start` (default Monday). Used by weekly intervals, flexible chores,
   week close and the "this week" views.
-- **Flexible chores** generate one instance per required completion at week start, all due at week close. Each
+- **Flexible chores** generate one instance per required completion at week start (or the start date in the first
+  week), all due at week close. Slots don't apply. Each
   completion closes one instance; leftovers become `missed` at week close.
 
 ## Assignment modes

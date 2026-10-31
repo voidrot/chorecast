@@ -4,9 +4,28 @@ import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
+import { type ScheduleRule, summarizeRule, WEEKDAYS, type Weekday } from '@/chores/schedule'
 import { useAsync } from '@/composables/useAsync'
+import { formatDate } from '@/format'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+
+const weekdayName = (w: Weekday) =>
+  new Intl.DateTimeFormat(locale.value, { weekday: 'short', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(2026, 10, 1 + WEEKDAYS.indexOf(w))), // 2026-11-01 is a Sunday
+  )
+
+function scheduleText(rule: ScheduleRule | undefined): string {
+  const s = summarizeRule(rule, {
+    weekdayName,
+    formatDate: (d) => formatDate(d, undefined, locale.value),
+    lastDay: t('schedule.lastDay').toLocaleLowerCase(locale.value),
+  })
+  const params = { ...s.params }
+  if (typeof params.nth === 'number')
+    params.nth = t(`schedule.nth.${params.nth}`).toLocaleLowerCase(locale.value)
+  return t(s.key, params, Number(params.n ?? 1))
+}
 const chores = useAsync(async () => {
   const { data, error, response } = await api.GET('/chores')
   if (!data) throw ApiError.fromProblem(response.status, error)
@@ -44,6 +63,7 @@ onMounted(() => chores.run())
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="font-medium">{{ c.name }}</div>
+              <div class="text-sm" data-testid="chore-schedule">{{ scheduleText(c.schedule) }}</div>
               <div class="text-sm text-gray-500 dark:text-neutral-400">
                 {{
                   c.slots?.length
