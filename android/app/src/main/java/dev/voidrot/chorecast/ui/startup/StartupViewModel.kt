@@ -8,6 +8,7 @@ import dev.voidrot.chorecast.core.ServerStatus
 import dev.voidrot.chorecast.core.ServerUrl
 import dev.voidrot.chorecast.core.SessionCheck
 import dev.voidrot.chorecast.core.TokenStore
+import dev.voidrot.chorecast.data.AppMode
 import dev.voidrot.chorecast.data.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 sealed interface StartupState {
     data object Checking : StartupState
     data object NeedsServer : StartupState
+    data class Device(val url: ServerUrl) : StartupState
     data class NeedsLogin(val url: ServerUrl) : StartupState
     data class SignedIn(val url: ServerUrl) : StartupState
     data class Problem(val status: ServerStatus) : StartupState
@@ -38,7 +40,8 @@ class StartupViewModel(
 
     fun check() {
         val url = settings.serverUrl
-        if (url == null) {
+        val mode = settings.mode
+        if (url == null || mode == null || (mode == AppMode.DEVICE && tokens.read() == null)) {
             _state.value = StartupState.NeedsServer
             return
         }
@@ -47,6 +50,11 @@ class StartupViewModel(
             val status = checker.check(url)
             if (status !is ServerStatus.Ready) {
                 _state.value = StartupState.Problem(status)
+                return@launch
+            }
+            if (mode == AppMode.DEVICE) {
+                // The device screen checks the pairing itself (and handles a revoked device).
+                _state.value = StartupState.Device(url)
                 return@launch
             }
             val token = tokens.read()

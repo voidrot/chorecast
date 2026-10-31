@@ -27,6 +27,7 @@ fun StartupScreen(
     onNeedsServer: () -> Unit,
     onNeedsLogin: (ServerUrl) -> Unit,
     onSignedIn: (ServerUrl) -> Unit,
+    onDevice: (ServerUrl) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -35,6 +36,7 @@ fun StartupScreen(
             StartupState.NeedsServer -> onNeedsServer()
             is StartupState.NeedsLogin -> onNeedsLogin(s.url)
             is StartupState.SignedIn -> onSignedIn(s.url)
+            is StartupState.Device -> onDevice(s.url)
             else -> Unit
         }
     }
