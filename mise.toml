@@ -141,7 +141,8 @@ run = "pnpm test"
 
 [tasks."test:android"]
 dir = "android"
-run = "./gradlew testDebugUnitTest"
+# Flavors (play/foss) mean there is no plain testDebugUnitTest task.
+run = "./gradlew testFossDebugUnitTest testPlayDebugUnitTest"
 
 [tasks.test]
 description = "Run server and web tests"
