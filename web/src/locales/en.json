@@ -335,6 +335,16 @@
     "expiresIn": "Expires in {time}. Works once.",
     "expired": "This code expired.",
     "newCode": "New code",
-    "localWarning": "This server address only works on this computer. Set CHORECAST_PUBLIC_URL to an address phones can reach (for example http://192.168.1.20:8080) and restart the server."
+    "localWarning": "This server address only works on this computer. Set CHORECAST_PUBLIC_URL to an address phones can reach (for example http://192.168.1.20:8080) and restart the server.",
+    "listTitle": "Paired devices",
+    "none": "No devices paired yet.",
+    "inUse": "{name} is using it",
+    "lastSeen": "Last seen {when}",
+    "version": "app {version}",
+    "lock": "Lock",
+    "locked": "{name} goes back to its profile picker within about 30 seconds.",
+    "revoke": "Unpair",
+    "revokeConfirm": "{name} is signed out right away and goes back to the pairing screen. To give it to someone else, pair it again.",
+    "listHint": "Lock sends a shared tablet back to its profile picker. Devices can't be renamed or moved to another kid: unpair and pair again instead."
   }
 }

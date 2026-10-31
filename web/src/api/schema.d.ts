@@ -323,6 +323,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paired devices */
+        get: operations["listDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/elevate": {
         parameters: {
             query?: never;
@@ -434,6 +451,46 @@ export interface paths {
          * @description Checks the kid's PIN when they must use one. The session lasts 8 hours at most; the app locks back to the picker after inactivity (POST /devices/lock).
          */
         post: operations["startKidSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unpair a device
+         * @description Its token and sessions stop working immediately; the app returns to pairing. To give a device to someone else, revoke it and pair it again.
+         */
+        delete: operations["revokeDevice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/{id}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a device back to its profile picker
+         * @description Ends any kid session or parent elevation on it. The app notices on its next contact (within about 30 seconds while a session is open).
+         */
+        post: operations["lockDeviceRemotely"];
         delete?: never;
         options?: never;
         head?: never;
@@ -909,6 +966,9 @@ export interface components {
             /** Format: int64 */
             userId: number;
         };
+        DevicesOutputBody: {
+            items: components["schemas"]["ListedDevice"][];
+        };
         ElevateInputBody: {
             /** Format: int64 */
             parentId: number;
@@ -1050,6 +1110,32 @@ export interface components {
         };
         KidsOutputBody: {
             items: components["schemas"]["Kid"][];
+        };
+        ListedDevice: {
+            appVersion?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            kidId?: number;
+            kidName?: string;
+            /**
+             * Format: date-time
+             * @description Last request from the device or one of its sessions (to the minute)
+             */
+            lastSeen: string;
+            name: string;
+            sessionUser?: string;
+            /** @description A shared family device with a profile picker; otherwise it belongs to kidId */
+            shared: boolean;
+        };
+        LockRemoteOutputBody: {
+            /**
+             * Format: int64
+             * @description How many sessions were open
+             */
+            endedSessions: number;
         };
         LoginInputBody: {
             /**
@@ -2226,6 +2312,35 @@ export interface operations {
             };
         };
     };
+    listDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicesOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     elevateParent: {
         parameters: {
             query?: never;
@@ -2456,7 +2571,10 @@ export interface operations {
     };
     getDevicePicker: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The app's version, recorded for the devices page */
+                appVersion?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2474,6 +2592,15 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2546,6 +2673,105 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revokeDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    lockDeviceRemotely: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LockRemoteOutputBody"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
