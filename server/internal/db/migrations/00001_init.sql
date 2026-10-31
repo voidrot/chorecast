@@ -30,6 +30,14 @@ CREATE TABLE users (
     pin_required  INTEGER NOT NULL DEFAULT 0 CHECK (pin_required IN (0, 1)), -- kids: PIN to open their profile
     color         TEXT,                    -- kids: #rrggbb accent
     birth_date    TEXT,                    -- kids: YYYY-MM-DD (optional)
+    avatar        TEXT,                    -- kids: built-in avatar id (internal/kids.AvatarIDs)
+    day_end_override TEXT,                 -- kids: HH:MM, at or before the household day end
+    quiet_start   TEXT,                    -- kids: HH:MM; no notifications from quiet_start to quiet_end
+    quiet_end     TEXT,                    --   (may wrap past midnight)
+    school_days   INTEGER NOT NULL DEFAULT 0, -- kids: bitmask of weekdays, bit 0 = Sunday
+    school_start  TEXT,                    -- kids: HH:MM, extra quiet window on school days
+    school_end    TEXT,
+    archived_at   TEXT,                    -- kids: archived (hidden, devices revoked, history kept)
     oidc_subject  TEXT    UNIQUE,          -- set when linked to an external IdP
     parent_pin_hash TEXT,                  -- argon2id, parents (optional): shared-tablet elevation
     totp_secret     TEXT,                  -- base32; set while enrolling, verified before totp_enabled

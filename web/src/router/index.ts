@@ -31,6 +31,21 @@ const router = createRouter({
       children: [
         { path: '', name: 'home', component: HomeView },
         {
+          path: 'kids',
+          name: 'kids',
+          component: () => import('@/views/kids/KidsView.vue'),
+        },
+        {
+          path: 'kids/new',
+          name: 'kid-new',
+          component: () => import('@/views/kids/KidEditView.vue'),
+        },
+        {
+          path: 'kids/:kid',
+          name: 'kid-edit',
+          component: () => import('@/views/kids/KidEditView.vue'),
+        },
+        {
           path: 'parents',
           name: 'parents',
           component: () => import('@/views/parents/ParentsView.vue'),

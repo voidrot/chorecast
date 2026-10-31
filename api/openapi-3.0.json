@@ -152,6 +152,26 @@
         ],
         "type": "object"
       },
+      "DailyWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "example": "07:00",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "type": "string"
+          },
+          "start": {
+            "example": "20:00",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "type": "object"
+      },
       "EnableTOTPInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -329,6 +349,122 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/Invite"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "Kid": {
+        "additionalProperties": false,
+        "properties": {
+          "archivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "avatar": {
+            "description": "Built-in avatar id; the image is /avatars/\u003cid\u003e.svg",
+            "type": "string"
+          },
+          "birthDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "dayEndOverride": {
+            "description": "HH:MM; the kid's day ends earlier than the household's",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pinRequired": {
+            "type": "boolean"
+          },
+          "pinSet": {
+            "type": "boolean"
+          },
+          "quietHours": {
+            "$ref": "#/components/schemas/DailyWindow"
+          },
+          "schoolHours": {
+            "$ref": "#/components/schemas/SchoolHours"
+          },
+          "slug": {
+            "description": "Stable short name usable anywhere a kid id is",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "displayName",
+          "color",
+          "pinRequired",
+          "pinSet"
+        ],
+        "type": "object"
+      },
+      "KidInput": {
+        "additionalProperties": false,
+        "properties": {
+          "avatar": {
+            "type": "string"
+          },
+          "birthDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "color": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "dayEndOverride": {
+            "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9])?$",
+            "type": "string"
+          },
+          "displayName": {
+            "description": "Nickname or first name only",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pinRequired": {
+            "type": "boolean"
+          },
+          "quietHours": {
+            "$ref": "#/components/schemas/DailyWindow"
+          },
+          "schoolHours": {
+            "$ref": "#/components/schemas/SchoolHours"
+          },
+          "slug": {
+            "description": "Defaults to one derived from the name on create; unchanged on update when empty",
+            "maxLength": 32,
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "color"
+        ],
+        "type": "object"
+      },
+      "KidsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Kid"
             },
             "type": "array"
           }
@@ -607,6 +743,35 @@
         ],
         "type": "object"
       },
+      "SchoolHours": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "description": "Lowercase weekday names, e.g. monday",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "end": {
+            "example": "15:00",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "type": "string"
+          },
+          "start": {
+            "example": "08:00",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "days",
+          "start",
+          "end"
+        ],
+        "type": "object"
+      },
       "Session": {
         "additionalProperties": false,
         "properties": {
@@ -662,6 +827,20 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "SetKidPINInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "pin": {
+            "description": "4-8 digits; empty clears the PIN",
+            "maxLength": 8,
+            "type": "string"
+          }
+        },
+        "required": [
+          "pin"
         ],
         "type": "object"
       },
@@ -2489,6 +2668,560 @@
         "summary": "Revoke a pending invite (owners only)",
         "tags": [
           "parents"
+        ]
+      }
+    },
+    "/kids": {
+      "get": {
+        "description": "Archived kids are included (last) with `archived=true`, which needs household:manage.",
+        "operationId": "listKids",
+        "parameters": [
+          {
+            "description": "Include archived kids (needs household:manage)",
+            "explode": false,
+            "in": "query",
+            "name": "archived",
+            "schema": {
+              "description": "Include archived kids (needs household:manage)",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KidsOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:read"
+            ]
+          },
+          {
+            "session": [
+              "household:read"
+            ]
+          }
+        ],
+        "summary": "Kid profiles",
+        "tags": [
+          "kids"
+        ]
+      },
+      "post": {
+        "operationId": "createKid",
+        "parameters": [
+          {
+            "description": "Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KidInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Kid"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:manage"
+            ]
+          },
+          {
+            "session": [
+              "household:manage"
+            ]
+          }
+        ],
+        "summary": "Add a kid",
+        "tags": [
+          "kids"
+        ]
+      }
+    },
+    "/kids/{kid}": {
+      "get": {
+        "operationId": "getKid",
+        "parameters": [
+          {
+            "description": "Kid id or slug",
+            "in": "path",
+            "name": "kid",
+            "required": true,
+            "schema": {
+              "description": "Kid id or slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Kid"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:read"
+            ]
+          },
+          {
+            "session": [
+              "household:read"
+            ]
+          }
+        ],
+        "summary": "A kid profile (by id or slug)",
+        "tags": [
+          "kids"
+        ]
+      },
+      "put": {
+        "description": "Replaces the profile: optional fields left out are cleared. The slug stays unless one is given.",
+        "operationId": "updateKid",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KidInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Kid"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:manage"
+            ]
+          },
+          {
+            "session": [
+              "household:manage"
+            ]
+          }
+        ],
+        "summary": "Edit a kid's profile",
+        "tags": [
+          "kids"
+        ]
+      }
+    },
+    "/kids/{kid}/archive": {
+      "post": {
+        "description": "Hides the kid, revokes their devices and stops scheduling; history is kept. Unarchive restores it.",
+        "operationId": "archiveKid",
+        "parameters": [
+          {
+            "description": "Kid id or slug",
+            "in": "path",
+            "name": "kid",
+            "required": true,
+            "schema": {
+              "description": "Kid id or slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Kid"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:manage"
+            ]
+          },
+          {
+            "session": [
+              "household:manage"
+            ]
+          }
+        ],
+        "summary": "Archive a kid",
+        "tags": [
+          "kids"
+        ]
+      }
+    },
+    "/kids/{kid}/pin": {
+      "put": {
+        "description": "An empty `pin` clears it. Whether it's asked for is the profile's `pinRequired`.",
+        "operationId": "setKidPin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetKidPINInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:manage"
+            ]
+          },
+          {
+            "session": [
+              "household:manage"
+            ]
+          }
+        ],
+        "summary": "Set or clear a kid's PIN",
+        "tags": [
+          "kids"
+        ]
+      }
+    },
+    "/kids/{kid}/unarchive": {
+      "post": {
+        "operationId": "unarchiveKid",
+        "parameters": [
+          {
+            "description": "Kid id or slug",
+            "in": "path",
+            "name": "kid",
+            "required": true,
+            "schema": {
+              "description": "Kid id or slug",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Kid"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:manage"
+            ]
+          },
+          {
+            "session": [
+              "household:manage"
+            ]
+          }
+        ],
+        "summary": "Unarchive a kid (devices must be paired again)",
+        "tags": [
+          "kids"
         ]
       }
     },

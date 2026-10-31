@@ -115,7 +115,7 @@ func (q *Queries) GetInviteByHash(ctx context.Context, tokenHash []byte) (GetInv
 }
 
 const getParent = `-- name: GetParent :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE id = ? AND role = 'parent' AND removed_at IS NULL
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, avatar, day_end_override, quiet_start, quiet_end, school_days, school_start, school_end, archived_at, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE id = ? AND role = 'parent' AND removed_at IS NULL
 `
 
 func (q *Queries) GetParent(ctx context.Context, id int64) (User, error) {
@@ -133,6 +133,14 @@ func (q *Queries) GetParent(ctx context.Context, id int64) (User, error) {
 		&i.PinRequired,
 		&i.Color,
 		&i.BirthDate,
+		&i.Avatar,
+		&i.DayEndOverride,
+		&i.QuietStart,
+		&i.QuietEnd,
+		&i.SchoolDays,
+		&i.SchoolStart,
+		&i.SchoolEnd,
+		&i.ArchivedAt,
 		&i.OidcSubject,
 		&i.ParentPinHash,
 		&i.TotpSecret,
@@ -145,7 +153,7 @@ func (q *Queries) GetParent(ctx context.Context, id int64) (User, error) {
 }
 
 const listParents = `-- name: ListParents :many
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE role = 'parent' AND removed_at IS NULL ORDER BY is_owner DESC, display_name
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, avatar, day_end_override, quiet_start, quiet_end, school_days, school_start, school_end, archived_at, oidc_subject, parent_pin_hash, totp_secret, totp_enabled, totp_last_step, removed_at, created_at FROM users WHERE role = 'parent' AND removed_at IS NULL ORDER BY is_owner DESC, display_name
 `
 
 func (q *Queries) ListParents(ctx context.Context) ([]User, error) {
@@ -169,6 +177,14 @@ func (q *Queries) ListParents(ctx context.Context) ([]User, error) {
 			&i.PinRequired,
 			&i.Color,
 			&i.BirthDate,
+			&i.Avatar,
+			&i.DayEndOverride,
+			&i.QuietStart,
+			&i.QuietEnd,
+			&i.SchoolDays,
+			&i.SchoolStart,
+			&i.SchoolEnd,
+			&i.ArchivedAt,
 			&i.OidcSubject,
 			&i.ParentPinHash,
 			&i.TotpSecret,
