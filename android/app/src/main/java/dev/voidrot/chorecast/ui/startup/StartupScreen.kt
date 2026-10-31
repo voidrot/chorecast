@@ -18,21 +18,23 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.voidrot.chorecast.R
-import dev.voidrot.chorecast.core.ServerStatus
+import dev.voidrot.chorecast.core.ServerUrl
 import dev.voidrot.chorecast.ui.problemText
 
 @Composable
 fun StartupScreen(
     viewModel: StartupViewModel,
     onNeedsServer: () -> Unit,
-    onReady: (ServerStatus.Ready) -> Unit,
+    onNeedsLogin: (ServerUrl) -> Unit,
+    onSignedIn: (ServerUrl) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state) {
         when (val s = state) {
             StartupState.NeedsServer -> onNeedsServer()
-            is StartupState.Ready -> onReady(s.status)
+            is StartupState.NeedsLogin -> onNeedsLogin(s.url)
+            is StartupState.SignedIn -> onSignedIn(s.url)
             else -> Unit
         }
     }

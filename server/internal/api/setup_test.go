@@ -23,6 +23,7 @@ type setupServer struct {
 	t     *testing.T
 	store *db.DB
 	svc   *setup.Service
+	clk   *clock.Fake
 	r     chi.Router
 }
 
@@ -40,7 +41,7 @@ func newSetupServer(t *testing.T) *setupServer {
 	}
 	r := chi.NewRouter()
 	api.New(r, api.Deps{Config: config.Config{}, DB: store, Clock: clk, Setup: svc})
-	return &setupServer{t: t, store: store, svc: svc, r: r}
+	return &setupServer{t: t, store: store, svc: svc, clk: clk, r: r}
 }
 
 func (s *setupServer) do(method, path string, body any, cookies ...*http.Cookie) *httptest.ResponseRecorder {

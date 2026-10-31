@@ -30,7 +30,14 @@ const (
 	CodeUnavailable         = "unavailable"
 	CodeSetupRequired       = "setup_required" // first-run setup not done yet (503); clients go to setup
 	CodeInvalidSetupToken   = "invalid_setup_token"
-	CodeSetupComplete       = "setup_complete" // setup endpoints after setup is done (409)
+	CodeSetupComplete       = "setup_complete"         // setup endpoints after setup is done (409)
+	CodeInvalidCredentials  = "invalid_credentials"    //nolint:gosec // error code, not a credential; login: wrong username or password (401)
+	CodeTOTPRequired        = "totp_required"          // login: password ok, now send totpCode or recoveryCode (401)
+	CodeInvalidTOTP         = "invalid_totp_code"      // wrong, reused or expired 2FA or recovery code
+	CodeInvalidPassword     = "invalid_password"       // re-entered password is wrong (403)
+	CodeTOTPAlreadyEnabled  = "totp_already_enabled"   // (409)
+	CodeTOTPNotEnabled      = "totp_not_enabled"       // (409)
+	CodeTOTPSetupNotStarted = "totp_setup_not_started" // enable before setup (409)
 	CodeInvalidCursor       = "invalid_cursor"
 	CodeKidNotFound         = "kid_not_found"
 	CodeInvalidIdempotency  = "invalid_idempotency_key"

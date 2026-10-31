@@ -1,4 +1,4 @@
-import type { GlobalThemeOverrides } from 'naive-ui'
+import { createLocale, enUS, type GlobalThemeOverrides } from 'naive-ui'
 
 /** Brand colors shared by light and dark themes (Tailwind emerald). */
 export const themeOverrides: GlobalThemeOverrides = {
@@ -10,3 +10,9 @@ export const themeOverrides: GlobalThemeOverrides = {
     fontFamily: 'system-ui, sans-serif',
   },
 }
+
+/** Naive's English strings, minus its generic placeholders: our labels say what to enter. */
+export const naiveLocale = createLocale(
+  { Input: { placeholder: '' }, Select: { placeholder: '' } },
+  enUS,
+)

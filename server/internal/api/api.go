@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/voidrot/chorecast/server/internal/account"
 	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -51,7 +52,7 @@ func New(r chi.Router, deps Deps) huma.API {
 
 	var hapi huma.API
 	r.Route(Prefix, func(r chi.Router) {
-		r.Use(auth.DetectHTTPS)
+		r.Use(auth.CaptureRequestInfo)
 		hapi = humachi.New(r, hcfg)
 		// Unknown paths and methods under the API prefix answer in the same problem format.
 		r.NotFound(apierr.Handler(http.StatusNotFound).ServeHTTP)
@@ -69,7 +70,7 @@ func New(r chi.Router, deps Deps) huma.API {
 		idempotency.Middleware(hapi, queries, deps.Clock),
 	)
 
-	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup}
+	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock)}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
@@ -87,6 +88,7 @@ func New(r chi.Router, deps Deps) huma.API {
 		Metadata:    setup.AllowDuringSetup(auth.Public()),
 	}, h.version)
 	registerSetup(hapi, h)
+	registerAuth(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -104,9 +106,10 @@ func New(r chi.Router, deps Deps) huma.API {
 }
 
 type handlers struct {
-	cfg   config.Config
-	db    *db.DB
-	setup *setup.Service
+	cfg     config.Config
+	db      *db.DB
+	setup   *setup.Service
+	account *account.Service
 }
 
 type HealthOutput struct {
@@ -148,6 +151,11 @@ type MeOutput struct {
 		UserID int64    `json:"userId,omitempty" doc:"The parent or kid; absent for shared devices, displays and API keys"`
 		Owner  bool     `json:"owner" doc:"Parent with owner rights (server settings)"`
 		Scopes []string `json:"scopes" nullable:"false" doc:"Granted scopes, for clients to hide what the caller can't do"`
+
+		DisplayName string `json:"displayName,omitempty" doc:"Parents and kids"`
+		Username    string `json:"username,omitempty" doc:"Parents only"`
+		TOTPEnabled bool   `json:"totpEnabled" doc:"Parents: two-factor sign-in is on"`
+		PINSet      bool   `json:"pinSet" doc:"Parents: a parent PIN is set"`
 	}
 }
 
@@ -160,6 +168,18 @@ func (h *handlers) me(ctx context.Context, _ *struct{}) (*MeOutput, error) {
 	out.Body.Scopes = make([]string, 0)
 	for _, s := range p.Scopes() {
 		out.Body.Scopes = append(out.Body.Scopes, string(s))
+	}
+	if p.UserID != 0 {
+		u, err := h.db.GetUser(ctx, p.UserID)
+		if err != nil {
+			return nil, err
+		}
+		out.Body.DisplayName = u.DisplayName
+		if p.Kind == auth.KindParent {
+			out.Body.Username = u.Username.String
+			out.Body.TOTPEnabled = u.TotpEnabled == 1
+			out.Body.PINSet = u.ParentPinHash.Valid
+		}
 	}
 	return out, nil
 }
