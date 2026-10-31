@@ -1,4 +1,23 @@
 -- +goose Up
+-- The household this server hosts. There is exactly one (id = 1); its existence means first-run
+-- setup is complete (internal/setup).
+CREATE TABLE household (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    name       TEXT    NOT NULL,
+    timezone   TEXT    NOT NULL,                  -- IANA name
+    day_end    TEXT    NOT NULL DEFAULT '00:00',  -- HH:MM; 00:00 = midnight at the end of the day
+    week_start INTEGER NOT NULL DEFAULT 1 CHECK (week_start BETWEEN 0 AND 6), -- 0 = Sunday
+    created_at TEXT    NOT NULL
+);
+
+-- First-run setup token (one row, SHA-256 only). Replaced on every start until setup completes,
+-- which deletes it.
+CREATE TABLE setup_token (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    token_hash BLOB    NOT NULL,
+    created_at TEXT    NOT NULL
+);
+
 CREATE TABLE users (
     id            INTEGER PRIMARY KEY,
     display_name  TEXT    NOT NULL,
@@ -8,6 +27,9 @@ CREATE TABLE users (
     username      TEXT    UNIQUE,          -- parents only; kids sign in via paired device + PIN
     password_hash TEXT,                    -- argon2id, parents only
     pin_hash      TEXT,                    -- argon2id, kids (optional)
+    pin_required  INTEGER NOT NULL DEFAULT 0 CHECK (pin_required IN (0, 1)), -- kids: PIN to open their profile
+    color         TEXT,                    -- kids: #rrggbb accent
+    birth_date    TEXT,                    -- kids: YYYY-MM-DD (optional)
     oidc_subject  TEXT    UNIQUE,          -- set when linked to an external IdP
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -80,3 +102,5 @@ DROP TABLE schedule_cursors;
 DROP TABLE jobs;
 DROP TABLE tokens;
 DROP TABLE users;
+DROP TABLE setup_token;
+DROP TABLE household;

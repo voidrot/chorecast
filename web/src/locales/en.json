@@ -1,6 +1,10 @@
 {
-  "app": { "name": "Chorecast" },
-  "nav": { "home": "Home" },
+  "app": {
+    "name": "Chorecast"
+  },
+  "nav": {
+    "home": "Home"
+  },
   "session": {
     "parent": "Parent",
     "owner": "Owner"
@@ -8,7 +12,11 @@
   "home": {
     "title": "Household",
     "server": "Server",
-    "status": { "ok": "ok", "degraded": "degraded", "unreachable": "unreachable" },
+    "status": {
+      "ok": "ok",
+      "degraded": "degraded",
+      "unreachable": "unreachable"
+    },
     "version": "Version {version}"
   },
   "login": {
@@ -18,8 +26,70 @@
     "unreachable": "Can't reach the Chorecast server: {detail}"
   },
   "setup": {
-    "title": "Finish setting up Chorecast",
-    "body": "This server hasn't been set up yet. Open the setup link printed in the server's log to create your household."
+    "title": "Set up Chorecast",
+    "body": "This server hasn't been set up yet. Open the setup link printed in the server's log to create your household.",
+    "invalidToken": "This setup link isn't valid any more. The link changes every time the server restarts: open the newest one from the server's log.",
+    "next": "Next",
+    "back": "Back",
+    "finish": "Create household",
+    "finishWithoutKids": "Skip and create household",
+    "household": {
+      "title": "Household",
+      "name": "Household name",
+      "timezone": "Timezone",
+      "dayEnd": "Day ends at",
+      "weekStart": "Week starts on",
+      "dayEndHint": "Chores left open at the end of the day count as missed. 00:00 means midnight.",
+      "nameRequired": "Enter a household name.",
+      "timezoneRequired": "Choose a timezone.",
+      "dayEndInvalid": "Enter a time like 21:00.",
+      "weekdays": {
+        "monday": "Monday",
+        "tuesday": "Tuesday",
+        "wednesday": "Wednesday",
+        "thursday": "Thursday",
+        "friday": "Friday",
+        "saturday": "Saturday",
+        "sunday": "Sunday"
+      }
+    },
+    "owner": {
+      "title": "Your account",
+      "intro": "You'll be the household's owner: a parent who can also change server settings.",
+      "displayName": "Your name",
+      "username": "Username",
+      "password": "Password",
+      "confirm": "Confirm password",
+      "laterHint": "You can turn on two-factor sign-in and invite other parents after setup.",
+      "displayNameRequired": "Enter your name.",
+      "usernameInvalid": "Usernames are 3-32 lowercase letters, digits, dots, underscores or hyphens.",
+      "passwordTooShort": "Use at least 8 characters for your password.",
+      "passwordMismatch": "The passwords don't match."
+    },
+    "kids": {
+      "title": "Kids",
+      "intro": "Add the kids who'll use Chorecast. Use a nickname or first name only.",
+      "name": "Name",
+      "birthDate": "Birth date (optional)",
+      "color": "Color",
+      "pinRequired": "Ask for a PIN on shared tablets",
+      "add": "Add a kid",
+      "remove": "Remove kid",
+      "laterHint": "You can skip this and add or change kids later.",
+      "nameRequired": "Every kid needs a name.",
+      "birthDateFuture": "A birth date is in the future."
+    },
+    "done": {
+      "created": "{name} is ready.",
+      "devicesTitle": "Connect devices",
+      "devicesBody": "Install the Chorecast Android app on each kid's phone or a shared family tablet.",
+      "download": "Download the Android app",
+      "pairingLater": "Pairing a device with a QR code arrives with the Devices page. You'll find it in the admin.",
+      "open": "Open the admin"
+    }
   },
-  "notFound": { "title": "Page not found", "back": "Go home" }
+  "notFound": {
+    "title": "Page not found",
+    "back": "Go home"
+  }
 }
