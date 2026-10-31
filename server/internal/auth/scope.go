@@ -1,5 +1,7 @@
 package auth
 
+import "slices"
+
 // Scope names a capability an API operation requires. Operations declare scopes; principals
 // carry them. Data-level limits (a kid only sees their own chores) are applied separately via
 // Principal.CanAccessKid.
@@ -38,10 +40,12 @@ var (
 		ScopeChoresRead, ScopeChoresManage, ScopeChoresComplete, ScopeChoresReview,
 		ScopePointsRead, ScopePointsManage, ScopeAccountManage,
 	}
-	ownerScopes        = append(append([]Scope{}, parentScopes...), ScopeServerManage, ScopeParentsManage)
-	kidScopes          = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopeChoresComplete, ScopePointsRead}
-	sharedDeviceScopes = []Scope{ScopeHouseholdRead, ScopeProfilesSelect}
-	displayScopes      = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopePointsRead}
+	ownerScopes = append(append([]Scope{}, parentScopes...), ScopeServerManage, ScopeParentsManage)
+	// A parent elevated on a device with their PIN: everything daily, nothing about accounts.
+	elevatedParentScopes = slices.DeleteFunc(slices.Clone(parentScopes), func(s Scope) bool { return s == ScopeAccountManage })
+	kidScopes            = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopeChoresComplete, ScopePointsRead}
+	sharedDeviceScopes   = []Scope{ScopeHouseholdRead, ScopeProfilesSelect}
+	displayScopes        = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopePointsRead}
 )
 
 // scopesFor returns the scopes a principal kind holds. API keys get none here: until per-key

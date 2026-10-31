@@ -19,11 +19,12 @@ import (
 type TokenKind string
 
 const (
-	TokenWebSession TokenKind = "web_session" // browser cookie
-	TokenApp        TokenKind = "app"         // parent's phone
-	TokenDevice     TokenKind = "device"      // kid-bound or shared device
-	TokenDisplay    TokenKind = "display"     // family dashboard
-	TokenAPI        TokenKind = "api"         // integration key
+	TokenWebSession    TokenKind = "web_session"    // browser cookie
+	TokenApp           TokenKind = "app"            // parent's phone
+	TokenDevice        TokenKind = "device"         // kid-bound or shared device
+	TokenDeviceSession TokenKind = "device_session" // short-lived kid session or parent elevation on a device
+	TokenDisplay       TokenKind = "display"        // family dashboard
+	TokenAPI           TokenKind = "api"            // integration key
 )
 
 // touchInterval throttles last_used_at writes so every request doesn't write to SQLite.
@@ -55,10 +56,11 @@ func NewStore(q *sqlc.Queries, c clock.Clock) *Store { return &Store{q: q, clock
 
 // IssueParams describes a token to issue.
 type IssueParams struct {
-	Kind   TokenKind
-	UserID int64 // 0 for shared devices, displays and API keys
-	Label  string
-	TTL    time.Duration // 0 = no expiry
+	Kind     TokenKind
+	UserID   int64 // 0 for shared devices, displays and API keys
+	DeviceID int64 // device and device_session tokens: the paired device
+	Label    string
+	TTL      time.Duration // 0 = no expiry
 }
 
 // Issue creates a token and returns its plaintext (shown to the client once) and row id.
@@ -76,6 +78,7 @@ func (s *Store) Issue(ctx context.Context, p IssueParams) (string, int64, error)
 		TokenHash: HashToken(token),
 		Kind:      string(p.Kind),
 		UserID:    sql.NullInt64{Int64: p.UserID, Valid: p.UserID != 0},
+		DeviceID:  sql.NullInt64{Int64: p.DeviceID, Valid: p.DeviceID != 0},
 		Label:     p.Label,
 		CreatedAt: db.Timestamp(now),
 		ExpiresAt: expires,
@@ -126,6 +129,10 @@ func (s *Store) Authenticate(ctx context.Context, token string, allowed ...Token
 // never exist (e.g. a device token bound to a parent).
 func principalFor(kind TokenKind, row sqlc.ResolveTokenRow) *Principal {
 	role, userID, owner := row.Role.String, row.UserID.Int64, row.IsOwner.Int64 == 1
+	onDevice := func(p *Principal) *Principal {
+		p.DeviceID = row.DeviceID.Int64
+		return p
+	}
 	switch kind {
 	case TokenWebSession, TokenApp:
 		if role == "parent" {
@@ -134,9 +141,19 @@ func principalFor(kind TokenKind, row sqlc.ResolveTokenRow) *Principal {
 	case TokenDevice:
 		switch {
 		case !row.UserID.Valid:
-			return newPrincipal(KindSharedDevice, 0, false, row.ID)
+			return onDevice(newPrincipal(KindSharedDevice, 0, false, row.ID))
 		case role == "child":
-			return newPrincipal(KindKid, userID, false, row.ID)
+			return onDevice(newPrincipal(KindKid, userID, false, row.ID))
+		}
+	case TokenDeviceSession:
+		switch role {
+		case "child":
+			return onDevice(newPrincipal(KindKid, userID, false, row.ID))
+		case "parent":
+			p := onDevice(newPrincipal(KindParent, userID, false, row.ID))
+			p.Elevated = true
+			p.setScopes(elevatedParentScopes)
+			return p
 		}
 	case TokenDisplay:
 		return newPrincipal(KindDisplay, 0, false, row.ID)

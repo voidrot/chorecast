@@ -96,14 +96,21 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
    deletes the token and sets the owner's session cookie. Afterwards the setup endpoints answer 409
    `setup_complete`. Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` when the request came over HTTPS
    (directly or `X-Forwarded-Proto: https`), so plain-HTTP LAN installs keep working.
-1. **Device pairing (kids / shared tablet).** Parent opens *Devices → Pair* in the web admin or parent app,
-   picks "for <kid>" or "shared family device". Server creates a short-lived (5 min) single-use pairing code and
-   shows a QR containing `{serverUrl, code}`. The Android app scans it, `POST /api/v1/devices/pair` → receives
-   a long-lived `device` token stored in EncryptedSharedPreferences/Keystore.
-2. **Shared tablet profile switch.** Device token + `POST /api/v1/devices/session {userId, pin?}` → a short-lived
-   kid session scoped to that device. Auto-locks back to the picker after inactivity.
-   **Parent elevation:** device token + `POST /api/v1/devices/elevate {userId, parentPin}` → a ~2 min parent session
-   scoped to that device (attributed to that parent). 5 failed PINs lock elevation on that device for 15 min.
+1. **Device pairing (kids / shared tablet;** `internal/devices`**).** A parent opens *Devices → Pair a device* in
+   the web admin, picks "<kid>'s device" or "Shared family device", and `POST /devices/pairing` returns a
+   single-use code valid 5 minutes (`k7mp-q2xd`, SHA-256 stored) plus a QR payload
+   `{"server":"<CHORECAST_PUBLIC_URL or request URL>","code":"…"}`. The app scans it (CameraX + ZXing, no Play
+   services) or takes the typed server and code, and `POST /devices/pair` returns a long-lived `device` token
+   (Keystore-encrypted). A `devices` row records the device; deleting it revokes its token and sessions.
+   Failed pairing attempts are rate limited per IP.
+2. **Shared tablet profile switch.** `GET /devices/picker` lists kid profiles (shared devices) and the parents who
+   have a parent PIN. `POST /devices/session {kid, pin?}` with the device token returns a `device_session` token
+   for that kid (8 h max); the app locks back to the picker after 2 min without a touch (`POST /devices/lock`
+   revokes the session). 5 wrong PINs for a kid on a device lock that kid there for 15 min (in memory).
+   **Parent elevation:** `POST /devices/elevate {parentId, pin}` returns a 2-minute `device_session` for that
+   parent: parent scopes minus `account:manage` (no owner rights either), `elevated: true` in `/me`.
+   5 wrong parent PINs lock elevation on that device for 15 min (stored on the device row). Session tokens live
+   only in the app's memory.
 3. **Parent login, password** (`internal/account`). `POST /api/v1/auth/login {username, password, client}`:
    `client: app` returns an `app` bearer token (no expiry, labelled with the device name); `client: web` sets the
    30-day session cookie. With TOTP on, a correct password alone answers 401 `totp_required`; the client resends
