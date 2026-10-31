@@ -119,6 +119,19 @@ Enforced in a Huma middleware that resolves the principal from cookie or bearer 
 - `GET /api/v1/version` returns `apiVersion`; the app refuses to talk to a server with an incompatible major.
 - Errors are RFC 9457 problem+json (Huma default).
 
+## Time & calendars
+
+- **Never read the wall clock directly.** Code takes a `clock.Clock` (`internal/clock`); tests use `clock.Fake`.
+  A forbidigo lint rule rejects `time.Now`, `time.Since` and `time.Until` outside `internal/clock`.
+- **Household calendar math lives in `internal/caltime`**: civil `Date`, `TimeOfDay`, and `Household`
+  (timezone, day end, week start) with `DayClose`, `DayContaining`, `NextDayClose`, `WeekStartOf`, `WeekClose`,
+  and per-kid `EffectiveDayEnd`.
+- A **day end** is within its own calendar day, in (00:00, 24:00]; `00:00` means the following midnight. Day *d*
+  covers `(DayClose(d−1), DayClose(d)]`, so with an early day end the evening after the close belongs to the next day.
+- **DST:** a wall time that occurs twice resolves to the earlier instant; one inside a spring-forward gap resolves to
+  the end of the gap (Go's `time.Date` resolves gap times backwards, which would close a day early).
+- The timezone database is embedded in the binary (`time/tzdata`), so any container image works.
+
 ## Push notifications
 
 See [features/notifications.md](features/notifications.md). In short: push payloads carry no content (wake-up
