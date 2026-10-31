@@ -3,8 +3,12 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- usesCleartextTraffic: self-hosted servers often run plain HTTP on the home network. The app
+         warns when a server URL is http:// because the token then travels unencrypted. -->
     <application
+        android:name=".ChorecastApp"
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">

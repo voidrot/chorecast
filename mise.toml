@@ -39,9 +39,12 @@ sources = ["server/internal/db/queries/*.sql", "server/internal/db/migrations/*.
 outputs = ["server/internal/db/sqlc/*.go"]
 
 [tasks."gen:openapi"]
-description = "Export OpenAPI spec from Go handlers to api/openapi.json"
+description = "Export the OpenAPI spec (3.1, plus a 3.0 copy for client generators) to api/"
 dir = "server"
-run = "go run ./cmd/chorecast openapi > ../api/openapi.json"
+run = [
+  "go run ./cmd/chorecast openapi > ../api/openapi.json",
+  "go run ./cmd/chorecast openapi -3.0 > ../api/openapi-3.0.json",
+]
 
 [tasks."gen:web-client"]
 description = "Generate TS types for the web admin from api/openapi.json"
@@ -90,8 +93,11 @@ env = { CGO_ENABLED = "0" }
 run = "go build -trimpath -ldflags='-s -w' -o ../dist/chorecast ./cmd/chorecast"
 
 [tasks."build:image"]
-description = "Build the multi-arch container image"
-run = "docker buildx build --platform linux/amd64,linux/arm64 -f deploy/Dockerfile -t chorecast:dev ."
+description = "Build the multi-arch container images (default and -media)"
+run = [
+  "docker buildx build --platform linux/amd64,linux/arm64 -f deploy/Dockerfile --target runtime -t chorecast:dev .",
+  "docker buildx build --platform linux/amd64,linux/arm64 -f deploy/Dockerfile --target media -t chorecast:dev-media .",
+]
 
 [tasks."android:sdk"]
 description = "Install Android SDK packages (prompts to accept SDK licenses)"
@@ -104,6 +110,11 @@ run = [
 description = "Build the Android debug APK"
 dir = "android"
 run = "./gradlew assembleDebug"
+
+[tasks."build:android:release"]
+description = "Build release APKs (signed when CHORECAST_KEYSTORE_PATH etc. are set; see docs/releasing.md)"
+dir = "android"
+run = "./gradlew assembleRelease"
 
 [tasks.build]
 description = "Build server (incl. web)"
@@ -141,8 +152,9 @@ run = "pnpm test"
 
 [tasks."test:android"]
 dir = "android"
-# Flavors (play/foss) mean there is no plain testDebugUnitTest task.
-run = "./gradlew testFossDebugUnitTest testPlayDebugUnitTest"
+# Flavors (play/foss) mean there is no plain testDebugUnitTest task. :core holds the
+# platform-independent logic and runs on any JVM.
+run = "./gradlew :core:test testFossDebugUnitTest testPlayDebugUnitTest"
 
 [tasks.test]
 description = "Run server and web tests"

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/version"
 )
 
@@ -82,5 +84,51 @@ func TestUnknownAPIRoutesReturnProblems(t *testing.T) {
 func TestAPIVersionMatchesPrefix(t *testing.T) {
 	if want := fmt.Sprintf("/api/v%d", version.APIVersion); api.Prefix != want {
 		t.Errorf("Prefix = %s but APIVersion = %d (want prefix %s)", api.Prefix, version.APIVersion, want)
+	}
+}
+
+func TestMe(t *testing.T) {
+	store, err := db.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	u, err := store.CreateUser(t.Context(), sqlc.CreateUserParams{DisplayName: "Mom", Role: "parent", IsOwner: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := auth.NewStore(store.Queries, clock.Real{}).Issue(t.Context(), auth.IssueParams{Kind: auth.TokenApp, UserID: u.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := chi.NewRouter()
+	api.New(r, config.Config{}, store, clock.Real{})
+
+	get := func(header string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/me", nil)
+		if header != "" {
+			req.Header.Set("Authorization", header)
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := get("Bearer " + token)
+	var me struct {
+		Kind   string   `json:"kind"`
+		UserID int64    `json:"userId"`
+		Owner  bool     `json:"owner"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil || rec.Code != 200 {
+		t.Fatalf("GET /me = %d %s", rec.Code, rec.Body)
+	}
+	if me.Kind != "parent" || me.UserID != u.ID || !me.Owner || !slices.Contains(me.Scopes, "server:manage") {
+		t.Errorf("me = %+v", me)
+	}
+
+	if rec := get(""); rec.Code != 401 || !strings.Contains(rec.Body.String(), `"code":"unauthenticated"`) {
+		t.Errorf("anonymous GET /me = %d %s", rec.Code, rec.Body)
 	}
 }

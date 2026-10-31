@@ -36,6 +36,8 @@ func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.AP
 		"bearer":  {Type: "http", Scheme: "bearer", Description: "Opaque app/device token"},
 		"session": {Type: "apiKey", In: "cookie", Name: "chorecast_session"},
 	}
+	// No "$schema" links in responses: they bloat every body and generated clients can't decode them.
+	hcfg.CreateHooks = nil
 	hcfg.OnAddOperation = append(hcfg.OnAddOperation, idempotency.AddHeaderParam)
 
 	var hapi huma.API
@@ -73,6 +75,15 @@ func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.AP
 		Tags:        []string{"system"},
 		Metadata:    auth.Public(),
 	}, h.version)
+
+	huma.Register(hapi, huma.Operation{
+		OperationID: "getMe",
+		Method:      "GET",
+		Path:        "/me",
+		Summary:     "The authenticated caller: kind, user and granted scopes",
+		Tags:        []string{"auth"},
+		Security:    auth.Require(), // any authenticated caller
+	}, h.me)
 
 	if err := auth.CheckOperations(hapi.OpenAPI()); err != nil {
 		panic(err)
@@ -115,5 +126,27 @@ func (h *handlers) version(_ context.Context, _ *struct{}) (*VersionOutput, erro
 	out.Body.Commit = version.Commit
 	out.Body.APIVersion = version.APIVersion
 	out.Body.OIDC = h.cfg.OIDC.Enabled()
+	return out, nil
+}
+
+type MeOutput struct {
+	Body struct {
+		Kind   string   `json:"kind" enum:"parent,kid,shared_device,display,api" doc:"What kind of caller this is"`
+		UserID int64    `json:"userId,omitempty" doc:"The parent or kid; absent for shared devices, displays and API keys"`
+		Owner  bool     `json:"owner" doc:"Parent with owner rights (server settings)"`
+		Scopes []string `json:"scopes" nullable:"false" doc:"Granted scopes, for clients to hide what the caller can't do"`
+	}
+}
+
+func (h *handlers) me(ctx context.Context, _ *struct{}) (*MeOutput, error) {
+	p, _ := auth.PrincipalFrom(ctx) // guaranteed by the operation's security policy
+	out := &MeOutput{}
+	out.Body.Kind = string(p.Kind)
+	out.Body.UserID = p.UserID
+	out.Body.Owner = p.Owner
+	out.Body.Scopes = make([]string, 0)
+	for _, s := range p.Scopes() {
+		out.Body.Scopes = append(out.Body.Scopes, string(s))
+	}
 	return out, nil
 }

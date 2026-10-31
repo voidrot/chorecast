@@ -5,10 +5,29 @@ import { createApp } from 'vue'
 import 'primeicons/primeicons.css'
 
 import App from './App.vue'
+import { apiEvents } from './api/client'
+import { i18n } from './i18n'
 import router from './router'
+import { useSessionStore } from './stores/session'
 
-createApp(App)
+const app = createApp(App)
   .use(createPinia())
   .use(router)
+  .use(i18n)
   .use(PrimeVue, { theme: { preset: Aura } })
-  .mount('#app')
+
+const session = useSessionStore()
+// Only a session that was valid and expired mid-use is handled here; on the first load the router
+// guard decides where to go.
+apiEvents.onUnauthorized = () => {
+  if (session.status === 'authenticated' || session.status === 'forbidden') {
+    session.signedOut()
+    void router.push({ name: 'login', query: { redirect: router.currentRoute.value.fullPath } })
+  }
+}
+apiEvents.onSetupRequired = () => {
+  session.status = 'setup_required'
+  void router.push({ name: 'setup' })
+}
+
+app.mount('#app')
