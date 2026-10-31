@@ -37,14 +37,11 @@ fun DevicesScreen(viewModel: DevicesViewModel, onBack: () -> Unit, onSignedOut: 
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     LaunchedEffect(state.signedOut) { if (state.signedOut) onSignedOut() }
-    LaunchedEffect(state.notice) {
-        val n = state.notice ?: return@LaunchedEffect
-        val text = when (n) {
-            is Notice.Locked -> context.getString(R.string.devices_locked, n.name)
-            is Notice.Revoked -> context.getString(R.string.devices_revoked, n.name)
-            Notice.Failed -> context.getString(R.string.devices_failed)
-        }
-        android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show()
+    // Resolved in composition (configuration-aware), shown once.
+    val noticeText = state.notice?.let { noticeText(it) }
+    LaunchedEffect(noticeText) {
+        if (noticeText == null) return@LaunchedEffect
+        android.widget.Toast.makeText(context, noticeText, android.widget.Toast.LENGTH_LONG).show()
         viewModel.noticeShown()
     }
 
@@ -103,4 +100,11 @@ fun DevicesScreen(viewModel: DevicesViewModel, onBack: () -> Unit, onSignedOut: 
             dismissButton = { TextButton(onClick = { viewModel.askRevoke(null) }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
+}
+
+@Composable
+private fun noticeText(n: Notice): String = when (n) {
+    is Notice.Locked -> stringResource(R.string.devices_locked, n.name)
+    is Notice.Revoked -> stringResource(R.string.devices_revoked, n.name)
+    Notice.Failed -> stringResource(R.string.devices_failed)
 }
