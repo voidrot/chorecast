@@ -164,6 +164,39 @@ Implemented in `internal/auth`:
   from the display name at creation (`Zoë Smith` → `zoe-smith`, `-2` on collision), are never all digits, and
   don't change when the name does. Unknown kids are a 404 `kid_not_found`.
 
+## Android app structure
+
+Three Gradle modules (`android/`):
+
+| Module | What | Tests |
+|---|---|---|
+| `:api-client` | Kotlin client **generated at build time** by openapi-generator (`kotlin`, `jvm-ktor`, kotlinx.serialization) from `api/openapi-3.0.json`. Nothing generated is committed, so it can't drift; the committed spec is drift-checked in CI. | — |
+| `:core` | Plain Kotlin/JVM logic: `ServerUrl` parsing, `Compatibility` (API major check), `ServerChecker` (`GET /version` via the generated client), `TokenStore` interface, shared client config (`ApiClients`: JSON with `ignoreUnknownKeys`, per the compatibility policy). | JUnit + ktor `MockEngine`, run on any JVM |
+| `:app` | Compose UI: type-safe navigation (`ui/Routes.kt`), screens + ViewModels (`StateFlow` state), manual DI via `AppContainer` (created in `ChorecastApp`), `KeystoreTokenStore` (AES-256-GCM key in the Android Keystore), OkHttp engine. All UI text in `strings.xml`. | Android unit tests |
+
+- The generated client registers no JSON converter: always build API clients with `ApiClients.config`.
+- Huma's `$schema` response links are disabled server-side; generated models can't decode them.
+- Cleartext HTTP is allowed (self-hosted LANs); the connect screen warns when a server URL is `http://`.
+- Locally, Maven Central may rate-limit; CI resolves normally.
+
+## Web admin structure
+
+Vue 3 + PrimeVue SPA in `web/`, embedded in the server binary:
+
+- `src/api/client.ts`: typed `openapi-fetch` client (types generated from `api/openapi.json`). A response
+  middleware reports a 401 on an established session (`apiEvents.onUnauthorized`) and 503 `setup_required`
+  (`apiEvents.onSetupRequired`); `main.ts` wires these to the session store and router.
+- `src/api/errors.ts`: `ApiError` from problem responses (`status`, `code`, `detail`, `fieldErrors`). Use the
+  `error` that openapi-fetch returns (it has already read the body). `useAsync()` wraps actions with
+  loading/error state.
+- `src/stores/session.ts`: loads `GET /me`; status `unknown | anonymous | forbidden | authenticated |
+  setup_required`. The admin is for parents, so other principals are `forbidden`.
+- `src/router/guard.ts`: pure `decide(status, route)` (unit-tested): anonymous → `/login?redirect=…`, setup
+  pending → `/setup`, signed-in users skip login/setup. Routes reachable without a session set
+  `meta.public`.
+- `src/i18n.ts` + `src/locales/en.json`: all UI text via `vue-i18n`. `src/format.ts`: instants in the household
+  timezone (`householdTimeZone`), civil dates never shifted.
+
 ## Time & calendars
 
 - **Never read the wall clock directly.** Code takes a `clock.Clock` (`internal/clock`); tests use `clock.Fake`.

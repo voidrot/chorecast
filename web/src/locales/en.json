@@ -1,0 +1,25 @@
+{
+  "app": { "name": "Chorecast" },
+  "nav": { "home": "Home" },
+  "session": {
+    "parent": "Parent",
+    "owner": "Owner"
+  },
+  "home": {
+    "title": "Household",
+    "server": "Server",
+    "status": { "ok": "ok", "degraded": "degraded", "unreachable": "unreachable" },
+    "version": "Version {version}"
+  },
+  "login": {
+    "title": "Sign in",
+    "comingSoon": "Signing in arrives with parent accounts. Until then the admin can't be opened.",
+    "notParent": "This account isn't a parent account. The admin is for parents.",
+    "unreachable": "Can't reach the Chorecast server: {detail}"
+  },
+  "setup": {
+    "title": "Finish setting up Chorecast",
+    "body": "This server hasn't been set up yet. Open the setup link printed in the server's log to create your household."
+  },
+  "notFound": { "title": "Page not found", "back": "Go home" }
+}

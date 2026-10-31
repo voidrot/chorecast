@@ -1,6 +1,9 @@
 package auth
 
-import "context"
+import (
+	"context"
+	"slices"
+)
 
 // Principal is the authenticated caller of a request.
 type Principal struct {
@@ -33,6 +36,16 @@ func (p *Principal) HasAll(ss []Scope) bool {
 		}
 	}
 	return true
+}
+
+// Scopes returns the principal's scopes, sorted.
+func (p *Principal) Scopes() []Scope {
+	out := make([]Scope, 0, len(p.scopes))
+	for s := range p.scopes {
+		out = append(out, s)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // CanAccessKid reports whether the principal may see or act on kid kidID's data (scopes still

@@ -30,7 +30,7 @@ const usage = `usage: chorecast <command>
 
 commands:
   serve     run the server (default)
-  openapi   print the OpenAPI spec as JSON
+  openapi   print the OpenAPI spec as JSON (-3.0 for an OpenAPI 3.0 copy, for client generators)
   version   print the version`
 
 func main() {
@@ -43,7 +43,7 @@ func main() {
 	case "serve":
 		err = serve()
 	case "openapi":
-		err = printOpenAPI()
+		err = printOpenAPI(len(os.Args) > 2 && os.Args[2] == "-3.0")
 	case "version":
 		fmt.Printf("chorecast %s (%s) api v%d\n", version.Version, version.Commit, version.APIVersion)
 	default:
@@ -107,9 +107,19 @@ func serve() error {
 	return srv.Shutdown(shutdownCtx)
 }
 
-func printOpenAPI() error {
+// printOpenAPI writes the spec. Huma generates OpenAPI 3.1; v30 writes a 3.0 downgrade, which
+// client generators (openapi-generator for the Android client) support fully.
+func printOpenAPI(v30 bool) error {
 	hapi := api.New(chi.NewRouter(), config.Load(), nil, clock.Real{})
+	var spec any = hapi.OpenAPI()
+	if v30 {
+		b, err := hapi.OpenAPI().Downgrade()
+		if err != nil {
+			return err
+		}
+		spec = json.RawMessage(b)
+	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(hapi.OpenAPI())
+	return enc.Encode(spec)
 }

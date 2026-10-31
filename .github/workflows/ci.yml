@@ -18,8 +18,20 @@ jobs:
       - run: mise run setup
       - run: mise run gen
       - name: Generated code is up to date
-        run: git diff --exit-code -- server/internal/db/sqlc api/openapi.json web/src/api/schema.d.ts
+        # status (not diff) so new, uncommitted generated files fail too. The Kotlin client is
+        # generated at build time from api/openapi-3.0.json, so the spec check covers it.
+        run: |
+          paths="server/internal/db/sqlc api/openapi.json api/openapi-3.0.json web/src/api/schema.d.ts"
+          if [ -n "$(git status --porcelain -- $paths)" ]; then
+            git status --porcelain -- $paths
+            git diff -- $paths
+            echo "::error::Generated code is stale: run 'mise run gen' and commit the result"
+            exit 1
+          fi
       - run: mise run ci
+      - name: Server tests with the race detector
+        working-directory: server
+        run: mise exec -- go test -race ./...
 
   android:
     runs-on: ubuntu-latest
@@ -34,9 +46,20 @@ jobs:
       - run: mise run lint:android
       - run: mise run test:android
       - run: mise run build:android
+      - name: Release build (unsigned; catches R8/minification problems)
+        run: mise run build:android:release
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: chorecast-debug-apks
+          path: android/app/build/outputs/apk/*/debug/*.apk
+          retention-days: 14
 
   image:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [runtime, media]
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -45,7 +68,8 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile
+          target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}

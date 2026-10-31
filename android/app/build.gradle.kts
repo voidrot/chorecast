@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization) // type-safe navigation routes
 }
 
 android {
@@ -27,10 +28,25 @@ android {
         create("foss") { dimension = "distribution" }
     }
 
+    // Release signing comes from the environment (CI secrets; see docs/releasing.md). Without it,
+    // release builds are produced unsigned, which is what CI's release check builds.
+    val keystorePath = providers.environmentVariable("CHORECAST_KEYSTORE_PATH").orNull
+    if (keystorePath != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = providers.environmentVariable("CHORECAST_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("CHORECAST_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("CHORECAST_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -46,10 +62,14 @@ android {
 }
 
 dependencies {
+    implementation(project(":core"))
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
