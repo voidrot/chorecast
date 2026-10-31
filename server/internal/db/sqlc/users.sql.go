@@ -22,15 +22,16 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (display_name, role, is_owner, username, password_hash, pin_hash)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, display_name, role, is_owner, username, password_hash, pin_hash, oidc_subject, created_at
+INSERT INTO users (display_name, role, is_owner, slug, username, password_hash, pin_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at
 `
 
 type CreateUserParams struct {
 	DisplayName  string         `json:"display_name"`
 	Role         string         `json:"role"`
 	IsOwner      int64          `json:"is_owner"`
+	Slug         sql.NullString `json:"slug"`
 	Username     sql.NullString `json:"username"`
 	PasswordHash sql.NullString `json:"password_hash"`
 	PinHash      sql.NullString `json:"pin_hash"`
@@ -41,6 +42,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.DisplayName,
 		arg.Role,
 		arg.IsOwner,
+		arg.Slug,
 		arg.Username,
 		arg.PasswordHash,
 		arg.PinHash,
@@ -51,6 +53,51 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.DisplayName,
 		&i.Role,
 		&i.IsOwner,
+		&i.Slug,
+		&i.Username,
+		&i.PasswordHash,
+		&i.PinHash,
+		&i.OidcSubject,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getKidByID = `-- name: GetKidByID :one
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at FROM users WHERE id = ? AND role = 'child'
+`
+
+func (q *Queries) GetKidByID(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRowContext(ctx, getKidByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.Role,
+		&i.IsOwner,
+		&i.Slug,
+		&i.Username,
+		&i.PasswordHash,
+		&i.PinHash,
+		&i.OidcSubject,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getKidBySlug = `-- name: GetKidBySlug :one
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at FROM users WHERE slug = ? AND role = 'child'
+`
+
+func (q *Queries) GetKidBySlug(ctx context.Context, slug sql.NullString) (User, error) {
+	row := q.db.QueryRowContext(ctx, getKidBySlug, slug)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.Role,
+		&i.IsOwner,
+		&i.Slug,
 		&i.Username,
 		&i.PasswordHash,
 		&i.PinHash,
@@ -61,7 +108,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, display_name, role, is_owner, username, password_hash, pin_hash, oidc_subject, created_at FROM users WHERE id = ?
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -72,6 +119,7 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.DisplayName,
 		&i.Role,
 		&i.IsOwner,
+		&i.Slug,
 		&i.Username,
 		&i.PasswordHash,
 		&i.PinHash,
@@ -82,7 +130,7 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, display_name, role, is_owner, username, password_hash, pin_hash, oidc_subject, created_at FROM users ORDER BY role, display_name
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at FROM users ORDER BY role, display_name
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -99,6 +147,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.DisplayName,
 			&i.Role,
 			&i.IsOwner,
+			&i.Slug,
 			&i.Username,
 			&i.PasswordHash,
 			&i.PinHash,
@@ -116,4 +165,15 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const slugTaken = `-- name: SlugTaken :one
+SELECT EXISTS (SELECT 1 FROM users WHERE slug = ?)
+`
+
+func (q *Queries) SlugTaken(ctx context.Context, slug sql.NullString) (bool, error) {
+	row := q.db.QueryRowContext(ctx, slugTaken, slug)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

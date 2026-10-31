@@ -125,9 +125,44 @@ Implemented in `internal/auth`:
 
 ## API conventions
 
-- Base path `/api/v1`; spec at `/api/v1/openapi.json`, interactive docs at `/api/v1/docs`.
-- `GET /api/v1/version` returns `apiVersion`; the app refuses to talk to a server with an incompatible major.
-- Errors are RFC 9457 problem+json (Huma default).
+- Base path `/api/v1`; spec at `/api/v1/openapi.json`, interactive docs at `/api/v1/docs`. JSON field names are
+  camelCase.
+
+**Versioning & compatibility**
+- `GET /api/v1/version` returns `apiVersion`, the integer major in the URL prefix (a test enforces they match).
+- Within `/api/v1`, changes are **additive only**: new endpoints, new optional parameters, new response fields,
+  new enum values, new error codes. Clients must ignore unknown fields and treat unknown enum values and codes
+  generically.
+- A breaking change ships as `/api/v2` with `apiVersion: 2`. The server keeps serving the previous major for at
+  least one minor release, so an un-updated app keeps working while the household upgrades it.
+- The Android app checks `apiVersion` at startup and shows an "update the app/server" message when it can't
+  speak the server's major.
+
+**Errors** (`internal/apierr`)
+- Every error is RFC 9457 `application/problem+json`: `type`, `title`, `status`, `detail`, `errors[]`, plus a
+  stable **`code`** (`kid_not_found`, `validation_failed`, `insufficient_scope`, ...). Clients branch on `code`,
+  never on `detail` text. Codes are never renamed.
+- Handlers return `apierr.New(status, code, detail)`; plain Huma errors get a default code per status. Unknown
+  paths and methods under `/api/v1` answer in the same format.
+
+**Pagination** (`internal/paging`)
+- List operations embed `paging.Params` (`?cursor=&limit=`, limit 1–100, default 50) and return
+  `{ "items": [...], "nextCursor": "..." }`; `nextCursor` is absent on the last page.
+- Cursors are opaque (versioned base64url keyset). Handlers fetch `limit+1` rows after the decoded key and call
+  `paging.Build`. A malformed cursor is a 400 `invalid_cursor`.
+
+**Idempotent retries** (`internal/idempotency`)
+- Authenticated JSON `POST`s may send `Idempotency-Key` (1–255 visible ASCII chars, documented in the spec on
+  every POST). A retry with the same key and body replays the first response with `Idempotent-Replayed: true`
+  instead of running again; the same key with a different body is a 422 `idempotency_key_reuse`; a retry while
+  the first request is still running is a 409 `idempotency_key_in_progress`.
+- Keys are scoped to the caller's token and kept 24 h (purged by daily maintenance). 5xx responses are not
+  stored, so the client can retry for real. A key stuck in progress for 5 minutes (crash) is reclaimed.
+
+**Kid references** (`internal/kids`)
+- Wherever a path takes a kid, it accepts the numeric id or the kid's **slug** (`/kids/sam`). Slugs are derived
+  from the display name at creation (`Zoë Smith` → `zoe-smith`, `-2` on collision), are never all digits, and
+  don't change when the name does. Unknown kids are a 404 `kid_not_found`.
 
 ## Time & calendars
 

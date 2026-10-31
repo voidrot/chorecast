@@ -8,6 +8,16 @@ import (
 	"database/sql"
 )
 
+type IdempotencyKey struct {
+	TokenID     int64          `json:"token_id"`
+	Key         string         `json:"key"`
+	RequestHash []byte         `json:"request_hash"`
+	Status      sql.NullInt64  `json:"status"`
+	ContentType sql.NullString `json:"content_type"`
+	Body        []byte         `json:"body"`
+	CreatedAt   string         `json:"created_at"`
+}
+
 type Job struct {
 	ID             int64          `json:"id"`
 	Queue          string         `json:"queue"`
@@ -45,6 +55,7 @@ type User struct {
 	DisplayName  string         `json:"display_name"`
 	Role         string         `json:"role"`
 	IsOwner      int64          `json:"is_owner"`
+	Slug         sql.NullString `json:"slug"`
 	Username     sql.NullString `json:"username"`
 	PasswordHash sql.NullString `json:"password_hash"`
 	PinHash      sql.NullString `json:"pin_hash"`

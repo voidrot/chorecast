@@ -50,45 +50,6 @@ export interface components {
             /** @description The value at the given location */
             value?: unknown;
         };
-        ErrorModel: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/ErrorModel.json
-             */
-            readonly $schema?: string;
-            /**
-             * @description A human-readable explanation specific to this occurrence of the problem.
-             * @example Property foo is required but is missing.
-             */
-            detail?: string;
-            /** @description Optional list of individual error details */
-            errors?: components["schemas"]["ErrorDetail"][] | null;
-            /**
-             * Format: uri
-             * @description A URI reference that identifies the specific occurrence of the problem.
-             * @example https://example.com/error-log/abc123
-             */
-            instance?: string;
-            /**
-             * Format: int64
-             * @description HTTP status code
-             * @example 400
-             */
-            status?: number;
-            /**
-             * @description A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
-             * @example Bad Request
-             */
-            title?: string;
-            /**
-             * Format: uri
-             * @description A URI reference to human-readable documentation for the error.
-             * @default about:blank
-             * @example https://example.com/errors/example
-             */
-            type: string;
-        };
         HealthOutputBody: {
             /**
              * Format: uri
@@ -98,6 +59,48 @@ export interface components {
             readonly $schema?: string;
             /** @enum {string} */
             status: "ok" | "degraded";
+        };
+        Problem: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/Problem.json
+             */
+            readonly $schema?: string;
+            /**
+             * @description Stable machine-readable error code. Clients should branch on this, not on detail.
+             * @example kid_not_found
+             */
+            code: string;
+            /**
+             * @description Human-readable explanation of this occurrence.
+             * @example No kid matches "sam".
+             */
+            detail?: string;
+            /** @description Individual problems, e.g. one per invalid field. */
+            errors?: components["schemas"]["ErrorDetail"][] | null;
+            /**
+             * Format: uri
+             * @description A URI reference identifying this occurrence.
+             */
+            instance?: string;
+            /**
+             * Format: int64
+             * @description HTTP status code.
+             * @example 404
+             */
+            status?: number;
+            /**
+             * @description Short summary of the problem type.
+             * @example Not Found
+             */
+            title?: string;
+            /**
+             * Format: uri
+             * @description A URI reference identifying the problem type.
+             * @default about:blank
+             */
+            type: string;
         };
         VersionOutputBody: {
             /**
@@ -150,7 +153,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -179,7 +182,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
