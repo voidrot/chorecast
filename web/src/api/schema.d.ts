@@ -378,6 +378,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kid profiles
+         * @description Archived kids are included (last) with `archived=true`, which needs household:manage.
+         */
+        get: operations["listKids"];
+        put?: never;
+        /** Add a kid */
+        post: operations["createKid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kids/{kid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A kid profile (by id or slug) */
+        get: operations["getKid"];
+        /**
+         * Edit a kid's profile
+         * @description Replaces the profile: optional fields left out are cleared. The slug stays unless one is given.
+         */
+        put: operations["updateKid"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kids/{kid}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a kid
+         * @description Hides the kid, revokes their devices and stops scheduling; history is kept. Unarchive restores it.
+         */
+        post: operations["archiveKid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kids/{kid}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set or clear a kid's PIN
+         * @description An empty `pin` clears it. Whether it's asked for is the profile's `pinRequired`.
+         */
+        put: operations["setKidPin"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kids/{kid}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unarchive a kid (devices must be paired again) */
+        post: operations["unarchiveKid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -599,6 +698,12 @@ export interface components {
             /** @description Link to share or show as a QR code; contains the token, shown only now */
             url: string;
         };
+        DailyWindow: {
+            /** @example 07:00 */
+            end: string;
+            /** @example 20:00 */
+            start: string;
+        };
         EnableTOTPInputBody: {
             code: string;
         };
@@ -652,6 +757,43 @@ export interface components {
         };
         InvitesOutputBody: {
             items: components["schemas"]["Invite"][];
+        };
+        Kid: {
+            /** Format: date-time */
+            archivedAt?: string;
+            /** @description Built-in avatar id; the image is /avatars/<id>.svg */
+            avatar?: string;
+            /** Format: date */
+            birthDate?: string;
+            color: string;
+            /** @description HH:MM; the kid's day ends earlier than the household's */
+            dayEndOverride?: string;
+            displayName: string;
+            /** Format: int64 */
+            id: number;
+            pinRequired: boolean;
+            pinSet: boolean;
+            quietHours?: components["schemas"]["DailyWindow"];
+            schoolHours?: components["schemas"]["SchoolHours"];
+            /** @description Stable short name usable anywhere a kid id is */
+            slug: string;
+        };
+        KidInput: {
+            avatar?: string;
+            /** Format: date */
+            birthDate?: string;
+            color: string;
+            dayEndOverride?: string;
+            /** @description Nickname or first name only */
+            displayName: string;
+            pinRequired?: boolean;
+            quietHours?: components["schemas"]["DailyWindow"];
+            schoolHours?: components["schemas"]["SchoolHours"];
+            /** @description Defaults to one derived from the name on create; unchanged on update when empty */
+            slug?: string;
+        };
+        KidsOutputBody: {
+            items: components["schemas"]["Kid"][];
         };
         LoginInputBody: {
             /**
@@ -767,6 +909,14 @@ export interface components {
             /** @description Single-use codes for signing in without the authenticator app. Shown only now. */
             recoveryCodes: string[];
         };
+        SchoolHours: {
+            /** @description Lowercase weekday names, e.g. monday */
+            days: string[];
+            /** @example 15:00 */
+            end: string;
+            /** @example 08:00 */
+            start: string;
+        };
         Session: {
             /** Format: date-time */
             createdAt: string;
@@ -784,6 +934,10 @@ export interface components {
         };
         SessionsOutputBody: {
             items: components["schemas"]["Session"][];
+        };
+        SetKidPINInputBody: {
+            /** @description 4-8 digits; empty clears the PIN */
+            pin: string;
         };
         SetPINInputBody: {
             /** @description Your account password, to confirm */
@@ -1885,6 +2039,361 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listKids: {
+        parameters: {
+            query?: {
+                /** @description Include archived kids (needs household:manage) */
+                archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KidsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createKid: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KidInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getKid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateKid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KidInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    archiveKid: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    setKidPin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetKidPINInputBody"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    unarchiveKid: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kid"];
+                };
             };
             /** @description Not Found */
             404: {
