@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { NTag } from 'naive-ui'
+import { NButton, NTag } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { RouterLink, RouterView } from 'vue-router'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 
 const { t } = useI18n()
+const router = useRouter()
 const session = useSessionStore()
+
+async function signOut() {
+  await session.logout()
+  await router.replace({ name: 'login' })
+}
 </script>
 
 <template>
@@ -21,9 +27,15 @@ const session = useSessionStore()
           }}</RouterLink>
         </nav>
       </div>
-      <NTag size="small" :bordered="false">
-        {{ session.isOwner ? t('session.owner') : t('session.parent') }}
-      </NTag>
+      <div class="flex items-center gap-3">
+        <RouterLink :to="{ name: 'account' }" exact-active-class="font-semibold" class="text-sm">
+          {{ session.me?.displayName ?? t('nav.account') }}
+        </RouterLink>
+        <NTag size="small" :bordered="false">
+          {{ session.isOwner ? t('session.owner') : t('session.parent') }}
+        </NTag>
+        <NButton size="small" quaternary @click="signOut">{{ t('nav.signOut') }}</NButton>
+      </div>
     </header>
     <main class="mx-auto max-w-5xl px-4 py-6">
       <RouterView />

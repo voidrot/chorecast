@@ -22,7 +22,14 @@ const router = createRouter({
     {
       path: '/',
       component: AppLayout,
-      children: [{ path: '', name: 'home', component: HomeView }],
+      children: [
+        { path: '', name: 'home', component: HomeView },
+        {
+          path: 'account',
+          name: 'account',
+          component: () => import('@/views/account/AccountView.vue'),
+        },
+      ],
     },
     {
       path: '/:pathMatch(.*)*',
