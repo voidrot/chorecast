@@ -6,6 +6,7 @@ import dev.voidrot.chorecast.core.Result
 import dev.voidrot.chorecast.core.ServerChecker
 import dev.voidrot.chorecast.core.ServerStatus
 import dev.voidrot.chorecast.core.ServerUrl
+import dev.voidrot.chorecast.core.TokenStore
 import dev.voidrot.chorecast.data.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,7 @@ data class ConnectState(
 class ConnectViewModel(
     private val settings: SettingsStore,
     private val checker: ServerChecker,
+    private val tokens: TokenStore,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ConnectState(input = settings.serverUrl?.value.orEmpty()))
     val state: StateFlow<ConnectState> = _state.asStateFlow()
@@ -43,6 +45,8 @@ class ConnectViewModel(
         viewModelScope.launch {
             when (val status = checker.check(url)) {
                 is ServerStatus.Ready -> {
+                    // A sign-in belongs to one server.
+                    if (settings.serverUrl != url) tokens.clear()
                     settings.serverUrl = url
                     _state.update { it.copy(checking = false, connected = status) }
                 }

@@ -3,7 +3,9 @@
     "name": "Chorecast"
   },
   "nav": {
-    "home": "Home"
+    "home": "Home",
+    "account": "Account",
+    "signOut": "Sign out"
   },
   "session": {
     "parent": "Parent",
@@ -21,9 +23,28 @@
   },
   "login": {
     "title": "Sign in",
-    "comingSoon": "Signing in arrives with parent accounts. Until then the admin can't be opened.",
     "notParent": "This account isn't a parent account. The admin is for parents.",
-    "unreachable": "Can't reach the Chorecast server: {detail}"
+    "unreachable": "Can't reach the Chorecast server: {detail}",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "verify": "Verify",
+    "totpPrompt": "Enter the 6-digit code from your authenticator app.",
+    "recoveryPrompt": "Enter one of your recovery codes. Each code works once.",
+    "code": "Code",
+    "recoveryCode": "Recovery code",
+    "useRecovery": "Use a recovery code",
+    "useCode": "Use an authenticator code",
+    "startOver": "Start over",
+    "recoveryCodesLeft": "You have no recovery codes left. Create new ones on your account page. | You have 1 recovery code left. Create new ones on your account page. | You have {count} recovery codes left. Create new ones on your account page.",
+    "errors": {
+      "invalidCredentials": "Wrong username or password.",
+      "invalidCode": "That code is wrong or was already used. Wait for the next one and try again.",
+      "invalidRecovery": "That recovery code is wrong or was already used.",
+      "rateLimited": "Too many failed sign-ins. Try again in {minutes} minutes.",
+      "network": "Can't reach the server. Check your connection.",
+      "unexpected": "Something went wrong signing in. Try again."
+    }
   },
   "setup": {
     "title": "Set up Chorecast",
@@ -91,5 +112,60 @@
   "notFound": {
     "title": "Page not found",
     "back": "Go home"
+  },
+  "account": {
+    "title": "Your account",
+    "signedInAs": "Signed in as {name} ({username})",
+    "confirmPassword": "Your password",
+    "cancel": "Cancel",
+    "sessions": {
+      "title": "Where you're signed in",
+      "current": "This browser",
+      "revoke": "Sign out",
+      "lastUsed": "Last used {when}",
+      "created": "Signed in {when}",
+      "kind": {
+        "web_session": "Web",
+        "app": "Android app"
+      }
+    },
+    "password": {
+      "title": "Password",
+      "hint": "Changing your password signs you out everywhere else.",
+      "current": "Current password",
+      "new": "New password",
+      "submit": "Change password",
+      "changed": "Password changed."
+    },
+    "pin": {
+      "title": "Parent PIN",
+      "set": "Set",
+      "notSet": "Not set",
+      "hint": "Unlocks parent actions on a shared family tablet without your password.",
+      "pin": "PIN (4-8 digits)",
+      "invalid": "A PIN is 4 to 8 digits.",
+      "submit": "Set PIN",
+      "change": "Change PIN",
+      "clear": "Remove PIN",
+      "saved": "PIN saved.",
+      "cleared": "PIN removed."
+    },
+    "totp": {
+      "title": "Two-factor sign-in",
+      "on": "On",
+      "off": "Off",
+      "hint": "Ask for a code from an authenticator app (such as Aegis, 2FAS or Google Authenticator) when you sign in.",
+      "setUp": "Set up",
+      "scan": "Scan this QR code with your authenticator app, then enter the code it shows.",
+      "manual": "Can't scan it? Enter this key instead:",
+      "enable": "Turn on",
+      "onHint": "You'll need a code from your authenticator app, or a recovery code, to sign in.",
+      "regenerate": "New recovery codes",
+      "disable": "Turn off",
+      "saveCodes": "Save these recovery codes somewhere safe. Each one signs you in once if you lose your phone. They won't be shown again.",
+      "download": "Download",
+      "saved": "I've saved them",
+      "fileHeader": "Chorecast recovery codes. Each code works once."
+    }
   }
 }

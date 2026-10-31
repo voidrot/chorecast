@@ -55,5 +55,14 @@ export const useSessionStore = defineStore('session', () => {
     status.value = 'anonymous'
   }
 
-  return { status, me, error, isOwner, load, signedOut }
+  /** Revokes this browser's session on the server (best effort) and forgets it locally. */
+  async function logout() {
+    try {
+      await api.POST('/auth/logout')
+    } finally {
+      signedOut()
+    }
+  }
+
+  return { status, me, error, isOwner, load, signedOut, logout }
 })

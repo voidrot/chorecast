@@ -1,6 +1,7 @@
 package dev.voidrot.chorecast
 
 import android.content.Context
+import dev.voidrot.chorecast.core.ParentAuth
 import dev.voidrot.chorecast.core.ServerChecker
 import dev.voidrot.chorecast.core.TokenStore
 import dev.voidrot.chorecast.data.KeystoreTokenStore
@@ -16,5 +17,7 @@ class AppContainer(context: Context) {
 
     val settings = SettingsStore(prefs)
     val tokenStore: TokenStore = KeystoreTokenStore(prefs)
-    val serverChecker = ServerChecker(OkHttp.create())
+    private val engine = OkHttp.create()
+    val serverChecker = ServerChecker(engine)
+    val parentAuth = ParentAuth(engine)
 }

@@ -104,13 +104,23 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
    kid session scoped to that device. Auto-locks back to the picker after inactivity.
    **Parent elevation:** device token + `POST /api/v1/devices/elevate {userId, parentPin}` → a ~2 min parent session
    scoped to that device (attributed to that parent). 5 failed PINs lock elevation on that device for 15 min.
-3. **Parent login in the app, password.** `POST /api/v1/auth/login` → `app` token.
+3. **Parent login, password** (`internal/account`). `POST /api/v1/auth/login {username, password, client}`:
+   `client: app` returns an `app` bearer token (no expiry, labelled with the device name); `client: web` sets the
+   30-day session cookie. With TOTP on, a correct password alone answers 401 `totp_required`; the client resends
+   with `totpCode` (±1 step of drift, each step accepted once via `users.totp_last_step`) or a single-use
+   `recoveryCode` (10, SHA-256-hashed, shown once). Unknown usernames still pay one argon2 verification.
+   Failures are rate limited in memory: 5 per username+IP and 20 per IP per 15 min, 50 per username per hour
+   (429 + Retry-After). Self-service lives under `/account/*` (scope `account:manage`): sessions list/revoke,
+   password change (signs out other sessions), parent PIN, TOTP setup/enable/disable, recovery code
+   regeneration; sensitive changes re-check the password (403 `invalid_password`, never 401, so clients don't
+   treat it as a lost session). `POST /auth/logout` revokes the calling session or app token.
 4. **Parent login in the app, OIDC (server-brokered).** App opens a Custom Tab to
    `/api/v1/auth/oidc/start?client=android&challenge=<pkce>`. The server does the full OIDC code flow with the
    IdP, then redirects to `chorecast://auth?code=<one-time>`. The app exchanges `code + verifier` at
    `/api/v1/auth/oidc/exchange` for an `app` token. The app never talks to the IdP and needs no IdP client
    registration of its own.
-5. **Web login.** Same password/OIDC handlers, issuing the cookie session instead.
+5. **Web login.** Same password/OIDC handlers, issuing the cookie session instead. The TOTP secret is stored in
+   plain base32 in the database (needed to verify codes); protect the data directory and backups accordingly.
 
 ### Authorization
 

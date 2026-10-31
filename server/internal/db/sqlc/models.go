@@ -51,6 +51,14 @@ type Job struct {
 	FinishedAt     sql.NullString `json:"finished_at"`
 }
 
+type RecoveryCode struct {
+	ID        int64          `json:"id"`
+	UserID    int64          `json:"user_id"`
+	CodeHash  []byte         `json:"code_hash"`
+	UsedAt    sql.NullString `json:"used_at"`
+	CreatedAt string         `json:"created_at"`
+}
+
 type ScheduleCursor struct {
 	Name        string `json:"name"`
 	LastFiredAt string `json:"last_fired_at"`
@@ -74,17 +82,21 @@ type Token struct {
 }
 
 type User struct {
-	ID           int64          `json:"id"`
-	DisplayName  string         `json:"display_name"`
-	Role         string         `json:"role"`
-	IsOwner      int64          `json:"is_owner"`
-	Slug         sql.NullString `json:"slug"`
-	Username     sql.NullString `json:"username"`
-	PasswordHash sql.NullString `json:"password_hash"`
-	PinHash      sql.NullString `json:"pin_hash"`
-	PinRequired  int64          `json:"pin_required"`
-	Color        sql.NullString `json:"color"`
-	BirthDate    sql.NullString `json:"birth_date"`
-	OidcSubject  sql.NullString `json:"oidc_subject"`
-	CreatedAt    string         `json:"created_at"`
+	ID            int64          `json:"id"`
+	DisplayName   string         `json:"display_name"`
+	Role          string         `json:"role"`
+	IsOwner       int64          `json:"is_owner"`
+	Slug          sql.NullString `json:"slug"`
+	Username      sql.NullString `json:"username"`
+	PasswordHash  sql.NullString `json:"password_hash"`
+	PinHash       sql.NullString `json:"pin_hash"`
+	PinRequired   int64          `json:"pin_required"`
+	Color         sql.NullString `json:"color"`
+	BirthDate     sql.NullString `json:"birth_date"`
+	OidcSubject   sql.NullString `json:"oidc_subject"`
+	ParentPinHash sql.NullString `json:"parent_pin_hash"`
+	TotpSecret    sql.NullString `json:"totp_secret"`
+	TotpEnabled   int64          `json:"totp_enabled"`
+	TotpLastStep  int64          `json:"totp_last_step"`
+	CreatedAt     string         `json:"created_at"`
 }

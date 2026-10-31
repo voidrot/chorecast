@@ -31,7 +31,21 @@ CREATE TABLE users (
     color         TEXT,                    -- kids: #rrggbb accent
     birth_date    TEXT,                    -- kids: YYYY-MM-DD (optional)
     oidc_subject  TEXT    UNIQUE,          -- set when linked to an external IdP
+    parent_pin_hash TEXT,                  -- argon2id, parents (optional): shared-tablet elevation
+    totp_secret     TEXT,                  -- base32; set while enrolling, verified before totp_enabled
+    totp_enabled    INTEGER NOT NULL DEFAULT 0 CHECK (totp_enabled IN (0, 1)),
+    totp_last_step  INTEGER NOT NULL DEFAULT 0, -- last accepted TOTP time step; codes can't be replayed
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- One-time 2FA recovery codes (SHA-256 of the normalized code). Replaced as a set.
+CREATE TABLE recovery_codes (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    code_hash  BLOB    NOT NULL,
+    used_at    TEXT,
+    created_at TEXT    NOT NULL,
+    UNIQUE (user_id, code_hash)
 );
 
 -- Opaque bearer/session tokens. Only the SHA-256 of the token is stored.
@@ -101,6 +115,7 @@ DROP TABLE idempotency_keys;
 DROP TABLE schedule_cursors;
 DROP TABLE jobs;
 DROP TABLE tokens;
+DROP TABLE recovery_codes;
 DROP TABLE users;
 DROP TABLE setup_token;
 DROP TABLE household;
