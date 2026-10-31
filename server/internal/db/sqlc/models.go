@@ -8,6 +8,14 @@ import (
 	"database/sql"
 )
 
+type Event struct {
+	ID           int64          `json:"id"`
+	Type         string         `json:"type"`
+	Payload      string         `json:"payload"`
+	OccurredAt   string         `json:"occurred_at"`
+	DispatchedAt sql.NullString `json:"dispatched_at"`
+}
+
 type IdempotencyKey struct {
 	TokenID     int64          `json:"token_id"`
 	Key         string         `json:"key"`
