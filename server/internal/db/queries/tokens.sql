@@ -1,13 +1,13 @@
 -- name: CreateToken :one
-INSERT INTO tokens (token_hash, kind, user_id, label, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO tokens (token_hash, kind, user_id, device_id, label, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetTokenByHash :one
 SELECT * FROM tokens WHERE token_hash = ?;
 
 -- name: ResolveToken :one
-SELECT t.id, t.kind, t.user_id, t.expires_at, t.last_used_at, u.role, u.is_owner
+SELECT t.id, t.kind, t.user_id, t.device_id, t.expires_at, t.last_used_at, u.role, u.is_owner
 FROM tokens t
 LEFT JOIN users u ON u.id = t.user_id
 WHERE t.token_hash = ?;

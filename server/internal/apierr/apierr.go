@@ -45,6 +45,10 @@ const (
 	CodeUsernameTaken       = "username_taken"         // (409)
 	CodeLastOwner           = "last_owner"             // the household must keep at least one owner (409)
 	CodeParentNotFound      = "parent_not_found"       // (404)
+	CodeInvalidPairingCode  = "invalid_pairing_code"   // unknown, used or expired pairing code (400)
+	CodeInvalidPIN          = "invalid_pin"            // wrong kid or parent PIN on a device (403)
+	CodePINLocked           = "pin_locked"             // too many wrong PINs on this device (429)
+	CodeNotADevice          = "not_a_device"           // the caller isn't a paired device (403)
 	CodeInvalidCursor       = "invalid_cursor"
 	CodeKidNotFound         = "kid_not_found"
 	CodeInvalidIdempotency  = "invalid_idempotency_key"

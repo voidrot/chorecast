@@ -17,6 +17,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/devices"
 	"github.com/voidrot/chorecast/server/internal/events"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
@@ -78,7 +79,8 @@ func New(r chi.Router, deps Deps) huma.API {
 
 	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock),
 		sso: sso.New(deps.Config, deps.DB, deps.Clock), parents: parents.New(deps.DB, deps.Clock),
-		kids: kids.NewService(deps.DB, deps.Clock), household: household.New(deps.DB, deps.Bus)}
+		kids: kids.NewService(deps.DB, deps.Clock), household: household.New(deps.DB, deps.Bus),
+		devices: devices.New(deps.DB, deps.Clock)}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
@@ -101,6 +103,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerParents(hapi, h)
 	registerKids(hapi, h)
 	registerHousehold(hapi, h)
+	registerDevices(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -126,6 +129,7 @@ type handlers struct {
 	parents   *parents.Service
 	kids      *kids.Service
 	household *household.Service
+	devices   *devices.Service
 }
 
 type HealthOutput struct {
@@ -174,6 +178,8 @@ type MeOutput struct {
 		PINSet      bool   `json:"pinSet" doc:"Parents: a parent PIN is set"`
 		OIDCLinked  bool   `json:"oidcLinked" doc:"Parents: an identity provider account is linked for single sign-on"`
 		HasPassword bool   `json:"hasPassword" doc:"Parents: false for parents who only use single sign-on"`
+		DeviceID    int64  `json:"deviceId,omitempty" doc:"The paired device this request comes from"`
+		Elevated    bool   `json:"elevated,omitempty" doc:"A parent elevated on a device with their parent PIN"`
 	}
 }
 
@@ -183,6 +189,8 @@ func (h *handlers) me(ctx context.Context, _ *struct{}) (*MeOutput, error) {
 	out.Body.Kind = string(p.Kind)
 	out.Body.UserID = p.UserID
 	out.Body.Owner = p.Owner
+	out.Body.DeviceID = p.DeviceID
+	out.Body.Elevated = p.Elevated
 	out.Body.Scopes = make([]string, 0)
 	for _, s := range p.Scopes() {
 		out.Body.Scopes = append(out.Body.Scopes, string(s))

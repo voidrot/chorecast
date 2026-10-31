@@ -7,6 +7,7 @@ import dev.voidrot.chorecast.core.ServerChecker
 import dev.voidrot.chorecast.core.ServerStatus
 import dev.voidrot.chorecast.core.ServerUrl
 import dev.voidrot.chorecast.core.TokenStore
+import dev.voidrot.chorecast.data.AppMode
 import dev.voidrot.chorecast.data.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,9 +46,10 @@ class ConnectViewModel(
         viewModelScope.launch {
             when (val status = checker.check(url)) {
                 is ServerStatus.Ready -> {
-                    // A sign-in belongs to one server.
-                    if (settings.serverUrl != url) tokens.clear()
+                    // A sign-in belongs to one server, and a device token isn't a parent's sign-in.
+                    if (settings.serverUrl != url || settings.mode != AppMode.PARENT) tokens.clear()
                     settings.serverUrl = url
+                    settings.mode = AppMode.PARENT
                     _state.update { it.copy(checking = false, connected = status) }
                 }
                 else -> _state.update { it.copy(checking = false, problem = status) }

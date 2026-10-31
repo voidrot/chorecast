@@ -13,9 +13,21 @@ const RecoveryCodeCount = 10
 const recoveryAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 
 // NewRecoveryCodes returns n codes like "k7mp-q2xd-9fht" (12 characters, about 59 bits each).
-func NewRecoveryCodes(n int) ([]string, error) {
+func NewRecoveryCodes(n int) ([]string, error) { return newCodes(n, 12) }
+
+// NewShortCode returns one code of length characters in groups of four, e.g. "k7mp-q2xd" for 8:
+// typeable codes for short-lived uses such as device pairing. Hash with HashRecoveryCode.
+func NewShortCode(length int) (string, error) {
+	codes, err := newCodes(1, length)
+	if err != nil {
+		return "", err
+	}
+	return codes[0], nil
+}
+
+func newCodes(n, length int) ([]string, error) {
 	codes := make([]string, n)
-	buf := make([]byte, 12)
+	buf := make([]byte, length)
 	for i := range codes {
 		if _, err := rand.Read(buf); err != nil {
 			return nil, err

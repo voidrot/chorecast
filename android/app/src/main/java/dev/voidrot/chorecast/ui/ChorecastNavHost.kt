@@ -10,7 +10,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import dev.voidrot.chorecast.AppContainer
+import dev.voidrot.chorecast.BuildConfig
 import dev.voidrot.chorecast.ui.connect.ConnectScreen
+import dev.voidrot.chorecast.ui.device.DeviceScreen
+import dev.voidrot.chorecast.ui.device.DeviceViewModel
+import dev.voidrot.chorecast.ui.pair.PairScreen
+import dev.voidrot.chorecast.ui.pair.PairViewModel
+import dev.voidrot.chorecast.ui.welcome.WelcomeScreen
 import dev.voidrot.chorecast.ui.connect.ConnectViewModel
 import dev.voidrot.chorecast.ui.home.HomeScreen
 import dev.voidrot.chorecast.ui.home.HomeViewModel
@@ -40,9 +46,33 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 viewModel = viewModel {
                     StartupViewModel(container.settings, container.serverChecker, container.tokenStore, container.parentAuth)
                 },
-                onNeedsServer = { nav.reset(ConnectRoute) },
+                onNeedsServer = { nav.reset(WelcomeRoute) },
                 onNeedsLogin = { nav.reset(LoginRoute(it.value)) },
                 onSignedIn = { nav.reset(HomeRoute(it.value)) },
+                onDevice = { nav.reset(DeviceRoute(it.value)) },
+            )
+        }
+        composable<WelcomeRoute> {
+            WelcomeScreen(onPair = { nav.navigate(PairRoute) }, onParent = { nav.navigate(ConnectRoute) })
+        }
+        composable<PairRoute> {
+            PairScreen(
+                viewModel = viewModel {
+                    PairViewModel(container.settings, container.tokenStore, container.deviceClient, deviceLabel, BuildConfig.VERSION_NAME)
+                },
+                onPaired = { nav.reset(DeviceRoute(currentUrl().value)) },
+                onBack = { nav.popBackStack() },
+            )
+        }
+        composable<DeviceRoute> {
+            DeviceScreen(
+                viewModel = viewModel {
+                    DeviceViewModel(currentUrl(), container.deviceClient, container.parentAuth, container.tokenStore)
+                },
+                onUnpaired = {
+                    container.settings.mode = null
+                    nav.reset(WelcomeRoute)
+                },
             )
         }
         composable<ConnectRoute> {

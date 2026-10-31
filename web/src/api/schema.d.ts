@@ -323,6 +323,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/elevate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlock parent actions on this device with a parent PIN
+         * @description A two-minute parent session for daily operations (no account or server settings). Five wrong PINs lock elevation on this device for 15 minutes.
+         */
+        post: operations["elevateParent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End the current kid session or parent elevation on this device */
+        post: operations["lockDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/pair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pair this device with a pairing code
+         * @description Returns the long-lived device token. A kid's device acts as that kid; a shared device shows a profile picker (GET /devices/picker).
+         */
+        post: operations["pairDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/pairing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start pairing a device
+         * @description Creates a single-use code valid for 5 minutes, for a kid's own device (`kid`) or a shared family device (no `kid`). Show `qr` as a QR code for the app to scan.
+         */
+        post: operations["createPairing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/picker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * This device and its profile picker
+         * @description Kid profiles (shared devices only) and the parents who can elevate with a parent PIN.
+         */
+        get: operations["getDevicePicker"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a kid's session on a shared device
+         * @description Checks the kid's PIN when they must use one. The session lasts 8 hours at most; the app locks back to the picker after inactivity (POST /devices/lock).
+         */
+        post: operations["startKidSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -739,11 +856,63 @@ export interface components {
             /** @description Link to share or show as a QR code; contains the token, shown only now */
             url: string;
         };
+        CreatePairingInputBody: {
+            /** @description Kid id or slug; omit for a shared family device */
+            kid?: string;
+        };
         DailyWindow: {
             /** @example 07:00 */
             end: string;
             /** @example 20:00 */
             start: string;
+        };
+        Device: {
+            appVersion?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            kidId?: number;
+            name: string;
+            /** @description A shared family device with a profile picker; otherwise it belongs to kidId */
+            shared: boolean;
+        };
+        DevicePairing: {
+            /**
+             * @description Shown once; type it into the app if the QR code can't be scanned
+             * @example k7mp-q2xd
+             */
+            code: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /**
+             * Format: int64
+             * @description The kid this device will belong to; absent for a shared family device
+             */
+            kidId?: number;
+            /** @description QR code content: JSON {"server":…,"code":…} */
+            qr: string;
+            /** @description The server URL the app should use */
+            server: string;
+        };
+        DevicePicker: {
+            device: components["schemas"]["Device"];
+            kids: components["schemas"]["KidProfile"][];
+            parents: components["schemas"]["ParentProfile"][];
+        };
+        DeviceSession: {
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Bearer token for this session; the device token stays stored */
+            token: string;
+            /** Format: int64 */
+            userId: number;
+        };
+        ElevateInputBody: {
+            /** Format: int64 */
+            parentId: number;
+            pin: string;
         };
         EnableTOTPInputBody: {
             code: string;
@@ -864,6 +1033,21 @@ export interface components {
             /** @description Defaults to one derived from the name on create; unchanged on update when empty */
             slug?: string;
         };
+        KidProfile: {
+            avatar?: string;
+            color: string;
+            displayName: string;
+            /** Format: int64 */
+            id: number;
+            /** @description Ask for the kid's PIN (only when one is set) */
+            pinRequired: boolean;
+            slug: string;
+        };
+        KidSessionInputBody: {
+            /** @description Kid id or slug */
+            kid: string;
+            pin?: string;
+        };
         KidsOutputBody: {
             items: components["schemas"]["Kid"][];
         };
@@ -894,8 +1078,15 @@ export interface components {
             userId: number;
         };
         MeOutputBody: {
+            /**
+             * Format: int64
+             * @description The paired device this request comes from
+             */
+            deviceId?: number;
             /** @description Parents and kids */
             displayName?: string;
+            /** @description A parent elevated on a device with their parent PIN */
+            elevated?: boolean;
             /** @description Parents: false for parents who only use single sign-on */
             hasPassword: boolean;
             /**
@@ -921,6 +1112,17 @@ export interface components {
             /** @description Parents only */
             username?: string;
         };
+        PairDeviceInputBody: {
+            appVersion?: string;
+            code: string;
+            /** @description Device name, e.g. Pixel Tablet */
+            name?: string;
+        };
+        PairDeviceOutputBody: {
+            device: components["schemas"]["Device"];
+            /** @description Long-lived device token; store it securely */
+            token: string;
+        };
         Parent: {
             /** Format: date-time */
             createdAt: string;
@@ -933,6 +1135,11 @@ export interface components {
             totpEnabled: boolean;
             /** @description Absent for parents who only use single sign-on */
             username?: string;
+        };
+        ParentProfile: {
+            displayName: string;
+            /** Format: int64 */
+            id: number;
         };
         ParentsOutputBody: {
             items: components["schemas"]["Parent"][];
@@ -2010,6 +2217,344 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    elevateParent: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ElevateInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSession"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    lockDevice: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    pairDevice: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PairDeviceInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairDeviceOutputBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createPairing: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePairingInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicePairing"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getDevicePicker: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicePicker"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    startKidSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KidSessionInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSession"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

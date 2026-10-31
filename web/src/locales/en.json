@@ -8,7 +8,8 @@
     "signOut": "Sign out",
     "parents": "Parents",
     "kids": "Kids",
-    "settings": "Settings"
+    "settings": "Settings",
+    "devices": "Devices"
   },
   "session": {
     "parent": "Parent",
@@ -320,5 +321,20 @@
       "oidcClientId": "SSO client ID",
       "oidcClientSecret": "SSO client secret"
     }
+  },
+  "devices": {
+    "title": "Devices",
+    "pairTitle": "Pair a device",
+    "pairHint": "Install the Chorecast app, choose “Pair this device”, and scan the code. A kid's own device signs them in directly; a shared family tablet shows everyone's profiles.",
+    "pairFor": "Pair for",
+    "shared": "Shared family device",
+    "forKid": "{name}'s device",
+    "pair": "Show pairing code",
+    "orType": "or type this code",
+    "server": "Server: {url}",
+    "expiresIn": "Expires in {time}. Works once.",
+    "expired": "This code expired.",
+    "newCode": "New code",
+    "localWarning": "This server address only works on this computer. Set CHORECAST_PUBLIC_URL to an address phones can reach (for example http://192.168.1.20:8080) and restart the server."
   }
 }

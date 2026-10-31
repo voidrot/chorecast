@@ -7,6 +7,48 @@
     <string name="action_sign_in">Sign in</string>
     <string name="action_verify">Verify</string>
     <string name="action_sign_out">Sign out</string>
+    <string name="action_pair">Pair</string>
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_unlock">Unlock</string>
+
+    <string name="welcome_title">Welcome to Chorecast</string>
+    <string name="welcome_body">Is this a kid\'s device or a family tablet, or a parent\'s phone?</string>
+    <string name="welcome_pair">Pair this device</string>
+    <string name="welcome_pair_hint">For kids and shared tablets. A parent shows a pairing code in the web admin under Devices.</string>
+    <string name="welcome_parent">I\'m a parent: sign in</string>
+
+    <string name="pair_title">Pair this device</string>
+    <string name="pair_scan_hint">Point the camera at the pairing code on the parent\'s screen.</string>
+    <string name="pair_type_instead">Type the code instead</string>
+    <string name="pair_scan_instead">Scan the code instead</string>
+    <string name="pair_manual_hint">Enter the server address and the code shown under the QR code.</string>
+    <string name="pair_code">Pairing code</string>
+    <string name="pair_pairing">Pairing…</string>
+    <string name="pair_error_not_code">That isn\'t a Chorecast pairing code.</string>
+    <string name="pair_error_invalid">That code is wrong, already used or expired. Ask for a new one.</string>
+    <string name="pair_error_rate_limited">Too many wrong codes. Wait a few minutes and try again.</string>
+
+    <string name="device_offline">Can\'t reach the server (%1$s).</string>
+    <string name="device_who">Who\'s using Chorecast?</string>
+    <string name="device_no_kids">No kids yet. A parent can add them in the web admin.</string>
+    <string name="device_parent">Parent</string>
+    <string name="device_which_parent">Which parent?</string>
+    <string name="device_pin_kid">%1$s\'s PIN</string>
+    <string name="device_pin_parent">%1$s\'s parent PIN</string>
+    <string name="device_pin">PIN</string>
+    <string name="device_pin_wrong">Wrong PIN.</string>
+    <plurals name="device_pin_locked">
+        <item quantity="one">Too many wrong PINs. Try again in %d minute.</item>
+        <item quantity="other">Too many wrong PINs. Try again in %d minutes.</item>
+    </plurals>
+    <string name="device_hi">Hi %1$s!</string>
+    <string name="device_chores_soon">Your chores will show up here soon.</string>
+    <string name="device_done">I\'m done</string>
+    <string name="device_parent_mode">Parent mode: %1$s</string>
+    <string name="device_parent_left">Locks in %1$d:%2$02d</string>
+    <string name="device_parent_soon">Reviews and quick actions will show up here soon.</string>
+    <string name="device_lock">Lock</string>
 
     <string name="startup_checking">Checking your Chorecast server…</string>
 

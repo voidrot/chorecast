@@ -92,7 +92,7 @@ func authenticate(ctx huma.Context, store *Store) (*Principal, error) {
 		if !ok {
 			return nil, nil
 		}
-		return store.Authenticate(ctx.Context(), strings.TrimSpace(token), TokenApp, TokenDevice, TokenDisplay, TokenAPI)
+		return store.Authenticate(ctx.Context(), strings.TrimSpace(token), TokenApp, TokenDevice, TokenDeviceSession, TokenDisplay, TokenAPI)
 	}
 	if c, err := huma.ReadCookie(ctx, SessionCookie); err == nil {
 		return store.Authenticate(ctx.Context(), c.Value, TokenWebSession)
