@@ -17,6 +17,7 @@ const (
 	ScopeChoresReview    Scope = "chores:review"
 	ScopePointsRead      Scope = "points:read"
 	ScopePointsManage    Scope = "points:manage"
+	ScopeAccountManage   Scope = "account:manage" // a parent's own password, 2FA, PIN and sessions
 )
 
 // Kind is what kind of caller a principal is.
@@ -34,7 +35,7 @@ var (
 	parentScopes = []Scope{
 		ScopeHouseholdRead, ScopeHouseholdManage, ScopeDevicesManage, ScopeProfilesSelect,
 		ScopeChoresRead, ScopeChoresManage, ScopeChoresComplete, ScopeChoresReview,
-		ScopePointsRead, ScopePointsManage,
+		ScopePointsRead, ScopePointsManage, ScopeAccountManage,
 	}
 	ownerScopes        = append(append([]Scope{}, parentScopes...), ScopeServerManage)
 	kidScopes          = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopeChoresComplete, ScopePointsRead}
