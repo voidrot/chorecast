@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The authenticated caller: kind, user and granted scopes */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/version": {
         parameters: {
             query?: never;
@@ -59,6 +76,28 @@ export interface components {
             readonly $schema?: string;
             /** @enum {string} */
             status: "ok" | "degraded";
+        };
+        MeOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MeOutputBody.json
+             */
+            readonly $schema?: string;
+            /**
+             * @description What kind of caller this is
+             * @enum {string}
+             */
+            kind: "parent" | "kid" | "shared_device" | "display" | "api";
+            /** @description Parent with owner rights (server settings) */
+            owner: boolean;
+            /** @description Granted scopes, for clients to hide what the caller can't do */
+            scopes: string[];
+            /**
+             * Format: int64
+             * @description The parent or kid; absent for shared devices, displays and API keys
+             */
+            userId?: number;
         };
         Problem: {
             /**
@@ -145,6 +184,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOutputBody"];
                 };
             };
             /** @description Error */

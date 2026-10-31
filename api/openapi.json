@@ -43,6 +43,53 @@
         ],
         "type": "object"
       },
+      "MeOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "/api/v1/schemas/MeOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "kind": {
+            "description": "What kind of caller this is",
+            "enum": [
+              "parent",
+              "kid",
+              "shared_device",
+              "display",
+              "api"
+            ],
+            "type": "string"
+          },
+          "owner": {
+            "description": "Parent with owner rights (server settings)",
+            "type": "boolean"
+          },
+          "scopes": {
+            "description": "Granted scopes, for clients to hide what the caller can't do",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "userId": {
+            "description": "The parent or kid; absent for shared devices, displays and API keys",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "owner",
+          "scopes"
+        ],
+        "type": "object"
+      },
       "Problem": {
         "additionalProperties": false,
         "properties": {
@@ -201,6 +248,45 @@
         "summary": "Liveness and readiness check",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/me": {
+      "get": {
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "The authenticated caller: kind, user and granted scopes",
+        "tags": [
+          "auth"
         ]
       }
     },

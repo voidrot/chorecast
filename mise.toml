@@ -39,9 +39,12 @@ sources = ["server/internal/db/queries/*.sql", "server/internal/db/migrations/*.
 outputs = ["server/internal/db/sqlc/*.go"]
 
 [tasks."gen:openapi"]
-description = "Export OpenAPI spec from Go handlers to api/openapi.json"
+description = "Export the OpenAPI spec (3.1, plus a 3.0 copy for client generators) to api/"
 dir = "server"
-run = "go run ./cmd/chorecast openapi > ../api/openapi.json"
+run = [
+  "go run ./cmd/chorecast openapi > ../api/openapi.json",
+  "go run ./cmd/chorecast openapi -3.0 > ../api/openapi-3.0.json",
+]
 
 [tasks."gen:web-client"]
 description = "Generate TS types for the web admin from api/openapi.json"

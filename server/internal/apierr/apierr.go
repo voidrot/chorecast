@@ -28,6 +28,7 @@ const (
 	CodeRateLimited         = "rate_limited"
 	CodeInternal            = "internal_error"
 	CodeUnavailable         = "unavailable"
+	CodeSetupRequired       = "setup_required" // first-run setup not done yet (503); clients go to setup
 	CodeInvalidCursor       = "invalid_cursor"
 	CodeKidNotFound         = "kid_not_found"
 	CodeInvalidIdempotency  = "invalid_idempotency_key"
