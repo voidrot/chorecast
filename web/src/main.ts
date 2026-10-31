@@ -25,7 +25,9 @@ apiEvents.onUnauthorized = () => {
     void router.push({ name: 'login', query: { redirect: router.currentRoute.value.fullPath } })
   }
 }
+// Likewise: during the first load the guard routes to setup itself, keeping the link's token.
 apiEvents.onSetupRequired = () => {
+  if (session.status === 'unknown' || session.status === 'setup_required') return
   session.status = 'setup_required'
   void router.push({ name: 'setup' })
 }

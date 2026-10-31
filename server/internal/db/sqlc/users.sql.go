@@ -22,9 +22,9 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (display_name, role, is_owner, slug, username, password_hash, pin_hash)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at
+INSERT INTO users (display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, created_at
 `
 
 type CreateUserParams struct {
@@ -35,6 +35,9 @@ type CreateUserParams struct {
 	Username     sql.NullString `json:"username"`
 	PasswordHash sql.NullString `json:"password_hash"`
 	PinHash      sql.NullString `json:"pin_hash"`
+	PinRequired  int64          `json:"pin_required"`
+	Color        sql.NullString `json:"color"`
+	BirthDate    sql.NullString `json:"birth_date"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -46,6 +49,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Username,
 		arg.PasswordHash,
 		arg.PinHash,
+		arg.PinRequired,
+		arg.Color,
+		arg.BirthDate,
 	)
 	var i User
 	err := row.Scan(
@@ -57,6 +63,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Username,
 		&i.PasswordHash,
 		&i.PinHash,
+		&i.PinRequired,
+		&i.Color,
+		&i.BirthDate,
 		&i.OidcSubject,
 		&i.CreatedAt,
 	)
@@ -64,7 +73,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const getKidByID = `-- name: GetKidByID :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at FROM users WHERE id = ? AND role = 'child'
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, created_at FROM users WHERE id = ? AND role = 'child'
 `
 
 func (q *Queries) GetKidByID(ctx context.Context, id int64) (User, error) {
@@ -79,6 +88,9 @@ func (q *Queries) GetKidByID(ctx context.Context, id int64) (User, error) {
 		&i.Username,
 		&i.PasswordHash,
 		&i.PinHash,
+		&i.PinRequired,
+		&i.Color,
+		&i.BirthDate,
 		&i.OidcSubject,
 		&i.CreatedAt,
 	)
@@ -86,7 +98,7 @@ func (q *Queries) GetKidByID(ctx context.Context, id int64) (User, error) {
 }
 
 const getKidBySlug = `-- name: GetKidBySlug :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at FROM users WHERE slug = ? AND role = 'child'
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, created_at FROM users WHERE slug = ? AND role = 'child'
 `
 
 func (q *Queries) GetKidBySlug(ctx context.Context, slug sql.NullString) (User, error) {
@@ -101,6 +113,9 @@ func (q *Queries) GetKidBySlug(ctx context.Context, slug sql.NullString) (User, 
 		&i.Username,
 		&i.PasswordHash,
 		&i.PinHash,
+		&i.PinRequired,
+		&i.Color,
+		&i.BirthDate,
 		&i.OidcSubject,
 		&i.CreatedAt,
 	)
@@ -108,7 +123,7 @@ func (q *Queries) GetKidBySlug(ctx context.Context, slug sql.NullString) (User, 
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at FROM users WHERE id = ?
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, created_at FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -123,6 +138,9 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.Username,
 		&i.PasswordHash,
 		&i.PinHash,
+		&i.PinRequired,
+		&i.Color,
+		&i.BirthDate,
 		&i.OidcSubject,
 		&i.CreatedAt,
 	)
@@ -130,7 +148,7 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, oidc_subject, created_at FROM users ORDER BY role, display_name
+SELECT id, display_name, role, is_owner, slug, username, password_hash, pin_hash, pin_required, color, birth_date, oidc_subject, created_at FROM users ORDER BY role, display_name
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -151,6 +169,9 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.Username,
 			&i.PasswordHash,
 			&i.PinHash,
+			&i.PinRequired,
+			&i.Color,
+			&i.BirthDate,
 			&i.OidcSubject,
 			&i.CreatedAt,
 		); err != nil {

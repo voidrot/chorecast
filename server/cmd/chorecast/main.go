@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,6 +23,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/version"
 	"github.com/voidrot/chorecast/server/internal/webui"
 )
@@ -83,9 +85,19 @@ func serve() error {
 		background.Wait()
 	}()
 
+	setupSvc, err := setup.New(ctx, store, clk)
+	if err != nil {
+		return err
+	}
+	if token, err := setupSvc.Begin(ctx); err != nil {
+		return err
+	} else if token != "" {
+		slog.Warn("Setup required: open " + setup.SetupURL(publicBase(cfg), token))
+	}
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
-	api.New(r, cfg, store, clk)
+	api.New(r, api.Deps{Config: cfg, DB: store, Clock: clk, Setup: setupSvc})
 	r.Handle("/*", webui.Handler())
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: r, ReadHeaderTimeout: 10 * time.Second}
@@ -107,10 +119,23 @@ func serve() error {
 	return srv.Shutdown(shutdownCtx)
 }
 
+// publicBase is the server's URL for printed links: CHORECAST_PUBLIC_URL, or localhost on the
+// listen port.
+func publicBase(cfg config.Config) string {
+	if cfg.PublicURL != "" {
+		return cfg.PublicURL
+	}
+	_, port, err := net.SplitHostPort(cfg.Addr)
+	if err != nil || port == "" {
+		port = "8080"
+	}
+	return "http://localhost:" + port
+}
+
 // printOpenAPI writes the spec. Huma generates OpenAPI 3.1; v30 writes a 3.0 downgrade, which
 // client generators (openapi-generator for the Android client) support fully.
 func printOpenAPI(v30 bool) error {
-	hapi := api.New(chi.NewRouter(), config.Load(), nil, clock.Real{})
+	hapi := api.New(chi.NewRouter(), api.Deps{Config: config.Load(), Clock: clock.Real{}})
 	var spec any = hapi.OpenAPI()
 	if v30 {
 		b, err := hapi.OpenAPI().Downgrade()

@@ -16,6 +16,15 @@ type Event struct {
 	DispatchedAt sql.NullString `json:"dispatched_at"`
 }
 
+type Household struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Timezone  string `json:"timezone"`
+	DayEnd    string `json:"day_end"`
+	WeekStart int64  `json:"week_start"`
+	CreatedAt string `json:"created_at"`
+}
+
 type IdempotencyKey struct {
 	TokenID     int64          `json:"token_id"`
 	Key         string         `json:"key"`
@@ -47,6 +56,12 @@ type ScheduleCursor struct {
 	LastFiredAt string `json:"last_fired_at"`
 }
 
+type SetupToken struct {
+	ID        int64  `json:"id"`
+	TokenHash []byte `json:"token_hash"`
+	CreatedAt string `json:"created_at"`
+}
+
 type Token struct {
 	ID         int64          `json:"id"`
 	TokenHash  []byte         `json:"token_hash"`
@@ -67,6 +82,9 @@ type User struct {
 	Username     sql.NullString `json:"username"`
 	PasswordHash sql.NullString `json:"password_hash"`
 	PinHash      sql.NullString `json:"pin_hash"`
+	PinRequired  int64          `json:"pin_required"`
+	Color        sql.NullString `json:"color"`
+	BirthDate    sql.NullString `json:"birth_date"`
 	OidcSubject  sql.NullString `json:"oidc_subject"`
 	CreatedAt    string         `json:"created_at"`
 }

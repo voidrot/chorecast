@@ -17,15 +17,24 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
+	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/version"
 )
 
 const Prefix = "/api/v1"
 
+// Deps are the API's dependencies. DB and Setup are nil when only the spec is needed
+// (e.g. `chorecast openapi`).
+type Deps struct {
+	Config config.Config
+	DB     *db.DB
+	Clock  clock.Clock
+	Setup  *setup.Service
+}
+
 // New registers all API operations on r under Prefix and returns the Huma API.
-// store may be nil when only the spec is needed (e.g. `chorecast openapi`).
 // It panics if an operation declares no access policy (see auth.CheckOperations).
-func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.API {
+func New(r chi.Router, deps Deps) huma.API {
 	hcfg := huma.DefaultConfig("Chorecast API", version.Version)
 	hcfg.Info.Description = "Self-hosted chore and behavior system."
 	hcfg.Servers = []*huma.Server{{URL: Prefix}}
@@ -42,6 +51,7 @@ func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.AP
 
 	var hapi huma.API
 	r.Route(Prefix, func(r chi.Router) {
+		r.Use(auth.DetectHTTPS)
 		hapi = humachi.New(r, hcfg)
 		// Unknown paths and methods under the API prefix answer in the same problem format.
 		r.NotFound(apierr.Handler(http.StatusNotFound).ServeHTTP)
@@ -49,23 +59,24 @@ func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.AP
 	})
 
 	var queries *sqlc.Queries
-	if store != nil {
-		queries = store.Queries
+	if deps.DB != nil {
+		queries = deps.DB.Queries
 	}
-	// Order matters: idempotency needs the principal resolved by auth.
+	// Order matters: the setup gate runs first; idempotency needs the principal resolved by auth.
 	hapi.UseMiddleware(
-		auth.Middleware(hapi, auth.NewStore(queries, clk)),
-		idempotency.Middleware(hapi, queries, clk),
+		setup.Gate(hapi, deps.Setup),
+		auth.Middleware(hapi, auth.NewStore(queries, deps.Clock)),
+		idempotency.Middleware(hapi, queries, deps.Clock),
 	)
 
-	h := &handlers{cfg: cfg, db: store}
+	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
 		Path:        "/health",
 		Summary:     "Liveness and readiness check",
 		Tags:        []string{"system"},
-		Metadata:    auth.Public(),
+		Metadata:    setup.AllowDuringSetup(auth.Public()),
 	}, h.health)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getVersion",
@@ -73,8 +84,9 @@ func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.AP
 		Path:        "/version",
 		Summary:     "Server and API version (used by clients for compatibility checks)",
 		Tags:        []string{"system"},
-		Metadata:    auth.Public(),
+		Metadata:    setup.AllowDuringSetup(auth.Public()),
 	}, h.version)
+	registerSetup(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -92,8 +104,9 @@ func New(r chi.Router, cfg config.Config, store *db.DB, clk clock.Clock) huma.AP
 }
 
 type handlers struct {
-	cfg config.Config
-	db  *db.DB
+	cfg   config.Config
+	db    *db.DB
+	setup *setup.Service
 }
 
 type HealthOutput struct {

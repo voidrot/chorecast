@@ -88,6 +88,14 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
 
 ### Flows
 
+0. **First run** (`internal/setup`). With no household in the database, the server stores a fresh setup token
+   (SHA-256 only) on every start and logs `Setup required: open <url>/setup?token=…` (base URL from
+   `CHORECAST_PUBLIC_URL`, else `http://localhost:<port>`). A Huma gate answers every operation not marked
+   `setup.AllowDuringSetup` (health, version, setup) with 503 `setup_required`. `POST /setup/verify` checks a token
+   without using it; `POST /setup` validates, then creates the household, first owner and kids in one transaction,
+   deletes the token and sets the owner's session cookie. Afterwards the setup endpoints answer 409
+   `setup_complete`. Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` when the request came over HTTPS
+   (directly or `X-Forwarded-Proto: https`), so plain-HTTP LAN installs keep working.
 1. **Device pairing (kids / shared tablet).** Parent opens *Devices → Pair* in the web admin or parent app,
    picks "for <kid>" or "shared family device". Server creates a short-lived (5 min) single-use pairing code and
    shows a QR containing `{serverUrl, code}`. The Android app scans it, `POST /api/v1/devices/pair` → receives
@@ -191,6 +199,8 @@ Vue 3 + PrimeVue SPA in `web/`, embedded in the server binary:
   loading/error state.
 - `src/stores/session.ts`: loads `GET /me`; status `unknown | anonymous | forbidden | authenticated |
   setup_required`. The admin is for parents, so other principals are `forbidden`.
+- `src/views/SetupView.vue` + `src/setup/wizard.ts` (pure, unit-tested): the first-run wizard. The token from the
+  setup link moves from the URL to `sessionStorage` and is verified before any form is shown.
 - `src/router/guard.ts`: pure `decide(status, route)` (unit-tested): anonymous → `/login?redirect=…`, setup
   pending → `/setup`, signed-in users skip login/setup. Routes reachable without a session set
   `meta.public`.

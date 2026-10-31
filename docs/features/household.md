@@ -33,6 +33,10 @@ Status: accepted (planning session, 2026-10-30). Auth mechanics live in [../arch
    5. **Connect devices**: shows a pairing QR and a link to the Android app (GitHub Releases / Play).
 3. Completing the wizard creates everything in one transaction and invalidates the token.
 
+Built so far (#12): household, owner (password), kids (name, birth date, color, PIN on/off), and an app download
+link. The remaining parts arrive with their features: TOTP enrolment in the owner step (#13), SSO owner (#14),
+kid avatars (#16), the pairing QR (#18), and starter chores (#20; behavior presets and rewards in Phase 2).
+
 ## Roles & permissions
 
 | Capability | Owner | Parent | Kid |
