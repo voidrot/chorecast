@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/voidrot/chorecast/server/internal/api"
+	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/version"
@@ -67,7 +68,7 @@ func serve() error {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
-	api.New(r, cfg, store)
+	api.New(r, cfg, store, clock.Real{})
 	r.Handle("/*", webui.Handler())
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: r, ReadHeaderTimeout: 10 * time.Second}
@@ -90,7 +91,7 @@ func serve() error {
 }
 
 func printOpenAPI() error {
-	hapi := api.New(chi.NewRouter(), config.Load(), nil)
+	hapi := api.New(chi.NewRouter(), config.Load(), nil, clock.Real{})
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(hapi.OpenAPI())

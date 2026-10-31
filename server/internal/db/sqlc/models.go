@@ -23,6 +23,7 @@ type User struct {
 	ID           int64          `json:"id"`
 	DisplayName  string         `json:"display_name"`
 	Role         string         `json:"role"`
+	IsOwner      int64          `json:"is_owner"`
 	Username     sql.NullString `json:"username"`
 	PasswordHash sql.NullString `json:"password_hash"`
 	PinHash      sql.NullString `json:"pin_hash"`

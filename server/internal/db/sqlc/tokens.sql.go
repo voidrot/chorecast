@@ -11,8 +11,8 @@ import (
 )
 
 const createToken = `-- name: CreateToken :one
-INSERT INTO tokens (token_hash, kind, user_id, label, expires_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO tokens (token_hash, kind, user_id, label, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?)
 RETURNING id, token_hash, kind, user_id, label, created_at, last_used_at, expires_at
 `
 
@@ -21,6 +21,7 @@ type CreateTokenParams struct {
 	Kind      string         `json:"kind"`
 	UserID    sql.NullInt64  `json:"user_id"`
 	Label     string         `json:"label"`
+	CreatedAt string         `json:"created_at"`
 	ExpiresAt sql.NullString `json:"expires_at"`
 }
 
@@ -30,6 +31,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		arg.Kind,
 		arg.UserID,
 		arg.Label,
+		arg.CreatedAt,
 		arg.ExpiresAt,
 	)
 	var i Token
@@ -46,12 +48,33 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 	return i, err
 }
 
+const deleteExpiredTokens = `-- name: DeleteExpiredTokens :execrows
+DELETE FROM tokens WHERE expires_at IS NOT NULL AND expires_at <= ?
+`
+
+func (q *Queries) DeleteExpiredTokens(ctx context.Context, expiresAt sql.NullString) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteExpiredTokens, expiresAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteToken = `-- name: DeleteToken :exec
 DELETE FROM tokens WHERE id = ?
 `
 
 func (q *Queries) DeleteToken(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteToken, id)
+	return err
+}
+
+const deleteTokensForUser = `-- name: DeleteTokensForUser :exec
+DELETE FROM tokens WHERE user_id = ?
+`
+
+func (q *Queries) DeleteTokensForUser(ctx context.Context, userID sql.NullInt64) error {
+	_, err := q.db.ExecContext(ctx, deleteTokensForUser, userID)
 	return err
 }
 
@@ -73,4 +96,50 @@ func (q *Queries) GetTokenByHash(ctx context.Context, tokenHash []byte) (Token, 
 		&i.ExpiresAt,
 	)
 	return i, err
+}
+
+const resolveToken = `-- name: ResolveToken :one
+SELECT t.id, t.kind, t.user_id, t.expires_at, t.last_used_at, u.role, u.is_owner
+FROM tokens t
+LEFT JOIN users u ON u.id = t.user_id
+WHERE t.token_hash = ?
+`
+
+type ResolveTokenRow struct {
+	ID         int64          `json:"id"`
+	Kind       string         `json:"kind"`
+	UserID     sql.NullInt64  `json:"user_id"`
+	ExpiresAt  sql.NullString `json:"expires_at"`
+	LastUsedAt sql.NullString `json:"last_used_at"`
+	Role       sql.NullString `json:"role"`
+	IsOwner    sql.NullInt64  `json:"is_owner"`
+}
+
+func (q *Queries) ResolveToken(ctx context.Context, tokenHash []byte) (ResolveTokenRow, error) {
+	row := q.db.QueryRowContext(ctx, resolveToken, tokenHash)
+	var i ResolveTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.UserID,
+		&i.ExpiresAt,
+		&i.LastUsedAt,
+		&i.Role,
+		&i.IsOwner,
+	)
+	return i, err
+}
+
+const touchToken = `-- name: TouchToken :exec
+UPDATE tokens SET last_used_at = ? WHERE id = ?
+`
+
+type TouchTokenParams struct {
+	LastUsedAt sql.NullString `json:"last_used_at"`
+	ID         int64          `json:"id"`
+}
+
+func (q *Queries) TouchToken(ctx context.Context, arg TouchTokenParams) error {
+	_, err := q.db.ExecContext(ctx, touchToken, arg.LastUsedAt, arg.ID)
+	return err
 }

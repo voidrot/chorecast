@@ -106,12 +106,22 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
 
 ### Authorization
 
-Every operation declares required **scopes**; sessions and tokens map to scope sets (parent, kid, display, API key).
-This is built from day one so post-v1 API keys need no redesign.
+Implemented in `internal/auth`:
 
-Two roles are enough for v1: `parent` (everything) and `child` (own chores/points, submit completions).
-Enforced in a Huma middleware that resolves the principal from cookie or bearer and per-operation
-`Security`/role metadata.
+- **Every operation declares a policy**: `Security: auth.Require(auth.ScopeChoresRead, ...)` or
+  `Metadata: auth.Public()`. `api.New` panics and a test fails if any operation declares neither, and the
+  middleware refuses such operations at runtime (fail closed).
+- **Principals** are resolved by one Huma middleware: a `Bearer` token (app, device, display, API key) or the
+  `chorecast_session` cookie (web sessions only; a session token is not accepted as a bearer and vice versa).
+- **Scope sets per principal kind** (`scope.go`): parent; owner = parent + `server:manage`; kid (read own data,
+  complete chores); shared device (read profiles, pick a kid); display (read-only); API key (no scopes until
+  per-key grants exist post-v1).
+- **Data scoping** is separate from scopes: handlers call `Principal.CanAccessKid(id)`. Parents and displays cover
+  every kid; a kid only themselves; shared devices and API keys none.
+- Handlers read the caller with `auth.PrincipalFrom(ctx)`.
+- Passwords and PINs use argon2id (OWASP minimum: 19 MiB, t=2, p=1) in PHC format; `VerifySecret` reports when a
+  stored hash should be upgraded.
+- Token expiry uses the injected clock; `last_used_at` writes are throttled to once a minute per token.
 
 ## API conventions
 
