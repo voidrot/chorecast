@@ -21,7 +21,7 @@ class HouseholdInfoTest {
             respond(
                 """{"name":"The Bradys","timezone":"America/Chicago","dayEnd":"21:00","weekStart":"sunday",
                    "allowNegativeBalance":false,"siblingVisibility":"private","mediaRetentionDays":30,
-                   "offlineGraceMinutes":120}""",
+                   "offlineGraceMinutes":120,"defaultChoreMinutes":10}""",
                 HttpStatusCode.OK,
                 headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
             )

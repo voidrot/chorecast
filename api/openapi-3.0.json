@@ -138,6 +138,10 @@
       "Chore": {
         "additionalProperties": false,
         "properties": {
+          "assignment": {
+            "$ref": "#/components/schemas/ChoreAssignment",
+            "description": "Who gets it; absent = everyone eligible"
+          },
           "autoApproveHours": {
             "description": "Absent = household default; 0 = never; N = approve after N hours",
             "format": "int64",
@@ -261,6 +265,53 @@
         ],
         "type": "object"
       },
+      "ChoreAssignment": {
+        "additionalProperties": false,
+        "properties": {
+          "kidIds": {
+            "description": "fixed: the kids; rotation: the turn order; auto: the pool (empty = every kid); shared: the group. Ignored for everyone.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "maxItems": 50,
+            "nullable": true,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "mode": {
+            "description": "fixed: each listed kid; everyone: each eligible kid; rotation: one kid, taking turns; auto: the eligible kid with the least work over 7 days; shared: one instance for the group",
+            "enum": [
+              "fixed",
+              "everyone",
+              "rotation",
+              "auto",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "sharedPenalty": {
+            "description": "shared: when missed, every member gets the penalty, or nobody",
+            "enum": [
+              "all",
+              "none"
+            ],
+            "type": "string"
+          },
+          "sharedPoints": {
+            "description": "shared: points to the completer, or split evenly with the helpers they tag (remainder to the completer)",
+            "enum": [
+              "completer_takes_all",
+              "split_evenly"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
       "ChoreEligibility": {
         "additionalProperties": false,
         "properties": {
@@ -282,6 +333,10 @@
       "ChoreInput": {
         "additionalProperties": false,
         "properties": {
+          "assignment": {
+            "$ref": "#/components/schemas/ChoreAssignment",
+            "description": "Who gets it; absent = everyone eligible"
+          },
           "autoApproveHours": {
             "description": "Absent = household default; 0 = never; N = approve after N hours",
             "format": "int64",
@@ -797,6 +852,13 @@
             "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
             "type": "string"
           },
+          "defaultChoreMinutes": {
+            "description": "Fair auto-pick counts a chore without an estimate as this many minutes",
+            "format": "int64",
+            "maximum": 240,
+            "minimum": 1,
+            "type": "integer"
+          },
           "mediaRetentionDays": {
             "description": "Evidence photos and videos are deleted this long after a chore is resolved",
             "format": "int64",
@@ -851,7 +913,8 @@
           "allowNegativeBalance",
           "siblingVisibility",
           "mediaRetentionDays",
-          "offlineGraceMinutes"
+          "offlineGraceMinutes",
+          "defaultChoreMinutes"
         ],
         "type": "object"
       },

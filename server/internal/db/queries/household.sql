@@ -20,5 +20,6 @@ DELETE FROM setup_token;
 
 -- name: UpdateHousehold :exec
 UPDATE household SET name = ?, timezone = ?, day_end = ?, week_start = ?, allow_negative_balance = ?,
-    sibling_visibility = ?, media_retention_days = ?, auto_approve_hours = ?, offline_grace_minutes = ?
+    sibling_visibility = ?, media_retention_days = ?, auto_approve_hours = ?, offline_grace_minutes = ?,
+    default_chore_minutes = ?
 WHERE id = 1;

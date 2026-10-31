@@ -1032,6 +1032,8 @@ export interface components {
             newPassword: string;
         };
         Chore: {
+            /** @description Who gets it; absent = everyone eligible */
+            assignment?: components["schemas"]["ChoreAssignment"];
             /**
              * Format: int64
              * @description Absent = household default; 0 = never; N = approve after N hours
@@ -1075,6 +1077,25 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        ChoreAssignment: {
+            /** @description fixed: the kids; rotation: the turn order; auto: the pool (empty = every kid); shared: the group. Ignored for everyone. */
+            kidIds?: number[] | null;
+            /**
+             * @description fixed: each listed kid; everyone: each eligible kid; rotation: one kid, taking turns; auto: the eligible kid with the least work over 7 days; shared: one instance for the group
+             * @enum {string}
+             */
+            mode: "fixed" | "everyone" | "rotation" | "auto" | "shared";
+            /**
+             * @description shared: when missed, every member gets the penalty, or nobody
+             * @enum {string}
+             */
+            sharedPenalty?: "all" | "none";
+            /**
+             * @description shared: points to the completer, or split evenly with the helpers they tag (remainder to the completer)
+             * @enum {string}
+             */
+            sharedPoints?: "completer_takes_all" | "split_evenly";
+        };
         ChoreEligibility: {
             /** @description true: allowed even if younger than minAge; false: never gets this chore */
             allow: boolean;
@@ -1082,6 +1103,8 @@ export interface components {
             kidId: number;
         };
         ChoreInput: {
+            /** @description Who gets it; absent = everyone eligible */
+            assignment?: components["schemas"]["ChoreAssignment"];
             /**
              * Format: int64
              * @description Absent = household default; 0 = never; N = approve after N hours
@@ -1262,6 +1285,11 @@ export interface components {
             autoApproveHours?: number;
             /** @description HH:MM; 00:00 means midnight */
             dayEnd: string;
+            /**
+             * Format: int64
+             * @description Fair auto-pick counts a chore without an estimate as this many minutes
+             */
+            defaultChoreMinutes: number;
             /**
              * Format: int64
              * @description Evidence photos and videos are deleted this long after a chore is resolved

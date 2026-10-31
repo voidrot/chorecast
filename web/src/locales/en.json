@@ -308,6 +308,8 @@
     "daysSuffix": "days",
     "grace": "Offline grace",
     "minutesSuffix": "min",
+    "defaultMinutes": "Chores without an estimate count as",
+    "defaultMinutesHint": "Fair auto-pick gives a chore to the kid with the least work over the last 7 days, using estimated minutes.",
     "retentionHint": "Evidence media is deleted this long after a chore is resolved; the record stays.",
     "graceHint": "Chores completed offline count if they were done within this long after the day ended.",
     "server": "Server",

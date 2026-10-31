@@ -55,7 +55,8 @@ Server-level settings that also exist as env vars: **env wins** and the UI shows
 Built (#17, `internal/household`): `GET/PUT /household` (read: any household principal; write: parents) with
 name, timezone, day end, week start, `allowNegativeBalance` (default off), `siblingVisibility`
 (`private`|`leaderboard`, default private), `mediaRetentionDays` (default 30), `autoApproveHours` (absent = never,
-the default) and `offlineGraceMinutes` (default 120). The day end can't move earlier than a kid's override.
+the default) and `offlineGraceMinutes` (default 120), and `defaultChoreMinutes` (default 10: the fair auto-pick's load for a chore
+without an estimate). The day end can't move earlier than a kid's override.
 Changing the calendar emits `household.calendar_changed` in the same transaction; the horizon generator (#23)
 subscribes to it. `GET /server/settings` (owners) lists env-backed settings with `source: environment|default`;
 secrets are never returned. Swaps, nomination limits and streak milestones join the settings with their features.
@@ -125,7 +126,7 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
 
 | Scope | Where | Examples |
 |---|---|---|
-| Household | web + app (basic) | name, timezone, day end, week start, allow negative balance, sibling visibility, retention days, auto-approve timeout, offline grace, swaps need approval, nomination limit, streak milestones |
+| Household | web + app (basic) | name, timezone, day end, week start, allow negative balance, sibling visibility, retention days, auto-approve timeout, offline grace, default chore minutes, swaps need approval, nomination limit, streak milestones |
 | Server | web (owner) / env | OIDC, storage/S3, AI provider + toggles, SMTP, FCM project, webhooks, backup schedule and retention, media limits |
 | Per kid | web + app | PIN, day-end override, quiet/school hours, notification prefs, preset overrides |
 | Per parent | web + app | profile, password, TOTP, parent PIN, notification prefs, quiet hours |

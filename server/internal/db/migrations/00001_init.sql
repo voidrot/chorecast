@@ -12,6 +12,7 @@ CREATE TABLE household (
     media_retention_days   INTEGER NOT NULL DEFAULT 30 CHECK (media_retention_days BETWEEN 1 AND 3650),
     auto_approve_hours     INTEGER CHECK (auto_approve_hours BETWEEN 1 AND 720), -- NULL = never
     offline_grace_minutes  INTEGER NOT NULL DEFAULT 120 CHECK (offline_grace_minutes BETWEEN 0 AND 1440),
+    default_chore_minutes  INTEGER NOT NULL DEFAULT 10 CHECK (default_chore_minutes BETWEEN 1 AND 240), -- fair auto-pick load for chores without an estimate
     created_at TEXT    NOT NULL
 );
 
@@ -89,7 +90,7 @@ CREATE TABLE equipment (
     created_at  TEXT    NOT NULL
 );
 
--- Chore definitions (internal/chores). Assignment (#22) adds its own columns.
+-- Chore definitions (internal/chores): what, when (schedule), who (assignment), how it's checked.
 CREATE TABLE chores (
     id                INTEGER PRIMARY KEY,
     name              TEXT    NOT NULL,
@@ -101,6 +102,12 @@ CREATE TABLE chores (
     steps             TEXT    NOT NULL DEFAULT '[]', -- JSON array of checklist step texts
     slots             TEXT    NOT NULL DEFAULT '[]', -- JSON array of HH:MM due times; empty = due at day close
     schedule          TEXT,                          -- JSON schedule rule (internal/schedule); NULL = not scheduled
+    -- Assignment (internal/assign). assign_kids: fixed kids, rotation order, auto pool (empty = all) or shared group.
+    assign_mode       TEXT    NOT NULL DEFAULT 'everyone' CHECK (assign_mode IN ('fixed', 'everyone', 'rotation', 'auto', 'shared')),
+    assign_kids       TEXT    NOT NULL DEFAULT '[]',
+    shared_points     TEXT    NOT NULL DEFAULT 'completer_takes_all' CHECK (shared_points IN ('completer_takes_all', 'split_evenly')),
+    shared_penalty    TEXT    NOT NULL DEFAULT 'all' CHECK (shared_penalty IN ('all', 'none')),
+    rotation_state    TEXT    NOT NULL DEFAULT '{}', -- JSON assign.State (cursor, owed); reset when the rotation changes
     requires_approval INTEGER NOT NULL DEFAULT 1 CHECK (requires_approval IN (0, 1)),
     escalate          INTEGER NOT NULL DEFAULT 0 CHECK (escalate IN (0, 1)),
     -- NULL = household default; 0 = never; N = approve after N hours

@@ -36,6 +36,7 @@ type HouseholdSettings struct {
 	MediaRetentionDays   int    `json:"mediaRetentionDays" minimum:"1" maximum:"3650" doc:"Evidence photos and videos are deleted this long after a chore is resolved"`
 	AutoApproveHours     *int   `json:"autoApproveHours,omitempty" minimum:"1" maximum:"720" doc:"Approve submitted chores after this many hours; absent = never"`
 	OfflineGraceMinutes  int    `json:"offlineGraceMinutes" minimum:"0" maximum:"1440" doc:"Completions made offline count if done within this long after day close"`
+	DefaultChoreMinutes  int    `json:"defaultChoreMinutes" minimum:"1" maximum:"240" doc:"Fair auto-pick counts a chore without an estimate as this many minutes"`
 }
 
 // CalendarChanged is emitted when the timezone, day end or week start changes.
@@ -60,6 +61,7 @@ func toSettings(h sqlc.Household) HouseholdSettings {
 		Name: h.Name, Timezone: h.Timezone, DayEnd: h.DayEnd, WeekStart: Weekdays[h.WeekStart%7],
 		AllowNegativeBalance: h.AllowNegativeBalance == 1, SiblingVisibility: h.SiblingVisibility,
 		MediaRetentionDays: int(h.MediaRetentionDays), OfflineGraceMinutes: int(h.OfflineGraceMinutes),
+		DefaultChoreMinutes: int(h.DefaultChoreMinutes),
 	}
 	if h.AutoApproveHours.Valid {
 		v := int(h.AutoApproveHours.Int64)
@@ -134,7 +136,7 @@ func (s *Service) Update(ctx context.Context, in HouseholdSettings) (HouseholdSe
 			Name: in.Name, Timezone: in.Timezone, DayEnd: dayEnd.String(), WeekStart: int64(weekStart),
 			AllowNegativeBalance: negative, SiblingVisibility: in.SiblingVisibility,
 			MediaRetentionDays: int64(in.MediaRetentionDays), AutoApproveHours: autoApprove,
-			OfflineGraceMinutes: int64(in.OfflineGraceMinutes),
+			OfflineGraceMinutes: int64(in.OfflineGraceMinutes), DefaultChoreMinutes: int64(in.DefaultChoreMinutes),
 		}); err != nil {
 			return err
 		}

@@ -164,6 +164,22 @@ async function save() {
           </NFormItem>
         </div>
         <p class="hint -mt-2">{{ t('settings.retentionHint') }} {{ t('settings.graceHint') }}</p>
+        <NFormItem
+          :label="t('settings.defaultMinutes')"
+          :show-feedback="false"
+          class="sm:max-w-[calc(50%-0.5rem)]"
+        >
+          <NInputNumber
+            v-model:value="form.defaultChoreMinutes"
+            :min="1"
+            :max="240"
+            :precision="0"
+            class="w-full"
+          >
+            <template #suffix>{{ t('settings.minutesSuffix') }}</template>
+          </NInputNumber>
+        </NFormItem>
+        <p class="hint -mt-2">{{ t('settings.defaultMinutesHint') }}</p>
       </section>
 
       <div class="flex justify-end">

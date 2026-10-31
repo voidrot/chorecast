@@ -41,10 +41,10 @@ func (q *Queries) AddChoreEquipment(ctx context.Context, arg AddChoreEquipmentPa
 
 const createChore = `-- name: CreateChore :one
 INSERT INTO chores (name, description, points, penalty, estimated_minutes, min_age, steps, slots,
-    schedule, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video,
+    schedule, assign_mode, assign_kids, shared_points, shared_penalty, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video,
     evidence_checklist, evidence_note, location_id, disabled, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, description, points, penalty, estimated_minutes, min_age, steps, slots, schedule, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video, evidence_checklist, evidence_note, location_id, disabled, created_at, updated_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, description, points, penalty, estimated_minutes, min_age, steps, slots, schedule, assign_mode, assign_kids, shared_points, shared_penalty, rotation_state, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video, evidence_checklist, evidence_note, location_id, disabled, created_at, updated_at
 `
 
 type CreateChoreParams struct {
@@ -57,6 +57,10 @@ type CreateChoreParams struct {
 	Steps               string         `json:"steps"`
 	Slots               string         `json:"slots"`
 	Schedule            sql.NullString `json:"schedule"`
+	AssignMode          string         `json:"assign_mode"`
+	AssignKids          string         `json:"assign_kids"`
+	SharedPoints        string         `json:"shared_points"`
+	SharedPenalty       string         `json:"shared_penalty"`
 	RequiresApproval    int64          `json:"requires_approval"`
 	Escalate            int64          `json:"escalate"`
 	AutoApproveHours    sql.NullInt64  `json:"auto_approve_hours"`
@@ -82,6 +86,10 @@ func (q *Queries) CreateChore(ctx context.Context, arg CreateChoreParams) (Chore
 		arg.Steps,
 		arg.Slots,
 		arg.Schedule,
+		arg.AssignMode,
+		arg.AssignKids,
+		arg.SharedPoints,
+		arg.SharedPenalty,
 		arg.RequiresApproval,
 		arg.Escalate,
 		arg.AutoApproveHours,
@@ -107,6 +115,11 @@ func (q *Queries) CreateChore(ctx context.Context, arg CreateChoreParams) (Chore
 		&i.Steps,
 		&i.Slots,
 		&i.Schedule,
+		&i.AssignMode,
+		&i.AssignKids,
+		&i.SharedPoints,
+		&i.SharedPenalty,
+		&i.RotationState,
 		&i.RequiresApproval,
 		&i.Escalate,
 		&i.AutoApproveHours,
@@ -222,7 +235,7 @@ func (q *Queries) DeleteLocation(ctx context.Context, id int64) (int64, error) {
 }
 
 const getChore = `-- name: GetChore :one
-SELECT id, name, description, points, penalty, estimated_minutes, min_age, steps, slots, schedule, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video, evidence_checklist, evidence_note, location_id, disabled, created_at, updated_at FROM chores WHERE id = ?
+SELECT id, name, description, points, penalty, estimated_minutes, min_age, steps, slots, schedule, assign_mode, assign_kids, shared_points, shared_penalty, rotation_state, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video, evidence_checklist, evidence_note, location_id, disabled, created_at, updated_at FROM chores WHERE id = ?
 `
 
 func (q *Queries) GetChore(ctx context.Context, id int64) (Chore, error) {
@@ -239,6 +252,11 @@ func (q *Queries) GetChore(ctx context.Context, id int64) (Chore, error) {
 		&i.Steps,
 		&i.Slots,
 		&i.Schedule,
+		&i.AssignMode,
+		&i.AssignKids,
+		&i.SharedPoints,
+		&i.SharedPenalty,
+		&i.RotationState,
 		&i.RequiresApproval,
 		&i.Escalate,
 		&i.AutoApproveHours,
@@ -310,7 +328,7 @@ func (q *Queries) ListChoreEquipment(ctx context.Context) ([]ChoreEquipment, err
 }
 
 const listChores = `-- name: ListChores :many
-SELECT id, name, description, points, penalty, estimated_minutes, min_age, steps, slots, schedule, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video, evidence_checklist, evidence_note, location_id, disabled, created_at, updated_at FROM chores ORDER BY disabled, name
+SELECT id, name, description, points, penalty, estimated_minutes, min_age, steps, slots, schedule, assign_mode, assign_kids, shared_points, shared_penalty, rotation_state, requires_approval, escalate, auto_approve_hours, evidence_photos, evidence_before_after, evidence_video, evidence_checklist, evidence_note, location_id, disabled, created_at, updated_at FROM chores ORDER BY disabled, name
 `
 
 func (q *Queries) ListChores(ctx context.Context) ([]Chore, error) {
@@ -333,6 +351,11 @@ func (q *Queries) ListChores(ctx context.Context) ([]Chore, error) {
 			&i.Steps,
 			&i.Slots,
 			&i.Schedule,
+			&i.AssignMode,
+			&i.AssignKids,
+			&i.SharedPoints,
+			&i.SharedPenalty,
+			&i.RotationState,
 			&i.RequiresApproval,
 			&i.Escalate,
 			&i.AutoApproveHours,
@@ -425,7 +448,9 @@ func (q *Queries) ListLocations(ctx context.Context) ([]Location, error) {
 
 const updateChore = `-- name: UpdateChore :exec
 UPDATE chores SET name = ?, description = ?, points = ?, penalty = ?, estimated_minutes = ?, min_age = ?,
-    steps = ?, slots = ?, schedule = ?, requires_approval = ?, escalate = ?, auto_approve_hours = ?, evidence_photos = ?,
+    steps = ?, slots = ?, schedule = ?, assign_mode = ?, assign_kids = ?, shared_points = ?, shared_penalty = ?,
+    rotation_state = ?,
+    requires_approval = ?, escalate = ?, auto_approve_hours = ?, evidence_photos = ?,
     evidence_before_after = ?, evidence_video = ?, evidence_checklist = ?, evidence_note = ?, location_id = ?,
     disabled = ?, updated_at = ?
 WHERE id = ?
@@ -441,6 +466,11 @@ type UpdateChoreParams struct {
 	Steps               string         `json:"steps"`
 	Slots               string         `json:"slots"`
 	Schedule            sql.NullString `json:"schedule"`
+	AssignMode          string         `json:"assign_mode"`
+	AssignKids          string         `json:"assign_kids"`
+	SharedPoints        string         `json:"shared_points"`
+	SharedPenalty       string         `json:"shared_penalty"`
+	RotationState       string         `json:"rotation_state"`
 	RequiresApproval    int64          `json:"requires_approval"`
 	Escalate            int64          `json:"escalate"`
 	AutoApproveHours    sql.NullInt64  `json:"auto_approve_hours"`
@@ -466,6 +496,11 @@ func (q *Queries) UpdateChore(ctx context.Context, arg UpdateChoreParams) error 
 		arg.Steps,
 		arg.Slots,
 		arg.Schedule,
+		arg.AssignMode,
+		arg.AssignKids,
+		arg.SharedPoints,
+		arg.SharedPenalty,
+		arg.RotationState,
 		arg.RequiresApproval,
 		arg.Escalate,
 		arg.AutoApproveHours,
