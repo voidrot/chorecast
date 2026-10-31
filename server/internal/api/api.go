@@ -18,6 +18,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
+	"github.com/voidrot/chorecast/server/internal/kids"
 	"github.com/voidrot/chorecast/server/internal/parents"
 	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/sso"
@@ -73,7 +74,8 @@ func New(r chi.Router, deps Deps) huma.API {
 	)
 
 	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock),
-		sso: sso.New(deps.Config, deps.DB, deps.Clock), parents: parents.New(deps.DB, deps.Clock)}
+		sso: sso.New(deps.Config, deps.DB, deps.Clock), parents: parents.New(deps.DB, deps.Clock),
+		kids: kids.NewService(deps.DB, deps.Clock)}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
@@ -94,6 +96,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerAuth(hapi, h)
 	registerSSO(hapi, h)
 	registerParents(hapi, h)
+	registerKids(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -117,6 +120,7 @@ type handlers struct {
 	account *account.Service
 	sso     *sso.Service
 	parents *parents.Service
+	kids    *kids.Service
 }
 
 type HealthOutput struct {

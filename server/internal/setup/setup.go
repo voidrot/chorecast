@@ -211,6 +211,7 @@ func (s *Service) Complete(ctx context.Context, req SetupRequest) (Result, error
 			PinRequired: pinRequired,
 			Color:       sql.NullString{String: strings.ToLower(k.Color), Valid: true},
 			BirthDate:   sql.NullString{String: k.BirthDate.String(), Valid: !k.BirthDate.IsZero()},
+			Avatar:      sql.NullString{String: kids.DefaultAvatar(i), Valid: true},
 		}); err != nil {
 			return Result{}, fmt.Errorf("create kid %d: %w", i, err)
 		}

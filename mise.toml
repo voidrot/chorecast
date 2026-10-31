@@ -56,6 +56,11 @@ run = "pnpm exec openapi-typescript ../api/openapi.json -o src/api/schema.d.ts"
 description = "Run all code generation"
 depends = ["gen:sql", "gen:openapi", "gen:web-client"]
 
+[tasks."gen:avatars"]
+description = "Regenerate the bundled kid avatars (DiceBear Pixel Art, CC0) and their ID lists"
+dir = "web"
+run = "node scripts/gen-avatars.mjs && pnpm exec biome format --write src/avatars.ts && gofmt -w ../server/internal/kids/avatars_gen.go"
+
 [tasks."db:new"]
 description = "Create a new SQL migration: mise run db:new <name>"
 dir = "server/internal/db/migrations"

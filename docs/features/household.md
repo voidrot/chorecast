@@ -77,7 +77,13 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
                       pin_hash?, pin_required, day_end_override?, quiet_hours, school_hours, archived_at
 ```
 
-- **Built-in avatar set** from an open-licensed (CC0/MIT) set, e.g. a DiceBear style generated once and shipped as static SVGs in the web and Android apps (licence recorded in `THIRD_PARTY_NOTICES`), plus optional uploaded photo (parent uploads; processed like evidence, never expires).
+- **Built-in avatar set**: 24 DiceBear **Pixel Art** avatars (CC0), generated once by `mise run gen:avatars`
+  into `web/public/avatars/pixel-NN.svg` and served by the server at `/avatars/<id>.svg` (the Android app loads
+  them from there, so there's one copy). Licence in `THIRD_PARTY_NOTICES.md`. First-run setup assigns one to each
+  kid. An optional **uploaded photo** (processed like evidence, never expires) comes with the media pipeline (#27).
+- **API** (`internal/kids`): `GET /kids` (`?archived=true` for parents), `GET/PUT /kids/{id|slug}`, `POST /kids`,
+  `PUT /kids/{kid}/pin`, `POST /kids/{kid}/archive|unarchive`. Editing replaces the profile; optional fields left
+  out are cleared. The slug stays unless a new one is given (changing it breaks old links/scripts).
 - **Day-end override**: a kid's day can end **at or before** the household day end (e.g. 19:30 for a 6-year-old).
   Everything that says "day close" for a kid (missed, streaks, reminders, offline grace) uses the kid's
   **effective day end**. Household-level jobs (daily summary, horizon generation) run at the household day end,
