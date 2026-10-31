@@ -2,6 +2,7 @@ package dev.voidrot.chorecast.core
 
 import dev.voidrot.chorecast.api.apis.AuthApi
 import dev.voidrot.chorecast.api.infrastructure.HttpResponse
+import dev.voidrot.chorecast.api.models.ExchangeOIDCInputBody
 import dev.voidrot.chorecast.api.models.LoginInputBody
 import dev.voidrot.chorecast.api.models.MeOutputBody
 import dev.voidrot.chorecast.api.models.Problem
@@ -76,6 +77,20 @@ class ParentAuth(private val engine: HttpClientEngine? = null) {
             else -> LoginResult.Failed(code)
         }
     }
+
+    /** Exchanges the one-time code from the SSO redirect, with the verifier that started it, for a token. */
+    suspend fun exchangeSso(url: ServerUrl, code: String, pkce: Pkce, deviceLabel: String): LoginResult =
+        guard({ LoginResult.Unreachable(it) }, { LoginResult.Failed("unexpected") }) {
+            val resp = api(url).exchangeOidcCode(
+                ExchangeOIDCInputBody(code = code, verifier = pkce.verifier, label = deviceLabel.take(100)),
+            )
+            if (resp.success) {
+                val body = resp.body()
+                LoginResult.Success(body.token, body.userId, null)
+            } else {
+                LoginResult.Failed(resp.problemCode())
+            }
+        }
 
     /** Checks a stored token: who it belongs to, or that it no longer works. */
     suspend fun check(url: ServerUrl, token: String): SessionCheck =

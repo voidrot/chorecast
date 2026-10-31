@@ -47,6 +47,13 @@
     <string name="login_error_unreachable">Can\'t reach the server (%1$s).</string>
     <string name="login_error_failed">Signing in failed (%1$s). Try again.</string>
 
+    <string name="login_sso">Sign in with single sign-on</string>
+    <string name="sso_error_not_linked">That identity provider account isn\'t linked to a parent. Sign in with your password, then link it on your account page in the web admin.</string>
+    <string name="sso_error_denied">The identity provider didn\'t sign you in.</string>
+    <string name="sso_error_expired">Single sign-on took too long or was interrupted. Try again.</string>
+    <string name="sso_error_failed">Single sign-on failed. Try again, or sign in with your password.</string>
+    <string name="sso_error_no_browser">Single sign-on needs a web browser on this device.</string>
+
     <string name="home_signed_in">Signed in as %1$s</string>
     <string name="home_server">Server: %1$s</string>
     <string name="home_parent_next">Parent screens and device pairing are coming next.</string>

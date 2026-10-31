@@ -1,5 +1,7 @@
 package dev.voidrot.chorecast.ui.login
 
+import android.content.ActivityNotFoundException
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,7 +13,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -19,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -26,6 +31,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.voidrot.chorecast.R
 
@@ -38,6 +44,7 @@ fun LoginScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     LaunchedEffect(state.signedIn) { state.signedIn?.let(onSignedIn) }
 
     Column(
@@ -108,6 +115,22 @@ fun LoginScreen(
                 ),
             )
         }
+        if (state.ssoAvailable && state.step == LoginStep.Password) {
+            HorizontalDivider()
+            OutlinedButton(
+                onClick = {
+                    val url = viewModel.startSso()
+                    try {
+                        CustomTabsIntent.Builder().build().launchUrl(context, url.toUri())
+                    } catch (_: ActivityNotFoundException) {
+                        // No browser installed: nothing sensible to do but say so.
+                        viewModel.onSsoUnavailable()
+                    }
+                },
+                enabled = !state.submitting,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.login_sso)) }
+        }
         TextButton(onClick = onChangeServer) { Text(stringResource(R.string.action_change_server)) }
     }
 }
@@ -121,4 +144,13 @@ private fun errorText(error: LoginError, step: LoginStep): String = when (error)
         pluralStringResource(R.plurals.login_error_rate_limited, error.minutes.toInt(), error.minutes.toInt())
     is LoginError.Unreachable -> stringResource(R.string.login_error_unreachable, error.reason)
     is LoginError.Failed -> stringResource(R.string.login_error_failed, error.code)
+    is LoginError.Sso -> stringResource(
+        when (error.code) {
+            "not_linked" -> R.string.sso_error_not_linked
+            "denied" -> R.string.sso_error_denied
+            "expired" -> R.string.sso_error_expired
+            "no_browser" -> R.string.sso_error_no_browser
+            else -> R.string.sso_error_failed
+        },
+    )
 }
