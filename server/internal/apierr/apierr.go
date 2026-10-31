@@ -38,6 +38,9 @@ const (
 	CodeTOTPAlreadyEnabled  = "totp_already_enabled"   // (409)
 	CodeTOTPNotEnabled      = "totp_not_enabled"       // (409)
 	CodeTOTPSetupNotStarted = "totp_setup_not_started" // enable before setup (409)
+	CodeOIDCDisabled        = "oidc_disabled"          // SSO isn't configured (404)
+	CodeOIDCInvalidCode     = "oidc_invalid_code"      // app exchange: unknown, expired or mismatched code (400)
+	CodeOIDCNotLinked       = "oidc_not_linked"        // unlink when no SSO identity is linked (409)
 	CodeInvalidCursor       = "invalid_cursor"
 	CodeKidNotFound         = "kid_not_found"
 	CodeInvalidIdempotency  = "invalid_idempotency_key"

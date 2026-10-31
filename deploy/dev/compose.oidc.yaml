@@ -1,0 +1,19 @@
+# Local identity provider for developing and testing single sign-on.
+#
+#   docker compose -f deploy/dev/compose.oidc.yaml up -d
+#   CHORECAST_OIDC_ISSUER=http://localhost:5556/dex \
+#   CHORECAST_OIDC_CLIENT_ID=chorecast \
+#   CHORECAST_OIDC_CLIENT_SECRET=chorecast-dev-secret mise run dev
+#
+# Then link your parent account on the web admin's Account page and sign in with
+# parent@example.com / password. The Android emulator reaches Dex at 10.0.2.2, which doesn't
+# match the issuer; test the app flow on a device on the same network with the issuer set to
+# your machine's LAN address instead.
+services:
+  dex:
+    image: ghcr.io/dexidp/dex:v2.44.0
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./dex.yaml:/etc/dex/config.yaml:ro

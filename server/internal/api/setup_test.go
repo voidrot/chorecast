@@ -29,6 +29,11 @@ type setupServer struct {
 
 func newSetupServer(t *testing.T) *setupServer {
 	t.Helper()
+	return newSetupServerWith(t, config.Config{})
+}
+
+func newSetupServerWith(t *testing.T, cfg config.Config) *setupServer {
+	t.Helper()
 	store, err := db.Open(t.Context(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +45,7 @@ func newSetupServer(t *testing.T) *setupServer {
 		t.Fatal(err)
 	}
 	r := chi.NewRouter()
-	api.New(r, api.Deps{Config: config.Config{}, DB: store, Clock: clk, Setup: svc})
+	api.New(r, api.Deps{Config: cfg, DB: store, Clock: clk, Setup: svc})
 	return &setupServer{t: t, store: store, svc: svc, clk: clk, r: r}
 }
 

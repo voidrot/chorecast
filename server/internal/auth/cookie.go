@@ -16,6 +16,7 @@ type RequestInfo struct {
 	HTTPS     bool   // arrived over HTTPS, directly or via a TLS-terminating proxy
 	IP        string // client IP, for rate limiting
 	UserAgent string
+	Host      string // as the client addressed the server (X-Forwarded-Host behind a proxy)
 }
 
 type requestInfoKey struct{}
@@ -32,9 +33,33 @@ func CaptureRequestInfo(next http.Handler) http.Handler {
 			HTTPS:     r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 			IP:        clientIP(r),
 			UserAgent: r.UserAgent(),
+			Host:      firstNonEmpty(r.Header.Get("X-Forwarded-Host"), r.Host),
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestInfoKey{}, info)))
 	})
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v = strings.TrimSpace(v); v != "" {
+			first, _, _ := strings.Cut(v, ",")
+			return strings.TrimSpace(first)
+		}
+	}
+	return ""
+}
+
+// BaseURL is the server's external URL for this request: publicURL when configured, else derived
+// from the request's scheme and host.
+func (i RequestInfo) BaseURL(publicURL string) string {
+	if publicURL != "" {
+		return publicURL
+	}
+	scheme := "http"
+	if i.HTTPS {
+		scheme = "https"
+	}
+	return scheme + "://" + i.Host
 }
 
 func clientIP(r *http.Request) string {

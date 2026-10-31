@@ -303,6 +303,12 @@ func (s *Service) RevokeSession(ctx context.Context, p *auth.Principal, id int64
 	return s.tokens.Revoke(ctx, id)
 }
 
+// ConfirmPassword checks the caller's re-entered password (403 invalid_password when wrong).
+func (s *Service) ConfirmPassword(ctx context.Context, p *auth.Principal, password string) error {
+	_, err := s.confirm(ctx, p, password)
+	return err
+}
+
 // confirm loads the caller's row and checks their re-entered password.
 func (s *Service) confirm(ctx context.Context, p *auth.Principal, password string) (sqlc.User, error) {
 	u, err := s.db.GetUser(ctx, p.UserID)

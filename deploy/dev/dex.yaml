@@ -1,0 +1,28 @@
+# Dex as a local identity provider for trying single sign-on (not for production).
+# See compose.oidc.yaml. Sign in as parent@example.com / password.
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: chorecast
+    name: Chorecast
+    secret: chorecast-dev-secret
+    redirectURIs:
+      - http://localhost:8080/api/v1/auth/oidc/callback # mise run dev:server
+      - http://localhost:5173/api/v1/auth/oidc/callback # mise run dev (Vite proxies /api)
+
+enablePasswordDB: true
+staticPasswords:
+  - email: parent@example.com
+    username: parent
+    userID: 0f6e3b52-4a3c-4d1e-9a6b-2f6b8c3f1a01
+    # bcrypt of "password"
+    hash: "$2a$10$Vut6Nyl45xG1cJR7ebRU4.Hek16KZXa5i1phA6HLFwCLz9xOTH42m"
