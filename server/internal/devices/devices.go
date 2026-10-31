@@ -366,6 +366,67 @@ func (s *Service) Lock(ctx context.Context, p *auth.Principal) error {
 	return nil
 }
 
+// ListedDevice is a device as the devices page shows it.
+type ListedDevice struct {
+	Device
+	KidName  string    `json:"kidName,omitempty"`
+	LastSeen time.Time `json:"lastSeen" doc:"Last request from the device or one of its sessions (to the minute)"`
+	// SessionUser is who has a kid session or parent elevation open on the device right now.
+	SessionUser string `json:"sessionUser,omitempty"`
+}
+
+// List returns every paired device, newest first.
+func (s *Service) List(ctx context.Context) ([]ListedDevice, error) {
+	rows, err := s.db.ListDevices(ctx, sql.NullString{String: db.Timestamp(s.clock.Now()), Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ListedDevice, 0, len(rows))
+	for _, r := range rows {
+		created, _ := db.ParseTimestamp(r.CreatedAt)
+		seen, _ := db.ParseTimestamp(r.LastSeen)
+		out = append(out, ListedDevice{
+			Device:  Device{ID: r.ID, Name: r.Name, Shared: !r.UserID.Valid, KidID: r.UserID.Int64, AppVersion: r.AppVersion, CreatedAt: created},
+			KidName: r.KidName, LastSeen: seen, SessionUser: r.SessionUser,
+		})
+	}
+	return out, nil
+}
+
+var errNoDevice = apierr.New(http.StatusNotFound, apierr.CodeNotFound, "no such device")
+
+// Revoke unpairs a device: its token and sessions stop working at once, and the app returns to
+// pairing the next time it contacts the server.
+func (s *Service) Revoke(ctx context.Context, id int64) error {
+	n, err := s.db.DeleteDevice(ctx, id)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errNoDevice
+	}
+	return nil
+}
+
+// LockRemote ends any kid session or parent elevation on a device, sending it back to its
+// picker. The app notices on its next contact (it checks every 30 s while a session is open).
+func (s *Service) LockRemote(ctx context.Context, id int64) (int64, error) {
+	if _, err := s.db.GetDevice(ctx, id); errors.Is(err, sql.ErrNoRows) {
+		return 0, errNoDevice
+	} else if err != nil {
+		return 0, err
+	}
+	return s.db.DeleteDeviceSessions(ctx, sql.NullInt64{Int64: id, Valid: true})
+}
+
+// ReportVersion records the app version a device runs (sent with each picker request).
+func (s *Service) ReportVersion(ctx context.Context, p *auth.Principal, version string) error {
+	if p.DeviceID == 0 || version == "" {
+		return nil
+	}
+	return s.db.SetDeviceAppVersion(ctx, sqlc.SetDeviceAppVersionParams{AppVersion: truncate(version, 30), ID: p.DeviceID})
+}
+
 // PurgeExpiredCodes deletes expired pairing codes (daily maintenance).
 func (s *Service) PurgeExpiredCodes(ctx context.Context) (int64, error) {
 	return s.db.DeleteExpiredPairingCodes(ctx, db.Timestamp(s.clock.Now()))
