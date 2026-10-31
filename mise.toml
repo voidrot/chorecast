@@ -1,0 +1,153 @@
+# Tool versions and repo tasks for the chorecast monorepo.
+# `mise install` then `mise run setup` to get going; `mise tasks` lists everything.
+
+[tools]
+go = "1.27"
+node = "24"
+pnpm = "12"
+java = "temurin-21"
+android-sdk = "23"   # cmdline-tools (sdkmanager); sets ANDROID_HOME
+sqlc = "1.31"
+"aqua:pressly/goose" = "3"
+golangci-lint = "2"
+lefthook = "2"
+
+[env]
+CHORECAST_DATA_DIR = "{{config_root}}/.data"
+CHORECAST_DEV = "true"
+
+[settings]
+experimental = true
+
+# ---------------------------------------------------------------- setup
+
+[tasks.setup]
+description = "Install deps and git hooks"
+run = [
+  "lefthook install",
+  "pnpm --dir web install",
+  "cd server && go mod download",
+]
+
+# ---------------------------------------------------------------- codegen
+
+[tasks."gen:sql"]
+description = "Generate type-safe Go from SQL (sqlc)"
+dir = "server"
+run = "sqlc generate"
+sources = ["server/internal/db/queries/*.sql", "server/internal/db/migrations/*.sql", "server/sqlc.yaml"]
+outputs = ["server/internal/db/sqlc/*.go"]
+
+[tasks."gen:openapi"]
+description = "Export OpenAPI spec from Go handlers to api/openapi.json"
+dir = "server"
+run = "go run ./cmd/chorecast openapi > ../api/openapi.json"
+
+[tasks."gen:web-client"]
+description = "Generate TS types for the web admin from api/openapi.json"
+depends = ["gen:openapi"]
+dir = "web"
+run = "pnpm exec openapi-typescript ../api/openapi.json -o src/api/schema.d.ts"
+
+[tasks.gen]
+description = "Run all code generation"
+depends = ["gen:sql", "gen:openapi", "gen:web-client"]
+
+[tasks."db:new"]
+description = "Create a new SQL migration: mise run db:new <name>"
+dir = "server/internal/db/migrations"
+usage = 'arg "<name>"'
+run = "goose -s create ${usage_name} sql"
+
+# ---------------------------------------------------------------- dev
+
+[tasks."dev:server"]
+description = "Run the API server (http://localhost:8080)"
+dir = "server"
+run = "go run ./cmd/chorecast serve"
+
+[tasks."dev:web"]
+description = "Run the Vite dev server, proxying /api to the Go server"
+dir = "web"
+run = "pnpm dev"
+
+[tasks.dev]
+description = "Run server and web dev servers together"
+depends = ["dev:server", "dev:web"]
+
+# ---------------------------------------------------------------- build
+
+[tasks."build:web"]
+description = "Build the Vue admin into the server's embed dir"
+dir = "web"
+run = "pnpm build"
+
+[tasks."build:server"]
+description = "Build the server binary (with embedded web admin) to dist/"
+depends = ["build:web"]
+dir = "server"
+env = { CGO_ENABLED = "0" }
+run = "go build -trimpath -ldflags='-s -w' -o ../dist/chorecast ./cmd/chorecast"
+
+[tasks."build:image"]
+description = "Build the multi-arch container image"
+run = "docker buildx build --platform linux/amd64,linux/arm64 -f deploy/Dockerfile -t chorecast:dev ."
+
+[tasks."android:sdk"]
+description = "Install Android SDK packages (prompts to accept SDK licenses)"
+run = [
+  "sdkmanager --licenses",
+  "sdkmanager 'platform-tools' 'platforms;android-37.2' 'build-tools;37.0.0'",
+]
+
+[tasks."build:android"]
+description = "Build the Android debug APK"
+dir = "android"
+run = "./gradlew assembleDebug"
+
+[tasks.build]
+description = "Build server (incl. web)"
+depends = ["build:server"]
+
+# ---------------------------------------------------------------- quality
+
+[tasks."lint:server"]
+dir = "server"
+run = "golangci-lint run ./..."
+
+[tasks."lint:web"]
+dir = "web"
+run = ["pnpm lint", "pnpm typecheck"]
+
+[tasks."lint:android"]
+dir = "android"
+run = "./gradlew lint"
+
+[tasks.lint]
+description = "Lint server and web"
+depends = ["lint:server", "lint:web"]
+
+[tasks."fmt"]
+description = "Format Go and web sources"
+run = ["cd server && gofmt -w .", "pnpm --dir web format"]
+
+[tasks."test:server"]
+dir = "server"
+run = "go test ./..."
+
+[tasks."test:web"]
+dir = "web"
+run = "pnpm test"
+
+[tasks."test:android"]
+dir = "android"
+# Flavors (play/foss) mean there is no plain testDebugUnitTest task.
+run = "./gradlew testFossDebugUnitTest testPlayDebugUnitTest"
+
+[tasks.test]
+description = "Run server and web tests"
+depends = ["test:server", "test:web"]
+
+[tasks.ci]
+description = "Everything CI runs for server + web"
+depends = ["gen:sql", "lint", "test", "build:server"]
