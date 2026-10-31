@@ -9,27 +9,28 @@ import (
 )
 
 type Chore struct {
-	ID                  int64         `json:"id"`
-	Name                string        `json:"name"`
-	Description         string        `json:"description"`
-	Points              int64         `json:"points"`
-	Penalty             int64         `json:"penalty"`
-	EstimatedMinutes    sql.NullInt64 `json:"estimated_minutes"`
-	MinAge              sql.NullInt64 `json:"min_age"`
-	Steps               string        `json:"steps"`
-	Slots               string        `json:"slots"`
-	RequiresApproval    int64         `json:"requires_approval"`
-	Escalate            int64         `json:"escalate"`
-	AutoApproveHours    sql.NullInt64 `json:"auto_approve_hours"`
-	EvidencePhotos      int64         `json:"evidence_photos"`
-	EvidenceBeforeAfter int64         `json:"evidence_before_after"`
-	EvidenceVideo       int64         `json:"evidence_video"`
-	EvidenceChecklist   int64         `json:"evidence_checklist"`
-	EvidenceNote        int64         `json:"evidence_note"`
-	LocationID          sql.NullInt64 `json:"location_id"`
-	Disabled            int64         `json:"disabled"`
-	CreatedAt           string        `json:"created_at"`
-	UpdatedAt           string        `json:"updated_at"`
+	ID                  int64          `json:"id"`
+	Name                string         `json:"name"`
+	Description         string         `json:"description"`
+	Points              int64          `json:"points"`
+	Penalty             int64          `json:"penalty"`
+	EstimatedMinutes    sql.NullInt64  `json:"estimated_minutes"`
+	MinAge              sql.NullInt64  `json:"min_age"`
+	Steps               string         `json:"steps"`
+	Slots               string         `json:"slots"`
+	Schedule            sql.NullString `json:"schedule"`
+	RequiresApproval    int64          `json:"requires_approval"`
+	Escalate            int64          `json:"escalate"`
+	AutoApproveHours    sql.NullInt64  `json:"auto_approve_hours"`
+	EvidencePhotos      int64          `json:"evidence_photos"`
+	EvidenceBeforeAfter int64          `json:"evidence_before_after"`
+	EvidenceVideo       int64          `json:"evidence_video"`
+	EvidenceChecklist   int64          `json:"evidence_checklist"`
+	EvidenceNote        int64          `json:"evidence_note"`
+	LocationID          sql.NullInt64  `json:"location_id"`
+	Disabled            int64          `json:"disabled"`
+	CreatedAt           string         `json:"created_at"`
+	UpdatedAt           string         `json:"updated_at"`
 }
 
 type ChoreEligibility struct {

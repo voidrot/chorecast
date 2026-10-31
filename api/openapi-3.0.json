@@ -223,6 +223,10 @@
             "description": "A parent approves before points are credited",
             "type": "boolean"
           },
+          "schedule": {
+            "$ref": "#/components/schemas/ScheduleRule",
+            "description": "Which days it occurs; absent = not scheduled (kept for later or one-off assignment)"
+          },
           "slots": {
             "description": "Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance.",
             "items": {
@@ -354,6 +358,10 @@
           "requiresApproval": {
             "description": "A parent approves before points are credited",
             "type": "boolean"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/ScheduleRule",
+            "description": "Which days it occurs; absent = not scheduled (kept for later or one-off assignment)"
           },
           "slots": {
             "description": "Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance.",
@@ -1311,6 +1319,35 @@
         ],
         "type": "object"
       },
+      "NthWeekday": {
+        "additionalProperties": false,
+        "properties": {
+          "n": {
+            "description": "1-5, or -1 for the last one in the month",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "weekday": {
+            "enum": [
+              "sun",
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "n",
+          "weekday"
+        ],
+        "type": "object"
+      },
       "PairDeviceInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -1502,6 +1539,162 @@
         },
         "required": [
           "recoveryCodes"
+        ],
+        "type": "object"
+      },
+      "ScheduleOccurrence": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "description": "The day it belongs to (flexible: the week's first active day)",
+            "format": "date",
+            "type": "string"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "flexible": {
+            "description": "One of a flexible chore's completions for the week",
+            "type": "boolean"
+          },
+          "slot": {
+            "description": "HH:MM due time; absent = due at day close (or week close when flexible)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "dueAt"
+        ],
+        "type": "object"
+      },
+      "SchedulePreview": {
+        "additionalProperties": false,
+        "properties": {
+          "occurrences": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleOccurrence"
+            },
+            "type": "array"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/ScheduleRule"
+          }
+        },
+        "required": [
+          "rule",
+          "occurrences"
+        ],
+        "type": "object"
+      },
+      "SchedulePreviewInput": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "How many occurrences (default 10)",
+            "format": "int64",
+            "maximum": 50,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/ScheduleRule"
+          },
+          "slots": {
+            "description": "Due times (HH:MM); empty = due at day close",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 6,
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "rule"
+        ],
+        "type": "object"
+      },
+      "ScheduleRule": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "description": "once: the day",
+            "format": "date",
+            "type": "string"
+          },
+          "endDate": {
+            "description": "Last day the rule applies (inclusive)",
+            "format": "date",
+            "type": "string"
+          },
+          "interval": {
+            "description": "daily, weekly, monthly: every N days/weeks/months (default 1)",
+            "format": "int64",
+            "maximum": 99,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "monthDays": {
+            "description": "monthly: days of the month; -1 = last day. Days a month doesn't have (31 in a 30-day month) are skipped.",
+            "items": {
+              "format": "int64",
+              "maximum": 31,
+              "minimum": -1,
+              "type": "integer"
+            },
+            "maxItems": 32,
+            "nullable": true,
+            "type": "array"
+          },
+          "nthWeekday": {
+            "$ref": "#/components/schemas/NthWeekday",
+            "description": "monthly: the Nth weekday instead of monthDays"
+          },
+          "startDate": {
+            "description": "First day the rule applies; anchors intervals. Required except for once.",
+            "format": "date",
+            "type": "string"
+          },
+          "timesPerWeek": {
+            "description": "flexible_weekly: completions required per week, any day",
+            "format": "int64",
+            "maximum": 14,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": {
+            "enum": [
+              "once",
+              "daily",
+              "weekly",
+              "monthly",
+              "flexible_weekly"
+            ],
+            "type": "string"
+          },
+          "weekdays": {
+            "description": "weekly: the days of the week",
+            "items": {
+              "enum": [
+                "sun",
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat"
+              ],
+              "type": "string"
+            },
+            "maxItems": 7,
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "type"
         ],
         "type": "object"
       },
@@ -3393,6 +3586,82 @@
           }
         ],
         "summary": "Add a chore",
+        "tags": [
+          "chores"
+        ]
+      }
+    },
+    "/chores/preview-schedule": {
+      "post": {
+        "description": "Validates a rule and returns its next occurrences from today in the household timezone, without saving anything. POST because the rule is a JSON body.",
+        "operationId": "previewSchedule",
+        "parameters": [
+          {
+            "description": "Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchedulePreviewInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchedulePreview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "chores:manage"
+            ]
+          },
+          {
+            "session": [
+              "chores:manage"
+            ]
+          }
+        ],
+        "summary": "Preview a schedule rule",
         "tags": [
           "chores"
         ]

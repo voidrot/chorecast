@@ -369,9 +369,8 @@
     "minutes": "Estimated minutes",
     "minAge": "Minimum age",
     "whenTitle": "Times of day",
-    "slotsHint": "Add a time for each time it's due in a day (for example 07:00 and 18:00). With no times, it's due by the end of the day.",
+    "slotsHint": "Add a time for each time it's due on a day it happens (for example 07:00 and 18:00). With no times, it's due by the end of the day. Flexible chores ignore times: they're due by the end of the week.",
     "addSlot": "Add a time",
-    "scheduleSoon": "Which days it happens (daily, weekly, monthly…) comes with the schedule editor.",
     "stepsTitle": "Steps",
     "addStep": "Add a step",
     "stepN": "Step {n}",
@@ -413,6 +412,66 @@
       "name": "Give the chore a name.",
       "beforeAfter": "Before & after needs at least 2 photos.",
       "checklist": "A checklist needs at least one step."
+    }
+  },
+  "schedule": {
+    "title": "Which days",
+    "repeats": "Repeats",
+    "modes": {
+      "none": "Not scheduled",
+      "once": "Once",
+      "daily": "Every day / every few days",
+      "weekly": "On days of the week",
+      "monthly": "Monthly",
+      "flexible_weekly": "A number of times a week"
+    },
+    "date": "Date",
+    "every": "Every",
+    "units": {
+      "days": "day | days",
+      "weeks": "week | weeks",
+      "months": "month | months"
+    },
+    "on": "On",
+    "byDays": "On dates",
+    "byNth": "On a weekday",
+    "monthDays": "Days of the month",
+    "lastDay": "Last day",
+    "shortMonths": "Months without a day are skipped (no 31st in a 30-day month). Pick “Last day” for the end of every month.",
+    "nthLabel": "Which",
+    "weekday": "Weekday",
+    "nth": {
+      "1": "1st",
+      "2": "2nd",
+      "3": "3rd",
+      "4": "4th",
+      "5": "5th",
+      "-1": "Last"
+    },
+    "timesPerWeek": "time a week, any day | times a week, any days",
+    "flexibleHint": "Each completion earns points. Completions still missing when the week ends count as missed.",
+    "startDate": "Starting",
+    "endDate": "Until (optional)",
+    "previewTitle": "Coming up",
+    "previewNone": "Nothing coming up: the schedule has ended or never matches a day.",
+    "byDayEnd": "by the end of the day",
+    "byWeekEnd": "once by the end of the week | {n} times by the end of the week",
+    "weekOf": "Week of {date}",
+    "summary": {
+      "none": "Not scheduled",
+      "once": "Once on {date}",
+      "daily": "Every day | Every {n} days",
+      "weekly": "Every {days} | Every {n} weeks on {days}",
+      "monthlyDays": "Monthly on day {days} | Every {n} months on day {days}",
+      "monthlyNth": "The {nth} {day} of every month | The {nth} {day} every {n} months",
+      "flexible": "Once a week, any day | {n} times a week, any days"
+    },
+    "errors": {
+      "date": "Pick a date.",
+      "startDate": "Pick a start date.",
+      "endDate": "The end date is before the start date.",
+      "weekdays": "Pick at least one day of the week.",
+      "monthDays": "Pick at least one day of the month."
     }
   }
 }
