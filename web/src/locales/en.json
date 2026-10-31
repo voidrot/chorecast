@@ -5,7 +5,8 @@
   "nav": {
     "home": "Home",
     "account": "Account",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "parents": "Parents"
   },
   "session": {
     "parent": "Parent",
@@ -135,7 +136,9 @@
       "current": "Current password",
       "new": "New password",
       "submit": "Change password",
-      "changed": "Password changed."
+      "changed": "Password changed.",
+      "setTitle": "Set a password",
+      "setHint": "You sign in with single sign-on. Add a password to also sign in without it, and to confirm changes like your PIN."
     },
     "pin": {
       "title": "Parent PIN",
@@ -186,6 +189,57 @@
       "expired": "Single sign-on took too long or was interrupted. Try again.",
       "denied": "The identity provider didn't sign you in.",
       "failed": "Single sign-on failed. Try again, or sign in with your password."
+    }
+  },
+  "parents": {
+    "title": "Parents",
+    "listTitle": "Parents in this household",
+    "you": "You",
+    "twoFactor": "2FA",
+    "sso": "SSO",
+    "ssoOnly": "Single sign-on only",
+    "manage": "Manage",
+    "makeOwner": "Make owner",
+    "makeParent": "Make parent (remove owner rights)",
+    "resetPassword": "Reset password",
+    "disableTotp": "Turn off two-factor sign-in",
+    "remove": "Remove",
+    "resetConfirm": "{name} gets a new temporary password and is signed out everywhere. You'll see the password once, to pass on.",
+    "disableTotpConfirm": "{name} will sign in with just their password until they turn two-factor sign-in on again.",
+    "totpDisabled": "Two-factor sign-in is off for {name}.",
+    "removeConfirm": "{name} is signed out everywhere and can't sign in again. Their name stays on past chores and points.",
+    "tempTitle": "Temporary password",
+    "tempBody": "Give this password to {name}. They should change it on their account page.",
+    "tempDone": "Done",
+    "invitesTitle": "Invite a parent",
+    "invitesHint": "An invite link works once, for 7 days. Send it, or let them scan the QR code.",
+    "role": "Role",
+    "roleParent": "Parent",
+    "roleOwner": "Owner (also manages server settings and parents)",
+    "createInvite": "Create invite link",
+    "copy": "Copy link",
+    "copied": "Link copied.",
+    "copyFailed": "Couldn't copy; select the link instead.",
+    "hideLink": "Hide",
+    "linkHint": "Works once, until {when}. This link isn't shown again.",
+    "pending": "Pending invites",
+    "expires": "expires {when}",
+    "by": "by {name}",
+    "revoke": "Revoke"
+  },
+  "invite": {
+    "title": "Join your household on Chorecast",
+    "noToken": "Open the invite link you were sent to join.",
+    "invalid": "This invite link isn't valid any more. It may have been used, revoked or expired; ask for a new one.",
+    "intro": "{name} invited you to {household} as a parent.",
+    "introOwner": "{name} invited you to {household} as an owner.",
+    "someone": "Someone",
+    "submit": "Create my account",
+    "ssoHint": "Or join with your identity provider account. Enter your name above first; a username is optional.",
+    "sso": "Join with single sign-on",
+    "errors": {
+      "usernameTaken": "That username is taken. Choose another.",
+      "sso": "Joining with single sign-on didn't work. Try again, or create a password instead."
     }
   }
 }

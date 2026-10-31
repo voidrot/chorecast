@@ -35,6 +35,17 @@ type IdempotencyKey struct {
 	CreatedAt   string         `json:"created_at"`
 }
 
+type Invite struct {
+	ID        int64          `json:"id"`
+	TokenHash []byte         `json:"token_hash"`
+	Role      string         `json:"role"`
+	CreatedBy sql.NullInt64  `json:"created_by"`
+	CreatedAt string         `json:"created_at"`
+	ExpiresAt string         `json:"expires_at"`
+	UsedAt    sql.NullString `json:"used_at"`
+	UsedBy    sql.NullInt64  `json:"used_by"`
+}
+
 type Job struct {
 	ID             int64          `json:"id"`
 	Queue          string         `json:"queue"`
@@ -98,5 +109,6 @@ type User struct {
 	TotpSecret    sql.NullString `json:"totp_secret"`
 	TotpEnabled   int64          `json:"totp_enabled"`
 	TotpLastStep  int64          `json:"totp_last_step"`
+	RemovedAt     sql.NullString `json:"removed_at"`
 	CreatedAt     string         `json:"created_at"`
 }

@@ -325,10 +325,17 @@ func (s *Service) confirm(ctx context.Context, p *auth.Principal, password strin
 	return u, nil
 }
 
-// ChangePassword sets a new password and signs out the parent's other sessions.
+// ChangePassword sets a new password and signs out the parent's other sessions. Parents who
+// joined with single sign-on and have no password yet set their first one without `current`.
 func (s *Service) ChangePassword(ctx context.Context, p *auth.Principal, current, next string) error {
-	if _, err := s.confirm(ctx, p, current); err != nil {
+	u, err := s.db.GetUser(ctx, p.UserID)
+	if err != nil {
 		return err
+	}
+	if u.PasswordHash.Valid {
+		if _, err := s.confirm(ctx, p, current); err != nil {
+			return err
+		}
 	}
 	h, err := auth.HashSecret(next)
 	if err != nil {

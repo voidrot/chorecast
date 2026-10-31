@@ -29,6 +29,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/parents"
 )
 
 const (
@@ -47,9 +48,10 @@ const (
 type Client string
 
 const (
-	ClientWeb  Client = "web"  // sign in to the web admin
-	ClientApp  Client = "app"  // sign in the Android app
-	ClientLink Client = "link" // a signed-in parent links their IdP identity
+	ClientWeb    Client = "web"    // sign in to the web admin
+	ClientApp    Client = "app"    // sign in the Android app
+	ClientLink   Client = "link"   // a signed-in parent links their IdP identity
+	ClientInvite Client = "invite" // an invitee creates their account with their IdP identity
 )
 
 // Error codes passed back to the UI on redirect (?sso_error= or chorecast://auth?error=).
@@ -69,6 +71,9 @@ type flow struct {
 	appChallenge string // app: S256 challenge from the app
 	appLabel     string
 	userID       int64 // link: the parent linking
+	invite       string
+	displayName  string
+	username     string
 	expires      time.Time
 }
 
@@ -82,11 +87,12 @@ type exchange struct {
 // Service runs OIDC flows. Pending flows and exchange codes live in memory: a restart only
 // cancels sign-ins in progress.
 type Service struct {
-	cfg    config.OIDCConfig
-	public string // CHORECAST_PUBLIC_URL, may be empty
-	db     *db.DB
-	tokens *auth.Store
-	clock  clock.Clock
+	cfg     config.OIDCConfig
+	public  string // CHORECAST_PUBLIC_URL, may be empty
+	db      *db.DB
+	tokens  *auth.Store
+	parents *parents.Service
+	clock   clock.Clock
 
 	mu        sync.Mutex
 	provider  *oidc.Provider
@@ -100,7 +106,7 @@ func New(cfg config.Config, d *db.DB, c clock.Clock) *Service {
 		q = d.Queries
 	}
 	return &Service{
-		cfg: cfg.OIDC, public: cfg.PublicURL, db: d, tokens: auth.NewStore(q, c), clock: c,
+		cfg: cfg.OIDC, public: cfg.PublicURL, db: d, tokens: auth.NewStore(q, c), parents: parents.New(d, c), clock: c,
 		flows: map[string]flow{}, exchanges: map[string]exchange{},
 	}
 }
@@ -145,6 +151,9 @@ type StartInput struct {
 	AppChallenge string // app: base64url(SHA-256(verifier))
 	AppLabel     string // app: device name for the session list
 	UserID       int64  // link
+	Invite       string // invite: token; checked here and again when the account is created
+	DisplayName  string // invite
+	Username     string // invite (optional: SSO-only parents may have none)
 }
 
 // Start registers a flow and returns the IdP authorization URL and the state to bind to the
@@ -152,6 +161,11 @@ type StartInput struct {
 func (s *Service) Start(ctx context.Context, in StartInput) (authURL, state string, err error) {
 	if !s.Enabled() {
 		return "", "", errDisabled
+	}
+	if in.Client == ClientInvite {
+		if _, err := s.parents.LookupInvite(ctx, in.Invite); err != nil {
+			return "", "", err
+		}
 	}
 	if in.Client == ClientApp && !validChallenge(in.AppChallenge) {
 		return "", "", apierr.New(http.StatusBadRequest, apierr.CodeBadRequest, "challenge must be a base64url SHA-256 (43 characters)")
@@ -169,7 +183,8 @@ func (s *Service) Start(ctx context.Context, in StartInput) (authURL, state stri
 	}
 	f := flow{
 		client: in.Client, verifier: oauth2.GenerateVerifier(), nonce: nonce, redirect: safePath(in.Redirect),
-		appChallenge: in.AppChallenge, appLabel: in.AppLabel, userID: in.UserID, expires: s.clock.Now().Add(flowTTL),
+		appChallenge: in.AppChallenge, appLabel: in.AppLabel, userID: in.UserID,
+		invite: in.Invite, displayName: in.DisplayName, username: in.Username, expires: s.clock.Now().Add(flowTTL),
 	}
 	s.mu.Lock()
 	s.sweep()
@@ -207,8 +222,22 @@ func (s *Service) Callback(ctx context.Context, in CallbackInput) (location, ses
 		return failURL(f.client, f.redirect, ErrVerification), ""
 	}
 
-	if f.client == ClientLink {
+	switch f.client {
+	case ClientLink:
 		return s.link(ctx, f.userID, subject), ""
+	case ClientInvite:
+		_, session, err := s.parents.Accept(ctx, f.invite, parents.NewParent{
+			DisplayName: f.displayName, Username: f.username, OIDCSubject: subject,
+		})
+		if err != nil {
+			code := ErrVerification
+			var p *apierr.Problem
+			if errors.As(err, &p) {
+				code = p.Code // invalid_invite, username_taken, conflict, validation_failed
+			}
+			return failURL(ClientInvite, "", code), ""
+		}
+		return "/", session
 	}
 	user, err := s.db.GetParentByOIDCSubject(ctx, sql.NullString{String: subject, Valid: true})
 	if err != nil {
@@ -334,6 +363,8 @@ func failURL(c Client, redirect, code string) string {
 		return AppRedirect + "?error=" + code
 	case ClientLink:
 		return "/account?sso_error=" + code
+	case ClientInvite:
+		return "/invite?sso_error=" + url.QueryEscape(code)
 	default:
 		q := url.Values{"sso_error": {code}}
 		if redirect != "" && redirect != "/" {

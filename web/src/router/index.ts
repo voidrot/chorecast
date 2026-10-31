@@ -20,10 +20,21 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: '/invite',
+      name: 'invite',
+      component: () => import('@/views/InviteView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/',
       component: AppLayout,
       children: [
         { path: '', name: 'home', component: HomeView },
+        {
+          path: 'parents',
+          name: 'parents',
+          component: () => import('@/views/parents/ParentsView.vue'),
+        },
         {
           path: 'account',
           name: 'account',

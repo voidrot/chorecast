@@ -54,11 +54,19 @@ Server-level settings that also exist as env vars: **env wins** and the UI shows
 
 ## Parents
 
-- **Invites**: `invites(token_hash, role, created_by, expires_at, used_at)`. Shown as link + QR. Invitee page
-  asks for display name and username/password, or SSO. Owners can revoke unused invites.
+- **Invites** (`internal/parents`): `invites(token_hash, role, created_by, expires_at, used_at, used_by)`. Shown
+  once as link + QR (`/invite?token=…`; the page moves the token to sessionStorage). Invitee gives a display
+  name and username/password, or joins with SSO (`/auth/oidc/start?client=invite`; username optional, no
+  password until they set one on the Account page). Owners can revoke unused invites; expired ones are
+  purged by daily maintenance.
+- **Owner-only** API (scope `parents:manage`): invites, `PUT /parents/{id}/role`, `DELETE /parents/{id}`,
+  `POST /parents/{id}/reset-password` (returns a temporary password once, signs them out everywhere),
+  `POST /parents/{id}/disable-totp`. Demoting or removing the last owner answers 409 `last_owner`.
+  Removing keeps the row (`removed_at`) so history still names them, and frees the username.
 - **2FA**: TOTP optional per parent; enabling it shows 10 one-time **recovery codes** (stored hashed).
-- **Recovery** order: recovery code → another owner resets → email (if SMTP) → CLI on the host
-  (`docker exec chorecast /chorecast admin reset-password <username>`, also `admin disable-2fa`).
+- **Recovery** order: recovery code → another owner resets → email (if SMTP, Phase 3) → CLI on the host
+  (`docker exec chorecast /chorecast admin reset-password <username>` prints a temporary password;
+  `admin disable-2fa <username>`). The CLI is safe to run while the server is running.
 - **Removing a parent** revokes their sessions and app tokens. Their name stays on historical entries.
 - **Parent PIN** for shared-tablet elevation (behavior.md); set in profile, separate from the password.
 

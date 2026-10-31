@@ -35,7 +35,20 @@ CREATE TABLE users (
     totp_secret     TEXT,                  -- base32; set while enrolling, verified before totp_enabled
     totp_enabled    INTEGER NOT NULL DEFAULT 0 CHECK (totp_enabled IN (0, 1)),
     totp_last_step  INTEGER NOT NULL DEFAULT 0, -- last accepted TOTP time step; codes can't be replayed
+    removed_at      TEXT,                  -- parents: removed (row kept so history still names them)
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Single-use invite links for new parents (internal/parents). Only the SHA-256 of the token is stored.
+CREATE TABLE invites (
+    id         INTEGER PRIMARY KEY,
+    token_hash BLOB    NOT NULL UNIQUE,
+    role       TEXT    NOT NULL CHECK (role IN ('parent', 'owner')),
+    created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    created_at TEXT    NOT NULL,
+    expires_at TEXT    NOT NULL,
+    used_at    TEXT,
+    used_by    INTEGER REFERENCES users (id) ON DELETE SET NULL
 );
 
 -- One-time 2FA recovery codes (SHA-256 of the normalized code). Replaced as a set.
@@ -116,6 +129,7 @@ DROP TABLE schedule_cursors;
 DROP TABLE jobs;
 DROP TABLE tokens;
 DROP TABLE recovery_codes;
+DROP TABLE invites;
 DROP TABLE users;
 DROP TABLE setup_token;
 DROP TABLE household;
