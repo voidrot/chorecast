@@ -1,35 +1,37 @@
 <script setup lang="ts">
 import Card from 'primevue/card'
+import Message from 'primevue/message'
 import Tag from 'primevue/tag'
-import { onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+import { ApiError } from '@/api/errors'
+import { useAsync } from '@/composables/useAsync'
 
-const version = ref<string>()
-const status = ref<string>('checking…')
+const { t } = useI18n()
 
-onMounted(async () => {
-  const [health, ver] = await Promise.all([api.GET('/health'), api.GET('/version')])
-  status.value = health.data?.status ?? 'unreachable'
-  version.value = ver.data?.version
+const server = useAsync(async () => {
+  const [health, version] = await Promise.all([api.GET('/health'), api.GET('/version')])
+  if (!version.data) throw ApiError.fromProblem(version.response.status, version.error)
+  return { status: health.data?.status ?? 'unreachable', version: version.data.version }
 })
+
+onMounted(() => server.run())
 </script>
 
 <template>
-  <main class="home">
-    <Card>
-      <template #title>Chorecast</template>
-      <template #content>
-        <p>Server: <Tag :value="status" :severity="status === 'ok' ? 'success' : 'warn'" /></p>
-        <p v-if="version">Version {{ version }}</p>
-      </template>
-    </Card>
-  </main>
+  <h1>{{ t('home.title') }}</h1>
+  <Message v-if="server.error.value" severity="error">{{ server.error.value.detail }}</Message>
+  <Card v-else-if="server.data.value">
+    <template #title>{{ t('home.server') }}</template>
+    <template #content>
+      <p>
+        <Tag
+          :value="t(`home.status.${server.data.value.status}`)"
+          :severity="server.data.value.status === 'ok' ? 'success' : 'warn'"
+        />
+      </p>
+      <p>{{ t('home.version', { version: server.data.value.version }) }}</p>
+    </template>
+  </Card>
 </template>
-
-<style scoped>
-.home {
-  max-width: 40rem;
-  margin: 4rem auto;
-  font-family: system-ui, sans-serif;
-}
-</style>

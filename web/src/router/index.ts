@@ -1,7 +1,42 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import AppLayout from '@/layouts/AppLayout.vue'
+import { useSessionStore } from '@/stores/session'
 import HomeView from '@/views/HomeView.vue'
+import { decide } from './guard'
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
-  routes: [{ path: '/', name: 'home', component: HomeView }],
+  routes: [
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/LoginView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/setup',
+      name: 'setup',
+      component: () => import('@/views/SetupView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/',
+      component: AppLayout,
+      children: [{ path: '', name: 'home', component: HomeView }],
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('@/views/NotFoundView.vue'),
+      meta: { public: true },
+    },
+  ],
 })
+
+router.beforeEach(async (to) => {
+  const session = useSessionStore()
+  if (session.status === 'unknown') await session.load()
+  return decide(session.status, to)
+})
+
+export default router

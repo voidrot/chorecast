@@ -179,6 +179,24 @@ Three Gradle modules (`android/`):
 - Cleartext HTTP is allowed (self-hosted LANs); the connect screen warns when a server URL is `http://`.
 - Locally, Maven Central may rate-limit; CI resolves normally.
 
+## Web admin structure
+
+Vue 3 + PrimeVue SPA in `web/`, embedded in the server binary:
+
+- `src/api/client.ts`: typed `openapi-fetch` client (types generated from `api/openapi.json`). A response
+  middleware reports a 401 on an established session (`apiEvents.onUnauthorized`) and 503 `setup_required`
+  (`apiEvents.onSetupRequired`); `main.ts` wires these to the session store and router.
+- `src/api/errors.ts`: `ApiError` from problem responses (`status`, `code`, `detail`, `fieldErrors`). Use the
+  `error` that openapi-fetch returns (it has already read the body). `useAsync()` wraps actions with
+  loading/error state.
+- `src/stores/session.ts`: loads `GET /me`; status `unknown | anonymous | forbidden | authenticated |
+  setup_required`. The admin is for parents, so other principals are `forbidden`.
+- `src/router/guard.ts`: pure `decide(status, route)` (unit-tested): anonymous → `/login?redirect=…`, setup
+  pending → `/setup`, signed-in users skip login/setup. Routes reachable without a session set
+  `meta.public`.
+- `src/i18n.ts` + `src/locales/en.json`: all UI text via `vue-i18n`. `src/format.ts`: instants in the household
+  timezone (`householdTimeZone`), civil dates never shifted.
+
 ## Time & calendars
 
 - **Never read the wall clock directly.** Code takes a `clock.Clock` (`internal/clock`); tests use `clock.Fake`.
