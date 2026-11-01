@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only token for every job: they only check out code. The image cache and artifact upload use
+# the Actions runtime token, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   # Cancel superseded PR runs only; every main commit gets a full result.
