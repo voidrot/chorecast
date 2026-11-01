@@ -28,7 +28,7 @@ func registerChores(hapi huma.API, h *handlers) {
 	huma.Register(hapi, huma.Operation{
 		OperationID: "updateChore", Method: http.MethodPut, Path: "/chores/{id}",
 		Summary:     "Edit a chore",
-		Description: "Replaces the definition; optional fields left out are cleared. Upcoming untouched instances are regenerated once scheduling exists.",
+		Description: "Replaces the definition; optional fields left out are cleared. Upcoming untouched instances are regenerated.",
 		Tags:        []string{"chores"}, Security: manage, Errors: []int{http.StatusNotFound, http.StatusUnprocessableEntity},
 	}, h.updateChore)
 	huma.Register(hapi, huma.Operation{

@@ -49,6 +49,28 @@ type ChoreEquipment struct {
 	EquipmentID int64 `json:"equipment_id"`
 }
 
+type ChoreInstance struct {
+	ID                 int64          `json:"id"`
+	ChoreID            int64          `json:"chore_id"`
+	KidID              sql.NullInt64  `json:"kid_id"`
+	OccurrenceDate     string         `json:"occurrence_date"`
+	Slot               string         `json:"slot"`
+	Seq                int64          `json:"seq"`
+	DueAt              string         `json:"due_at"`
+	Flexible           int64          `json:"flexible"`
+	Status             string         `json:"status"`
+	AutoAssigned       int64          `json:"auto_assigned"`
+	ManuallyReassigned int64          `json:"manually_reassigned"`
+	RotationState      sql.NullString `json:"rotation_state"`
+	CreatedAt          string         `json:"created_at"`
+	UpdatedAt          string         `json:"updated_at"`
+}
+
+type ChoreInstanceMember struct {
+	InstanceID int64 `json:"instance_id"`
+	KidID      int64 `json:"kid_id"`
+}
+
 type Device struct {
 	ID                 int64          `json:"id"`
 	UserID             sql.NullInt64  `json:"user_id"`

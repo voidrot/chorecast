@@ -18,6 +18,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/events"
 	"github.com/voidrot/chorecast/server/internal/household"
 )
 
@@ -69,13 +70,46 @@ type KidInput struct {
 	SchoolHours    *SchoolHours `json:"schoolHours,omitempty"`
 }
 
-// Service manages kid profiles.
+// KidChanged is emitted when a kid is added, edited, archived or unarchived, so the horizon
+// generator can re-plan their chores (birth date, archive).
+type KidChanged struct {
+	KidID int64 `json:"kidId"`
+}
+
+func (KidChanged) EventType() string { return "kid.changed" }
+
+// Service manages kid profiles. bus may be nil (no event is emitted then).
 type Service struct {
 	db    *db.DB
 	clock clock.Clock
+	bus   *events.Bus
 }
 
-func NewService(d *db.DB, c clock.Clock) *Service { return &Service{db: d, clock: c} }
+func NewService(d *db.DB, c clock.Clock, bus *events.Bus) *Service {
+	return &Service{db: d, clock: c, bus: bus}
+}
+
+// inTx runs fn in a transaction and emits KidChanged for kid id (set by fn) if it commits.
+func (s *Service) inTx(ctx context.Context, fn func(q *sqlc.Queries) (int64, error)) error {
+	if s.bus != nil {
+		return s.bus.InTx(ctx, func(tx *events.Tx) error {
+			id, err := fn(tx.Q)
+			if err != nil {
+				return err
+			}
+			return tx.Emit(ctx, KidChanged{KidID: id})
+		})
+	}
+	tx, err := s.db.SQL.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := fn(s.db.WithTx(tx)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
 func toKid(u sqlc.User) Kid {
 	k := Kid{
@@ -242,20 +276,14 @@ func (s *Service) Create(ctx context.Context, in KidInput) (Kid, error) {
 	} else if err := s.checkSlug(ctx, slug, 0); err != nil {
 		return Kid{}, err
 	}
-	tx, err := s.db.SQL.BeginTx(ctx, nil)
+	err = s.inTx(ctx, func(q *sqlc.Queries) (int64, error) {
+		u, err := q.CreateUser(ctx, sqlc.CreateUserParams{DisplayName: v.name, Role: "child", Slug: nullable(slug)})
+		if err != nil {
+			return 0, fmt.Errorf("create kid: %w", err)
+		}
+		return u.ID, write(ctx, q, u.ID, slug, v)
+	})
 	if err != nil {
-		return Kid{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	q := s.db.WithTx(tx)
-	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{DisplayName: v.name, Role: "child", Slug: nullable(slug)})
-	if err != nil {
-		return Kid{}, fmt.Errorf("create kid: %w", err)
-	}
-	if err := write(ctx, q, u.ID, slug, v); err != nil {
-		return Kid{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		return Kid{}, err
 	}
 	return s.Get(ctx, slug)
@@ -279,7 +307,9 @@ func (s *Service) Update(ctx context.Context, ref string, in KidInput) (Kid, err
 			return Kid{}, err
 		}
 	}
-	if err := write(ctx, s.db.Queries, kid.ID, slug, v); err != nil {
+	if err := s.inTx(ctx, func(q *sqlc.Queries) (int64, error) {
+		return kid.ID, write(ctx, q, kid.ID, slug, v)
+	}); err != nil {
 		return Kid{}, err
 	}
 	return s.Get(ctx, slug)
@@ -315,29 +345,22 @@ func (s *Service) SetPIN(ctx context.Context, ref, pin string) error {
 	return s.db.SetKidPIN(ctx, sqlc.SetKidPINParams{PinHash: hash, ID: kid.ID})
 }
 
-// Archive hides a kid and revokes their devices; history is kept. Scheduling skips archived kids
-// once it exists (#21-#24).
+// Archive hides a kid and revokes their devices; history is kept. The horizon stops scheduling
+// them (their untouched upcoming instances are regenerated).
 func (s *Service) Archive(ctx context.Context, ref string) (Kid, error) {
 	kid, err := Resolve(ctx, s.db.Queries, ref)
 	if err != nil {
 		return Kid{}, err
 	}
 	if !kid.ArchivedAt.Valid {
-		tx, err := s.db.SQL.BeginTx(ctx, nil)
-		if err != nil {
-			return Kid{}, err
-		}
-		defer func() { _ = tx.Rollback() }()
-		q := s.db.WithTx(tx)
-		if err := q.SetKidArchived(ctx, sqlc.SetKidArchivedParams{
-			ArchivedAt: sql.NullString{String: db.Timestamp(s.clock.Now()), Valid: true}, ID: kid.ID,
+		if err := s.inTx(ctx, func(q *sqlc.Queries) (int64, error) {
+			if err := q.SetKidArchived(ctx, sqlc.SetKidArchivedParams{
+				ArchivedAt: sql.NullString{String: db.Timestamp(s.clock.Now()), Valid: true}, ID: kid.ID,
+			}); err != nil {
+				return 0, err
+			}
+			return kid.ID, q.DeleteTokensForUser(ctx, sql.NullInt64{Int64: kid.ID, Valid: true})
 		}); err != nil {
-			return Kid{}, err
-		}
-		if err := q.DeleteTokensForUser(ctx, sql.NullInt64{Int64: kid.ID, Valid: true}); err != nil {
-			return Kid{}, err
-		}
-		if err := tx.Commit(); err != nil {
 			return Kid{}, err
 		}
 	}
@@ -350,7 +373,9 @@ func (s *Service) Unarchive(ctx context.Context, ref string) (Kid, error) {
 	if err != nil {
 		return Kid{}, err
 	}
-	if err := s.db.SetKidArchived(ctx, sqlc.SetKidArchivedParams{ID: kid.ID}); err != nil {
+	if err := s.inTx(ctx, func(q *sqlc.Queries) (int64, error) {
+		return kid.ID, q.SetKidArchived(ctx, sqlc.SetKidArchivedParams{ID: kid.ID})
+	}); err != nil {
 		return Kid{}, err
 	}
 	return s.Get(ctx, kid.Slug.String)

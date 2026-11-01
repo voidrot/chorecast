@@ -463,6 +463,107 @@
         ],
         "type": "object"
       },
+      "ChoreInstance": {
+        "additionalProperties": false,
+        "properties": {
+          "autoAssigned": {
+            "description": "Picked by the fair auto-pick",
+            "type": "boolean"
+          },
+          "choreId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "choreName": {
+            "type": "string"
+          },
+          "date": {
+            "description": "The day it belongs to (flexible: the week's first active day)",
+            "format": "date",
+            "type": "string"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "flexible": {
+            "description": "One of a flexible chore's completions for the week",
+            "type": "boolean"
+          },
+          "groupKidIds": {
+            "description": "Shared: the members who may complete it",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kidId": {
+            "description": "The assignee; absent for a shared instance",
+            "format": "int64",
+            "type": "integer"
+          },
+          "manuallyReassigned": {
+            "description": "A parent or a swap changed the assignee",
+            "type": "boolean"
+          },
+          "planned": {
+            "description": "Dated after today: a forecast that may still change",
+            "type": "boolean"
+          },
+          "seq": {
+            "description": "Flexible: which of the week's completions this is (0-based)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "slot": {
+            "description": "HH:MM due time; absent = due at day close (or week close when flexible)",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "submitted",
+              "approved",
+              "missed",
+              "excused"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "choreId",
+          "choreName",
+          "date",
+          "dueAt",
+          "status",
+          "planned"
+        ],
+        "type": "object"
+      },
+      "ChoreInstancesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChoreInstance"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ChoresOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -4093,7 +4194,7 @@
         ]
       },
       "put": {
-        "description": "Replaces the definition; optional fields left out are cleared. Upcoming untouched instances are regenerated once scheduling exists.",
+        "description": "Replaces the definition; optional fields left out are cleared. Upcoming untouched instances are regenerated.",
         "operationId": "updateChore",
         "parameters": [
           {
@@ -5295,6 +5396,104 @@
         "summary": "Change household settings",
         "tags": [
           "household"
+        ]
+      }
+    },
+    "/instances": {
+      "get": {
+        "description": "Instances on [from, to] (default today to today+7, at most 62 days). Kids see only their own (including shared ones they're a member of); parents see every kid's, or one kid's with `kidId`. Days after today are `planned`: a forecast that may still change.",
+        "operationId": "listChoreInstances",
+        "parameters": [
+          {
+            "description": "Only this kid's instances; kids default to themselves",
+            "explode": false,
+            "in": "query",
+            "name": "kidId",
+            "schema": {
+              "description": "Only this kid's instances; kids default to themselves",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "First day (YYYY-MM-DD); default today",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First day (YYYY-MM-DD); default today",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Last day (YYYY-MM-DD); default today+7",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last day (YYYY-MM-DD); default today+7",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChoreInstancesOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "chores:read"
+            ]
+          },
+          {
+            "session": [
+              "chores:read"
+            ]
+          }
+        ],
+        "summary": "Chore instances by date",
+        "tags": [
+          "instances"
         ]
       }
     },

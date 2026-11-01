@@ -24,6 +24,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/events"
 	"github.com/voidrot/chorecast/server/internal/schedule"
 )
 
@@ -85,13 +86,25 @@ type Chore struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// Service manages chore definitions and the location/equipment catalogs.
+// ChoreChanged is emitted when a chore is created, edited (including disabled) or deleted, so
+// the horizon generator can regenerate its untouched instances.
+type ChoreChanged struct {
+	ChoreID int64 `json:"choreId"`
+}
+
+func (ChoreChanged) EventType() string { return "chore.changed" }
+
+// Service manages chore definitions and the location/equipment catalogs. bus may be nil (no
+// event is emitted then).
 type Service struct {
 	db    *db.DB
 	clock clock.Clock
+	bus   *events.Bus
 }
 
-func New(d *db.DB, c clock.Clock) *Service { return &Service{db: d, clock: c} }
+func New(d *db.DB, c clock.Clock, bus *events.Bus) *Service {
+	return &Service{db: d, clock: c, bus: bus}
+}
 
 var errNotFound = apierr.New(http.StatusNotFound, apierr.CodeNotFound, "no such chore")
 
@@ -389,7 +402,7 @@ func (s *Service) Create(ctx context.Context, in ChoreInput) (Chore, error) {
 	now := db.Timestamp(s.clock.Now())
 	mode, kids, points, penalty := assignmentColumns(in.Assignment)
 	var id int64
-	err = s.inTx(ctx, func(q *sqlc.Queries) error {
+	err = s.inTx(ctx, func(q *sqlc.Queries, emit func(events.Event) error) error {
 		c, err := q.CreateChore(ctx, sqlc.CreateChoreParams{
 			Name: in.Name, Description: in.Description, Points: int64(in.Points), Penalty: int64(in.Penalty),
 			EstimatedMinutes: nullInt(in.EstimatedMinutes), MinAge: nullInt(in.MinAge), Steps: mustJSON(in.Steps),
@@ -404,7 +417,10 @@ func (s *Service) Create(ctx context.Context, in ChoreInput) (Chore, error) {
 			return err
 		}
 		id = c.ID
-		return writeLinks(ctx, q, id, in)
+		if err := writeLinks(ctx, q, id, in); err != nil {
+			return err
+		}
+		return emit(ChoreChanged{ChoreID: id})
 	})
 	if err != nil {
 		return Chore{}, err
@@ -427,10 +443,11 @@ func (s *Service) Update(ctx context.Context, id int64, in ChoreInput) (Chore, e
 	}
 	mode, kids, points, penalty := assignmentColumns(in.Assignment)
 	rotation := old.RotationState
-	if mode != old.AssignMode || kids != old.AssignKids {
+	resetRotation := mode != old.AssignMode || kids != old.AssignKids
+	if resetRotation {
 		rotation = "{}" // a different rotation starts from its first kid
 	}
-	err = s.inTx(ctx, func(q *sqlc.Queries) error {
+	err = s.inTx(ctx, func(q *sqlc.Queries, emit func(events.Event) error) error {
 		if err := q.UpdateChore(ctx, sqlc.UpdateChoreParams{
 			Name: in.Name, Description: in.Description, Points: int64(in.Points), Penalty: int64(in.Penalty),
 			EstimatedMinutes: nullInt(in.EstimatedMinutes), MinAge: nullInt(in.MinAge), Steps: mustJSON(in.Steps),
@@ -449,7 +466,16 @@ func (s *Service) Update(ctx context.Context, id int64, in ChoreInput) (Chore, e
 		if err := q.DeleteChoreEligibility(ctx, id); err != nil {
 			return err
 		}
-		return writeLinks(ctx, q, id, in)
+		if resetRotation {
+			// The instances' states belong to the old rotation (internal/horizon resumes from them).
+			if err := q.ClearChoreInstanceRotationStates(ctx, id); err != nil {
+				return err
+			}
+		}
+		if err := writeLinks(ctx, q, id, in); err != nil {
+			return err
+		}
+		return emit(ChoreChanged{ChoreID: id})
 	})
 	if err != nil {
 		return Chore{}, err
@@ -478,25 +504,34 @@ func writeLinks(ctx context.Context, q *sqlc.Queries, id int64, in ChoreInput) e
 	return nil
 }
 
-// Delete removes a chore. Once chores have history (instances, #23+), parents disable instead.
+// Delete removes a chore and all its instances, history included; parents disable a chore
+// to keep its history.
 func (s *Service) Delete(ctx context.Context, id int64) error {
-	n, err := s.db.DeleteChore(ctx, id)
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return errNotFound
-	}
-	return nil
+	return s.inTx(ctx, func(q *sqlc.Queries, emit func(events.Event) error) error {
+		n, err := q.DeleteChore(ctx, id)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errNotFound
+		}
+		return emit(ChoreChanged{ChoreID: id})
+	})
 }
 
-func (s *Service) inTx(ctx context.Context, fn func(q *sqlc.Queries) error) error {
+// inTx runs fn in a transaction; events passed to emit are delivered if it commits.
+func (s *Service) inTx(ctx context.Context, fn func(q *sqlc.Queries, emit func(events.Event) error) error) error {
+	if s.bus != nil {
+		return s.bus.InTx(ctx, func(tx *events.Tx) error {
+			return fn(tx.Q, func(ev events.Event) error { return tx.Emit(ctx, ev) })
+		})
+	}
 	tx, err := s.db.SQL.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := fn(s.db.WithTx(tx)); err != nil {
+	if err := fn(s.db.WithTx(tx), func(events.Event) error { return nil }); err != nil {
 		return err
 	}
 	return tx.Commit()
