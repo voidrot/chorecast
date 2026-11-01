@@ -8,6 +8,9 @@ on `main` (`.github/workflows/release.yml`, config in `release-please-config.jso
 - release-please keeps one release PR per component (`separate-pull-requests`): **server** (with **web** linked
   to the same version, since the admin is embedded in the server binary) and **android**. Merging a release PR
   tags it (`server-v1.2.3`, `android-v1.2.3`) and creates the GitHub release.
+- PRs are squash-merged with the **PR title** as the commit title and the PR description as the body, so
+  the PR title decides the release (`feat(server): …`, `fix(web): …`, `feat!: …`); a `BREAKING CHANGE:`
+  footer in the description also counts. The *PR title* check enforces Conventional Commits on titles.
 - Below 1.0 (`bump-minor-pre-major`): `feat:` and `!` / `BREAKING CHANGE:` bump minor, `fix:` bumps patch,
   so the first release is `0.1.0` and nothing reaches 1.0 until a `Release-As: 1.0.0` footer says so.
   From 1.0: `feat:` minor, `fix:` patch, breaking major.
