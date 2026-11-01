@@ -231,4 +231,12 @@ func TestHeaderDocumentedOnPostOnly(t *testing.T) {
 	if !has(oapi.Paths["/things"].Post) || has(oapi.Paths["/things"].Get) {
 		t.Error("Idempotency-Key should be documented on POST only")
 	}
+	// The middleware skips multipart bodies, so uploads don't advertise the header.
+	upload := &huma.Operation{Method: http.MethodPost, RequestBody: &huma.RequestBody{
+		Content: map[string]*huma.MediaType{"multipart/form-data": {}},
+	}}
+	AddHeaderParam(oapi, upload)
+	if has(upload) {
+		t.Error("Idempotency-Key should not be documented on multipart uploads")
+	}
 }

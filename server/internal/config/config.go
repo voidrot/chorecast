@@ -15,7 +15,8 @@ type Config struct {
 	// links the server prints or shares (setup URL, invites, pairing). Optional.
 	PublicURL string
 
-	OIDC OIDCConfig
+	OIDC  OIDCConfig
+	Media MediaConfig
 
 	// FromEnv records which CHORECAST_* variables were set, so the admin can show those settings
 	// as "set by environment".
@@ -31,11 +32,29 @@ type OIDCConfig struct {
 
 func (o OIDCConfig) Enabled() bool { return o.Issuer != "" && o.ClientID != "" }
 
+// MediaConfig limits uploaded evidence (docs/features/approvals-evidence.md, Configuration).
+type MediaConfig struct {
+	MaxPhotoMB int // largest accepted photo upload, in MiB
+}
+
+// DefaultMaxPhotoMB is used when CHORECAST_MEDIA_MAX_PHOTO_MB is unset or not a positive number.
+const DefaultMaxPhotoMB = 15
+
+// MaxPhotoBytes is MaxPhotoMB in bytes, falling back to the default for a zero config.
+func (m MediaConfig) MaxPhotoBytes() int64 {
+	mb := m.MaxPhotoMB
+	if mb <= 0 {
+		mb = DefaultMaxPhotoMB
+	}
+	return int64(min(mb, 1<<30)) << 20 // the cap only keeps absurd values from overflowing
+}
+
 func Load() Config {
 	fromEnv := map[string]bool{}
 	for _, k := range []string{
 		"CHORECAST_ADDR", "CHORECAST_DATA_DIR", "CHORECAST_DEV", "CHORECAST_PUBLIC_URL",
 		"CHORECAST_OIDC_ISSUER", "CHORECAST_OIDC_CLIENT_ID", "CHORECAST_OIDC_CLIENT_SECRET",
+		"CHORECAST_MEDIA_MAX_PHOTO_MB",
 	} {
 		if v, ok := os.LookupEnv(k); ok && v != "" {
 			fromEnv[k] = true
@@ -52,6 +71,7 @@ func Load() Config {
 			ClientID:     os.Getenv("CHORECAST_OIDC_CLIENT_ID"),
 			ClientSecret: os.Getenv("CHORECAST_OIDC_CLIENT_SECRET"),
 		},
+		Media: MediaConfig{MaxPhotoMB: envPositiveInt("CHORECAST_MEDIA_MAX_PHOTO_MB", DefaultMaxPhotoMB)},
 	}
 }
 
@@ -60,6 +80,15 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envPositiveInt reads a positive integer, falling back to def when unset or invalid.
+func envPositiveInt(key string, def int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key)))
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
 
 func envBool(key string) bool {

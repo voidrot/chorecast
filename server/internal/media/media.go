@@ -1,0 +1,287 @@
+// Package media stores uploaded photos: it validates and re-encodes them (photo.go), keeps the
+// files in a Storage (storage.go), records their hashes so a kid can't reuse earlier evidence,
+// and serves them through short-lived signed URLs (signer.go).
+// Spec: docs/features/approvals-evidence.md (Fresh-evidence rules, Media pipeline).
+package media
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/voidrot/chorecast/server/internal/apierr"
+	"github.com/voidrot/chorecast/server/internal/auth"
+	"github.com/voidrot/chorecast/server/internal/clock"
+	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+)
+
+// URLTTL is how long a signed media URL stays valid.
+const URLTTL = 10 * time.Minute
+
+// Owner kinds (media.owner_kind). Uploads start as OwnerPending, with no owner id, until they
+// are attached to evidence, a rejection, a chore or equipment.
+const (
+	OwnerPending = "pending"
+	KindPhoto    = "photo"
+	MimeWebP     = "image/webp"
+)
+
+var (
+	errNotFound    = apierr.New(http.StatusNotFound, apierr.CodeMediaNotFound, "no such media")
+	errExpired     = apierr.New(http.StatusGone, apierr.CodeMediaExpired, "this media has expired and was deleted")
+	errInvalidURL  = apierr.New(http.StatusForbidden, apierr.CodeInvalidMediaURL, "the media link is invalid or has expired")
+	errDuplicate   = apierr.New(http.StatusConflict, apierr.CodeDuplicateMedia, "this photo was already used as evidence; take a new one")
+	errUnsupported = apierr.New(http.StatusUnsupportedMediaType, apierr.CodeUnsupportedMedia, "upload a JPEG, PNG or WebP photo")
+	errHEIC        = apierr.New(http.StatusUnsupportedMediaType, apierr.CodeUnsupportedMedia,
+		"HEIC and AVIF photos aren't supported; upload a JPEG, PNG or WebP photo")
+	errTooManyPixels = apierr.New(http.StatusRequestEntityTooLarge, apierr.CodeImageTooLarge,
+		fmt.Sprintf("the image is larger than %d megapixels", MaxPixels/1_000_000))
+	errInvalidImage = apierr.New(http.StatusUnprocessableEntity, apierr.CodeInvalidImage, "the image is damaged or can't be read")
+)
+
+// Service uploads, scopes and serves media.
+type Service struct {
+	db     *db.DB
+	clock  clock.Clock
+	store  Storage
+	signer *Signer // verifies the local storage's signed URLs
+	// sem bounds concurrent photo processing, so a Raspberry Pi isn't asked to hold several
+	// decoded full-size photos at once.
+	sem chan struct{}
+}
+
+// New returns the media service. It doesn't touch d or store until a request needs them.
+// signer verifies the URLs Open serves; it should be the one store signs with.
+func New(d *db.DB, c clock.Clock, store Storage, signer *Signer) *Service {
+	return &Service{db: d, clock: c, store: store, signer: signer, sem: make(chan struct{}, 1)}
+}
+
+// NewKey returns a new random storage key (32 hex digits).
+func NewKey() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// UploadPhoto processes an uploaded photo and stores it as pending media uploaded by p. A kid's
+// photo whose pixels exactly match earlier kid evidence in the household is rejected (409
+// duplicate_media), and its hash is recorded so later reuse is caught, even after the media is
+// deleted. Parents' uploads are neither checked nor recorded (fresh-evidence rule 5).
+func (s *Service) UploadPhoto(ctx context.Context, p *auth.Principal, data []byte) (sqlc.Medium, error) {
+	photo, err := s.process(ctx, data)
+	if err != nil {
+		return sqlc.Medium{}, err
+	}
+	kid := p.Kind == auth.KindKid
+	if kid {
+		// Cheap early answer; the insert below is what guarantees it.
+		dup, err := s.db.MediaHashExists(ctx, photo.SHA256[:])
+		if err != nil {
+			return sqlc.Medium{}, err
+		}
+		if dup {
+			return sqlc.Medium{}, errDuplicate
+		}
+	}
+
+	key, err := NewKey()
+	if err != nil {
+		return sqlc.Medium{}, err
+	}
+	thumbKey := ThumbKey(key)
+	if err := s.store.Put(ctx, key, bytes.NewReader(photo.WebP)); err != nil {
+		return sqlc.Medium{}, err
+	}
+	if err := s.store.Put(ctx, thumbKey, bytes.NewReader(photo.Thumb)); err != nil {
+		s.removeFiles(key, thumbKey)
+		return sqlc.Medium{}, err
+	}
+	m, err := s.insert(ctx, p, kid, key, thumbKey, photo)
+	if err != nil {
+		s.removeFiles(key, thumbKey)
+		return sqlc.Medium{}, err
+	}
+	return m, nil
+}
+
+func (s *Service) process(ctx context.Context, data []byte) (*Photo, error) {
+	select {
+	case s.sem <- struct{}{}:
+		defer func() { <-s.sem }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	photo, err := ProcessPhoto(data)
+	switch {
+	case err == nil:
+		return photo, nil
+	case errors.Is(err, ErrHEIC):
+		return nil, errHEIC
+	case errors.Is(err, ErrUnsupportedFormat):
+		return nil, errUnsupported
+	case errors.Is(err, ErrTooManyPixels):
+		return nil, errTooManyPixels
+	case errors.Is(err, ErrInvalidImage):
+		return nil, errInvalidImage
+	default:
+		return nil, err
+	}
+}
+
+func (s *Service) insert(ctx context.Context, p *auth.Principal, kid bool, key, thumbKey string, photo *Photo) (sqlc.Medium, error) {
+	now := db.Timestamp(s.clock.Now())
+	tx, err := s.db.SQL.BeginTx(ctx, nil)
+	if err != nil {
+		return sqlc.Medium{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := s.db.WithTx(tx)
+	dhash := int64(photo.DHash) //nolint:gosec // stored bit-for-bit; SQLite has no unsigned integers
+	m, err := q.CreateMedia(ctx, sqlc.CreateMediaParams{
+		UploadedBy: sql.NullInt64{Int64: p.UserID, Valid: p.UserID != 0},
+		StorageKey: key, ThumbKey: sql.NullString{String: thumbKey, Valid: true},
+		Kind: KindPhoto, Mime: MimeWebP, Bytes: int64(len(photo.WebP)),
+		Width: int64(photo.Width), Height: int64(photo.Height),
+		ThumbWidth:  sql.NullInt64{Int64: int64(photo.ThumbWidth), Valid: true},
+		ThumbHeight: sql.NullInt64{Int64: int64(photo.ThumbHeight), Valid: true},
+		Sha256:      photo.SHA256[:], Dhash: dhash, CreatedAt: now,
+	})
+	if err != nil {
+		return sqlc.Medium{}, fmt.Errorf("create media: %w", err)
+	}
+	if kid {
+		_, err := q.RecordMediaHash(ctx, sqlc.RecordMediaHashParams{
+			Sha256: photo.SHA256[:], Dhash: dhash,
+			KidID:     sql.NullInt64{Int64: p.UserID, Valid: true},
+			MediaID:   sql.NullInt64{Int64: m.ID, Valid: true},
+			CreatedAt: now,
+		})
+		if errors.Is(err, sql.ErrNoRows) { // the hash was already there
+			return sqlc.Medium{}, errDuplicate
+		}
+		if err != nil {
+			return sqlc.Medium{}, fmt.Errorf("record media hash: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return sqlc.Medium{}, err
+	}
+	return m, nil
+}
+
+// removeFiles cleans up after a failed upload. It runs without the request's context, which may
+// be what was cancelled.
+func (s *Service) removeFiles(keys ...string) {
+	for _, k := range keys {
+		_ = s.store.Delete(context.Background(), k)
+	}
+}
+
+// CanAccess reports whether p may see m. Parents see all media. A kid sees pending media they
+// uploaded. Media attached to an owner is visible to parents only until its owner kind defines
+// more (evidence: the instance's kid, #27).
+func CanAccess(p *auth.Principal, m sqlc.Medium) bool {
+	switch {
+	case p.Kind == auth.KindParent:
+		return true
+	case m.OwnerKind == OwnerPending:
+		return p.Kind == auth.KindKid && m.UploadedBy.Valid && m.UploadedBy.Int64 == p.UserID
+	default:
+		return false
+	}
+}
+
+// Get returns media id if p may see it, else 404 media_not_found (also for media that exists
+// but is out of p's scope, so ids can't be probed).
+func (s *Service) Get(ctx context.Context, p *auth.Principal, id int64) (sqlc.Medium, error) {
+	m, err := s.db.GetMedia(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sqlc.Medium{}, errNotFound
+	}
+	if err != nil {
+		return sqlc.Medium{}, err
+	}
+	if !CanAccess(p, m) {
+		return sqlc.Medium{}, errNotFound
+	}
+	return m, nil
+}
+
+// SignedURLs are fresh links to a media file and its thumbnail, valid until Expires.
+type SignedURLs struct {
+	URL      string
+	ThumbURL string // empty when the media has no thumbnail
+	Expires  time.Time
+}
+
+// URLs signs links to m's file and thumbnail. They may be relative to the server's base URL.
+// Callers must have checked access (Get or CanAccess) first.
+func (s *Service) URLs(ctx context.Context, m sqlc.Medium) (SignedURLs, error) {
+	exp := s.clock.Now().Add(URLTTL).Truncate(time.Second)
+	out := SignedURLs{Expires: exp}
+	var err error
+	if out.URL, err = s.store.SignedURL(ctx, m.StorageKey, exp); err != nil {
+		return SignedURLs{}, err
+	}
+	if m.ThumbKey.Valid {
+		if out.ThumbURL, err = s.store.SignedURL(ctx, m.ThumbKey.String, exp); err != nil {
+			return SignedURLs{}, err
+		}
+	}
+	return out, nil
+}
+
+// File is a media file opened through a signed URL.
+type File struct {
+	Mime    string
+	Data    []byte
+	Expires time.Time // when the URL stops working
+}
+
+// Open serves the file under key for a signed URL (exp and sig as in the query string). A bad
+// or expired signature is 403 invalid_media_url; media that was deleted, or whose file is gone,
+// is 410 media_expired.
+func (s *Service) Open(ctx context.Context, key, exp, sig string) (File, error) {
+	if !ValidKey(key) {
+		return File{}, errInvalidURL
+	}
+	ok, err := s.signer.Verify(ctx, key, exp, sig)
+	if err != nil {
+		return File{}, err
+	}
+	if !ok {
+		return File{}, errInvalidURL
+	}
+	m, err := s.db.GetMediaByKey(ctx, key)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && m.Status != "ready") {
+		return File{}, errExpired
+	}
+	if err != nil {
+		return File{}, err
+	}
+	rc, err := s.store.Get(ctx, key)
+	if errors.Is(err, ErrNotFound) {
+		return File{}, errExpired
+	}
+	if err != nil {
+		return File{}, err
+	}
+	defer func() { _ = rc.Close() }()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return File{}, err
+	}
+	sec, _ := strconv.ParseInt(exp, 10, 64) // Verify accepted it
+	return File{Mime: m.Mime, Data: data, Expires: time.Unix(sec, 0)}, nil
+}

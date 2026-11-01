@@ -25,6 +25,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/kids"
 	"github.com/voidrot/chorecast/server/internal/ledger"
+	"github.com/voidrot/chorecast/server/internal/media"
 	"github.com/voidrot/chorecast/server/internal/parents"
 	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/sso"
@@ -84,7 +85,10 @@ func New(r chi.Router, deps Deps) huma.API {
 		sso: sso.New(deps.Config, deps.DB, deps.Clock), parents: parents.New(deps.DB, deps.Clock),
 		kids: kids.NewService(deps.DB, deps.Clock, deps.Bus), household: household.New(deps.DB, deps.Bus),
 		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock, deps.Bus),
-		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock), horizon: horizon.New(deps.DB, deps.Clock)}
+		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock), horizon: horizon.New(deps.DB, deps.Clock),
+		clock: deps.Clock}
+	signer := media.NewSigner(queries, deps.Clock)
+	h.media = media.New(deps.DB, deps.Clock, media.NewLocal(deps.Config.DataDir, Prefix+mediaFilesPath, signer), signer)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
@@ -111,6 +115,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerChores(hapi, h)
 	registerPoints(hapi, h)
 	registerInstances(hapi, h)
+	registerMedia(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -140,6 +145,8 @@ type handlers struct {
 	chores    *chores.Service
 	ledger    *ledger.Service
 	horizon   *horizon.Generator
+	media     *media.Service
+	clock     clock.Clock
 }
 
 type HealthOutput struct {

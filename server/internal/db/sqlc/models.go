@@ -155,6 +155,36 @@ type Location struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type MediaHash struct {
+	Sha256    []byte        `json:"sha256"`
+	Dhash     int64         `json:"dhash"`
+	KidID     sql.NullInt64 `json:"kid_id"`
+	MediaID   sql.NullInt64 `json:"media_id"`
+	CreatedAt string        `json:"created_at"`
+}
+
+type Medium struct {
+	ID          int64          `json:"id"`
+	OwnerKind   string         `json:"owner_kind"`
+	OwnerID     sql.NullInt64  `json:"owner_id"`
+	UploadedBy  sql.NullInt64  `json:"uploaded_by"`
+	StorageKey  string         `json:"storage_key"`
+	ThumbKey    sql.NullString `json:"thumb_key"`
+	Kind        string         `json:"kind"`
+	Mime        string         `json:"mime"`
+	Bytes       int64          `json:"bytes"`
+	Width       int64          `json:"width"`
+	Height      int64          `json:"height"`
+	ThumbWidth  sql.NullInt64  `json:"thumb_width"`
+	ThumbHeight sql.NullInt64  `json:"thumb_height"`
+	Sha256      []byte         `json:"sha256"`
+	Dhash       int64          `json:"dhash"`
+	Status      string         `json:"status"`
+	Keep        int64          `json:"keep"`
+	CreatedAt   string         `json:"created_at"`
+	ExpiresAt   sql.NullString `json:"expires_at"`
+}
+
 type PairingCode struct {
 	ID        int64          `json:"id"`
 	CodeHash  []byte         `json:"code_hash"`
@@ -191,6 +221,12 @@ type RecoveryCode struct {
 type ScheduleCursor struct {
 	Name        string `json:"name"`
 	LastFiredAt string `json:"last_fired_at"`
+}
+
+type ServerKey struct {
+	Name      string `json:"name"`
+	Key       []byte `json:"key"`
+	CreatedAt string `json:"created_at"`
 }
 
 type SetupToken struct {

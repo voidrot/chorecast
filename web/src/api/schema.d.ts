@@ -924,6 +924,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/media/files/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A media file, through a signed link
+         * @description Public: the signature in the link is the credential. A wrong or expired signature is 403 `invalid_media_url`; media whose file was deleted (retention) is 410 `media_expired`.
+         */
+        get: operations["getMediaFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/media/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a photo
+         * @description A multipart form with the image in `file` (JPEG, PNG or WebP, recognized by its content, not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any metadata (EXIF, GPS). The photo is pending until it is attached to evidence. A kid's photo that exactly matches earlier kid evidence is rejected with 409 `duplicate_media`.
+         */
+        post: operations["uploadPhoto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/media/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Media details with fresh signed links
+         * @description The links work without credentials for 10 minutes (`urlExpiresAt`); fetch the media again for new ones.
+         */
+        get: operations["getMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/parents": {
         parameters: {
             query?: never;
@@ -1620,6 +1680,41 @@ export interface components {
             userId?: number;
             /** @description Parents only */
             username?: string;
+        };
+        MediaItem: {
+            /** Format: int64 */
+            bytes: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int64 */
+            height: number;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "photo";
+            /** @example image/webp */
+            mime: string;
+            thumbnail: components["schemas"]["MediaThumbnail"];
+            /**
+             * Format: uri
+             * @description Signed link, valid until urlExpiresAt
+             */
+            url: string;
+            /** Format: date-time */
+            urlExpiresAt: string;
+            /** Format: int64 */
+            width: number;
+        };
+        MediaThumbnail: {
+            /** Format: int64 */
+            height: number;
+            /**
+             * Format: uri
+             * @description Signed link, valid until urlExpiresAt
+             */
+            url: string;
+            /** Format: int64 */
+            width: number;
         };
         NthWeekday: {
             /**
@@ -4923,6 +5018,196 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getMediaFile: {
+        parameters: {
+            query?: {
+                /** @description Expiry, Unix seconds (part of the signed link) */
+                exp?: string;
+                /** @description Signature (part of the signed link) */
+                sig?: string;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Type"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/webp": string;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    uploadPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description The image: JPEG, PNG or WebP
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaItem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaItem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

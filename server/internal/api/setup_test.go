@@ -37,7 +37,11 @@ func newSetupServer(t *testing.T) *setupServer {
 
 func newSetupServerWith(t *testing.T, cfg config.Config) *setupServer {
 	t.Helper()
-	store, err := db.Open(t.Context(), t.TempDir())
+	dir := t.TempDir()
+	if cfg.DataDir == "" {
+		cfg.DataDir = dir // media storage
+	}
+	store, err := db.Open(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}

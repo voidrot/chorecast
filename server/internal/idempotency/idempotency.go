@@ -163,10 +163,14 @@ func Purge(ctx context.Context, q *sqlc.Queries, now time.Time) (int64, error) {
 	return q.DeleteIdempotencyKeysBefore(ctx, db.Timestamp(now.Add(-TTL)))
 }
 
-// AddHeaderParam documents the Idempotency-Key header on every POST operation. Register it as
-// an OpenAPI OnAddOperation hook so generated clients can send it.
+// AddHeaderParam documents the Idempotency-Key header on every POST operation that the
+// middleware covers (not multipart uploads). Register it as an OpenAPI OnAddOperation hook so
+// generated clients can send it.
 func AddHeaderParam(_ *huma.OpenAPI, op *huma.Operation) {
 	if op.Method != http.MethodPost {
+		return
+	}
+	if op.RequestBody != nil && op.RequestBody.Content["multipart/form-data"] != nil {
 		return
 	}
 	maxLen := maxKeyLen

@@ -58,6 +58,12 @@ const (
 	CodeAlreadyReversed     = "already_reversed"       // a points entry can be reversed only once (409)
 	CodeAlreadyPosted       = "already_posted"         // a points entry for this kind and source exists (409)
 	CodeChoreHasHistory     = "chore_has_history"      // a chore with history is disabled, not deleted (409)
+	CodeDuplicateMedia      = "duplicate_media"        // a kid's photo matches earlier kid evidence exactly (409)
+	CodeMediaNotFound       = "media_not_found"        // (404)
+	CodeMediaExpired        = "media_expired"          // the media file was deleted, e.g. by retention (410)
+	CodeInvalidMediaURL     = "invalid_media_url"      // a media URL's signature is wrong or has expired (403)
+	CodeImageTooLarge       = "image_too_large"        // the image's dimensions exceed the pixel cap (413)
+	CodeInvalidImage        = "invalid_image"          // recognized format, but the image doesn't decode (422)
 )
 
 var defaultCodes = map[int]string{
