@@ -89,3 +89,20 @@ jobs:
           push: false
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+  # The one CI check the main ruleset requires. Matrix and skipped jobs report under different
+  # names (release PRs skip image and server-web), so the ruleset requires this instead: it fails
+  # if any job failed or was cancelled, and passes when they succeeded or were skipped.
+  ci-passed:
+    if: always()
+    needs: [server-web, android, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All CI jobs passed or were skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac
