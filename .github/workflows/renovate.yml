@@ -33,4 +33,8 @@ jobs:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_ONBOARDING: "false"
           RENOVATE_REQUIRE_CONFIG: required
+          # Commit as the RENOVATE_TOKEN owner, not Mend's shared default author. Platform commits go
+          # through the GitHub API, which signs them, so Renovate's commits show as Verified.
+          RENOVATE_GIT_AUTHOR: "Renovate Bot <22723438+voidrot@users.noreply.github.com>"
+          RENOVATE_PLATFORM_COMMIT: enabled
           LOG_LEVEL: ${{ inputs.log-level || 'info' }}
