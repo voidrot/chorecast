@@ -4,26 +4,18 @@
   "bump-minor-pre-major": true,
   "initial-version": "0.1.0",
   "separate-pull-requests": true,
-  "group-pull-request-title-pattern": "chore${scope}: release${component} libraries",
   "packages": {
-    "server": {
+    ".": {
       "component": "server",
       "release-type": "go",
-      "exclude-paths": ["server/internal/webui/dist"],
-      "extra-files": []
-    },
-    "web": {
-      "component": "web",
-      "release-type": "node",
-      "skip-github-release": true
+      "changelog-path": "server/CHANGELOG.md",
+      "exclude-paths": ["android", "server/internal/webui/dist"],
+      "extra-files": [{ "type": "json", "path": "web/package.json", "jsonpath": "$.version" }]
     },
     "android": {
       "component": "android",
       "release-type": "simple",
       "extra-files": [{ "type": "generic", "path": "app/build.gradle.kts" }]
     }
-  },
-  "plugins": [
-    { "type": "linked-versions", "groupName": "server-web", "components": ["server", "web"] }
-  ]
+  }
 }
