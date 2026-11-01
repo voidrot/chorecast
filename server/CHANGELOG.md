@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/voidrot/chorecast/compare/server-v0.2.0...server-v0.3.0) (2026-11-01)
+
+
+### Miscellaneous Chores
+
+* **server:** Synchronize server-web versions
+
 ## [0.2.0](https://github.com/voidrot/chorecast/compare/server-v0.1.0...server-v0.2.0) (2026-11-01)
 
 
