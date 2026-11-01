@@ -28,7 +28,7 @@ Status: accepted (initial planning session, 2026-10-30). Revisit any item by add
 | Web lint/format | **Biome** (with experimental full Vue support) | One fast tool replaces ESLint + Prettier. |
 | TypeScript | **TS 7** (native compiler) as `tsc`; `vue-tsc` checks `.vue` files | Volar/vue-tsc and openapi-typescript still need the TS 6 JS API, so `web/.pnpmfile.cjs` gives just those packages a private TS 6. Remove the shim once they support TS 7. |
 | Android | **Native Kotlin + Jetpack Compose** (Material 3), AGP 9 built-in Kotlin, version catalog | First-class kiosk/notification/widget support; conventional so it's easy to learn. |
-| Android API client | **openapi-generator `kotlin` (jvm-ktor + kotlinx.serialization)** — *to be wired up* | Generated from the same `api/openapi.json`. |
+| Android API client | **openapi-generator `kotlin` (jvm-ktor + kotlinx.serialization)**, run at build time | Generated from `api/openapi-3.0.json`, the 3.0 export of the same spec as `api/openapi.json`. |
 | Push notifications | **UnifiedPush** primary; **FCM only with the admin's own Firebase project** (`play` flavor); polling fallback | Content-free pushes, no project-run relay; `foss` flavor has no Google deps. |
 | JS package manager | **pnpm** | Pinned by mise. |
 | Git hooks | **lefthook** | gofmt/golangci-lint/biome on staged files, Conventional Commit check. |
@@ -42,7 +42,8 @@ Status: accepted (initial planning session, 2026-10-30). Revisit any item by add
 chorecast/
 ├── mise.toml                 # tools + every repo task
 ├── lefthook.yml              # git hooks
-├── api/openapi.json          # generated from Go (mise run gen:openapi) — committed, consumed by web & android
+├── api/openapi.json          # generated from Go (mise run gen:openapi) — committed, consumed by web (OpenAPI 3.1)
+├── api/openapi-3.0.json      # 3.0 export of the same spec, consumed by android (openapi-generator)
 ├── server/                   # Go module github.com/voidrot/chorecast/server
 │   ├── cmd/chorecast/        # `chorecast serve | openapi | version`
 │   ├── internal/api/         # Huma operations (one file per resource as it grows)
@@ -84,7 +85,7 @@ in `tokens`. Revocation is a row delete. No JWTs (single node, nothing to gain, 
 | `app` | Parent's phone | In-app login (password or brokered OIDC) | Full parent access |
 | `device` | Kid's phone or shared tablet | **QR pairing** by a parent | Bound to one kid, or "shared" (profile picker); kid-level access only |
 | `display` | Wall tablet / TV browser (family dashboard) | Code/QR shown on the display, approved by a parent | Read-only kid-visible household data |
-| `api` | Scripts and external systems (post-v1) | Created in Settings → Integrations | Explicit scopes, optional kid restriction; see [features/integrations.md](features/integrations.md) |
+| `api` | Scripts and external systems (post-v1) | Planned: created in Settings → Integrations (no creation path exists yet) | Planned: explicit per-key scopes, optional kid restriction; see [features/integrations.md](features/integrations.md). Today a key holds no scopes, so every scoped operation is denied. |
 
 ### Flows
 
@@ -150,8 +151,9 @@ Implemented in `internal/auth`:
 - **Scope sets per principal kind** (`scope.go`): parent; owner = parent + `server:manage`; kid (read own data,
   complete chores); shared device (read profiles, pick a kid); display (read-only); API key (no scopes until
   per-key grants exist post-v1).
-- **Data scoping** is separate from scopes: handlers call `Principal.CanAccessKid(id)`. Parents and displays cover
-  every kid; a kid only themselves; shared devices and API keys none.
+- **Data scoping** is separate from scopes: a handler that serves one kid's data must call `Principal.CanAccessKid(id)`.
+  Parents and displays cover every kid; a kid only themselves; shared devices and API keys none. Not yet applied:
+  `CanAccessKid` is defined and tested, but no handler calls it, so each kid-scoped endpoint must add the check when it lands.
 - Handlers read the caller with `auth.PrincipalFrom(ctx)`.
 - Passwords and PINs use argon2id (OWASP minimum: 19 MiB, t=2, p=1) in PHC format; `VerifySecret` reports when a
   stored hash should be upgraded.
@@ -179,7 +181,7 @@ Implemented in `internal/auth`:
 - Handlers return `apierr.New(status, code, detail)`; plain Huma errors get a default code per status. Unknown
   paths and methods under `/api/v1` answer in the same format.
 
-**Pagination** (`internal/paging`)
+**Pagination** (`internal/paging`; the convention for new list endpoints, no list endpoint uses it yet)
 - List operations embed `paging.Params` (`?cursor=&limit=`, limit 1–100, default 50) and return
   `{ "items": [...], "nextCursor": "..." }`; `nextCursor` is absent on the last page.
 - Cursors are opaque (versioned base64url keyset). Handlers fetch `limit+1` rows after the decoded key and call
@@ -205,7 +207,7 @@ Three Gradle modules (`android/`):
 | Module | What | Tests |
 |---|---|---|
 | `:api-client` | Kotlin client **generated at build time** by openapi-generator (`kotlin`, `jvm-ktor`, kotlinx.serialization) from `api/openapi-3.0.json`. Nothing generated is committed, so it can't drift; the committed spec is drift-checked in CI. | — |
-| `:core` | Plain Kotlin/JVM logic: `ServerUrl` parsing, `Compatibility` (API major check), `ServerChecker` (`GET /version` via the generated client), `TokenStore` interface, shared client config (`ApiClients`: JSON with `ignoreUnknownKeys`, per the compatibility policy). | JUnit + ktor `MockEngine`, run on any JVM |
+| `:core` | Plain Kotlin/JVM logic: `ServerUrl` parsing, `Compatibility` (API major check), `ServerChecker` (`GET /api/v1/version` via the generated client), `TokenStore` interface, shared client config (`ApiClients`: JSON with `ignoreUnknownKeys`, per the compatibility policy). | JUnit + ktor `MockEngine`, run on any JVM |
 | `:app` | Compose UI: type-safe navigation (`ui/Routes.kt`), screens + ViewModels (`StateFlow` state), manual DI via `AppContainer` (created in `ChorecastApp`), `KeystoreTokenStore` (AES-256-GCM key in the Android Keystore), OkHttp engine. All UI text in `strings.xml`. | Android unit tests |
 
 - The generated client registers no JSON converter: always build API clients with `ApiClients.config`.
@@ -263,8 +265,8 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   `HouseholdDayCloses`, `Every`). A cursor per schedule records the last occurrence enqueued; each tick enqueues
   every due occurrence after it with key `<schedule>:<occurrence>`, so runs missed while the server was down are
   caught up and duplicates are impossible. New schedules start from now (no backfill).
-- Kinds and schedules are wired in `cmd/chorecast/jobs.go`. Today: `maintenance.daily` (purge finished jobs and
-  expired tokens).
+- Kinds and schedules are wired in `cmd/chorecast/background.go` (`newBackground`). Today: `maintenance.daily` (purges
+  finished jobs, expired tokens and idempotency keys, dispatched events, invites and pairing codes).
 - Tests drive time with `clock.Fake` and call `Scheduler.Tick` / `Runner.RunDue` directly.
 
 ## Domain events
@@ -277,13 +279,14 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   are durable even if the process dies a moment later.
 - **Inside `InTx`, use only `tx.Q`.** SQLite runs on a single connection, so any other query blocks until the
   transaction ends.
-- Events are typed structs with a stable `EventType()` (e.g. `assignment.submitted`); subscribers decode with
+- Events are typed structs with a stable `EventType()` (today only `household.calendar_changed`); subscribers decode with
   `events.Decode[T]`.
 - The dispatcher (woken on commit, polling every second) turns each event into one job per subscriber (key
   `event:<id>:<subscriber>`) and marks it dispatched. Each subscriber therefore retries independently with job
   backoff, and a crash mid-dispatch can't duplicate deliveries.
 - Delivery is at-least-once; subscribers must be idempotent (use `Envelope.ID`). Subscribers are registered in
-  `cmd/chorecast/background.go`. Dispatched events are purged after 30 days by daily maintenance.
+  `cmd/chorecast/background.go` with `bus.Subscribe`. None exist yet: nothing subscribes to an event today. Dispatched
+  events are purged after 30 days by daily maintenance.
 
 ## Push notifications
 
@@ -312,12 +315,8 @@ infrastructure.
 ## Open items / next steps
 
 1. **Feature specs** are in [features/](features/); sequencing is in [roadmap.md](roadmap.md).
-2. Implement auth (first-run setup, login, sessions, pairing) + Huma auth middleware.
-3. Wire openapi-generator into the Android Gradle build (`:api-client` module).
-4. Android release signing (keystore via GitHub secrets). `versionCode` is derived from semver in Gradle
-   (`major*1_000_000 + minor*1_000 + patch`).
-5. **Google Play after v1** (v1 ships GitHub Release APKs). Before Play: Families policy review, data-safety form, privacy policy, no ads SDKs.
-6. Trusted-proxy handling for client IPs (explicit `CHORECAST_TRUSTED_PROXIES`, not blanket `X-Forwarded-For`).
-7. Helm chart in `deploy/helm` **after v1** (single replica + PVC; SQLite means no horizontal scaling).
-8. Backups: `chorecast backup` command using SQLite `VACUUM INTO`.
-9. `applicationId` is **`dev.voidrot.chorecast`** (owner controls voidrot.dev). Permanent once on Play.
+2. **Google Play after v1** (v1 ships GitHub Release APKs). Before Play: Families policy review, data-safety form, privacy policy, no ads SDKs.
+3. Trusted-proxy handling for client IPs (explicit `CHORECAST_TRUSTED_PROXIES`, not blanket `X-Forwarded-For`).
+4. Helm chart in `deploy/helm` **after v1** (single replica + PVC; SQLite means no horizontal scaling).
+5. Backups: `chorecast backup` command using SQLite `VACUUM INTO`.
+6. `applicationId` is **`dev.voidrot.chorecast`** (owner controls voidrot.dev). Permanent once on Play.
