@@ -10,8 +10,15 @@ concurrency:
   # Cancel superseded PR runs only; every main commit gets a full result.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# release-please PRs change only versions and changelogs (release-please--* branches). They skip
+# server-web and image; the android release PR runs just the release build, which evaluates
+# versionCodeFor(versionName) and R8.
+env:
+  RELEASE_PR: ${{ startsWith(github.head_ref, 'release-please--') }}
+
 jobs:
   server-web:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -35,6 +42,9 @@ jobs:
         run: mise exec -- go test -race ./...
 
   android:
+    if: >-
+      !startsWith(github.head_ref, 'release-please--') ||
+      github.head_ref == 'release-please--branches--main--components--android'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -44,12 +54,16 @@ jobs:
         run: |
           yes | sdkmanager --licenses > /dev/null
           sdkmanager 'platform-tools' 'platforms;android-37.2' 'build-tools;37.0.0'
-      - run: mise run lint:android
-      - run: mise run test:android
-      - run: mise run build:android
+      - if: env.RELEASE_PR != 'true'
+        run: mise run lint:android
+      - if: env.RELEASE_PR != 'true'
+        run: mise run test:android
+      - if: env.RELEASE_PR != 'true'
+        run: mise run build:android
       - name: Release build (unsigned; catches R8/minification problems)
         run: mise run build:android:release
       - name: Upload debug APKs
+        if: env.RELEASE_PR != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: chorecast-debug-apks
@@ -57,6 +71,7 @@ jobs:
           retention-days: 14
 
   image:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
