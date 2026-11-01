@@ -71,7 +71,8 @@ releases must be 3 days old, non-major updates are grouped per ecosystem (Go mod
 GitHub Actions, toolchain and images), and security fixes open immediately. Commits use `chore(deps):`, so
 they don't trigger a release on their own. The Dependency Dashboard issue lists pending and rate-limited updates.
 
-It needs a `RENOVATE_TOKEN` secret: a fine-grained PAT scoped to this repo with **Contents**, **Pull requests**,
+It commits as the token owner (`RENOVATE_GIT_AUTHOR` in the workflow) through the GitHub API, so commits are
+signed. It needs a `RENOVATE_TOKEN` secret: a fine-grained PAT scoped to this repo with **Contents**, **Pull requests**,
 **Issues**, **Workflows** and **Commit statuses** read/write, plus **Dependabot alerts** read (for vulnerability
 PRs). Dependabot alerts stay on as a data source; Dependabot security update PRs are off.
 
