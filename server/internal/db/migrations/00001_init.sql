@@ -226,7 +226,38 @@ CREATE TABLE events (
 );
 CREATE INDEX events_undispatched ON events (id) WHERE dispatched_at IS NULL;
 
+-- ==== points ledger (#26) ====
+-- Append-only points ledger (internal/ledger). A kid's balance is SUM(amount); nothing else stores
+-- it. Mistakes are fixed with a reversal entry (reverses_id), never by editing or deleting a row.
+-- source_kind/source_id name what the entry is for (e.g. 'chore_instance', <id>). There is no
+-- foreign key: sources live in tables of other features (some not built yet), and the ledger
+-- must outlive them.
+CREATE TABLE points_entries (
+    id               INTEGER PRIMARY KEY,
+    kid_id           INTEGER NOT NULL REFERENCES users (id),
+    kind             TEXT    NOT NULL CHECK (kind IN ('chore', 'chore_penalty', 'streak_bonus', 'adjustment', 'reversal')),
+    amount           INTEGER NOT NULL,
+    requested_amount INTEGER,                  -- the asked-for amount when allow_negative_balance = 0 clamped it
+    local_date       TEXT    NOT NULL,         -- YYYY-MM-DD: the kid's household-local day the entry belongs to
+    source_kind      TEXT,
+    source_id        INTEGER,
+    reverses_id      INTEGER UNIQUE REFERENCES points_entries (id), -- an entry is reversed at most once
+    note             TEXT    NOT NULL DEFAULT '',
+    created_by       INTEGER REFERENCES users (id), -- the parent (or kid); NULL = the system
+    created_at       TEXT    NOT NULL,
+    CHECK ((kind = 'reversal') = (reverses_id IS NOT NULL)),
+    CHECK (kind NOT IN ('adjustment', 'reversal') OR note != ''),
+    CHECK ((source_kind IS NULL) = (source_id IS NULL))
+);
+CREATE INDEX points_entries_kid ON points_entries (kid_id, id, amount);
+-- At most one chore, penalty or streak bonus entry per kid and source, so at-least-once callers
+-- (day close, approvals) can't post twice. Reversals copy their original's source and are
+-- excluded; undoing a reversal reverses it again.
+CREATE UNIQUE INDEX points_entries_once ON points_entries (kind, source_kind, source_id, kid_id)
+    WHERE source_id IS NOT NULL AND kind IN ('chore', 'chore_penalty', 'streak_bonus');
+
 -- +goose Down
+DROP TABLE points_entries;
 DROP TABLE events;
 DROP TABLE idempotency_keys;
 DROP TABLE schedule_cursors;

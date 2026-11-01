@@ -143,6 +143,21 @@ type PairingCode struct {
 	UsedAt    sql.NullString `json:"used_at"`
 }
 
+type PointsEntry struct {
+	ID              int64          `json:"id"`
+	KidID           int64          `json:"kid_id"`
+	Kind            string         `json:"kind"`
+	Amount          int64          `json:"amount"`
+	RequestedAmount sql.NullInt64  `json:"requested_amount"`
+	LocalDate       string         `json:"local_date"`
+	SourceKind      sql.NullString `json:"source_kind"`
+	SourceID        sql.NullInt64  `json:"source_id"`
+	ReversesID      sql.NullInt64  `json:"reverses_id"`
+	Note            string         `json:"note"`
+	CreatedBy       sql.NullInt64  `json:"created_by"`
+	CreatedAt       string         `json:"created_at"`
+}
+
 type RecoveryCode struct {
 	ID        int64          `json:"id"`
 	UserID    int64          `json:"user_id"`

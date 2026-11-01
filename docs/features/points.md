@@ -56,6 +56,34 @@ Rules:
   `transfer_in` with the same `transfer_id` in one transaction.
 - Un-approving a chore, un-excusing, or removing a behavior all write `reversal` entries.
 
+Built (#26, `internal/ledger`, server only; the web screen is #34). `points_entries` has the v1 kinds `chore`,
+`chore_penalty`, `streak_bonus`, `adjustment` and `reversal`. Instead of one nullable column per source, an entry
+names its source as `source_kind` + `source_id` (e.g. `chore_instance`, id) with no foreign key, so later
+features add sources without schema changes. `created_by` is NULL for the system. Choices made in implementation:
+
+- **Calling it.** Features post inside their own `bus.InTx` transaction: `ledger.Post(ctx, tx, clock, Posting{…})`
+  and `ledger.Reverse(ctx, tx, clock, entryID, note, by)`. The entry, the caller's state change and the
+  `points.entry_posted` event commit together. `ledger.Balance` / `ledger.Available` take any `*sqlc.Queries`.
+- **At most once.** A unique index allows one `chore`, `chore_penalty` or `streak_bonus` entry per (kind, kid,
+  source), and these kinds require a source. A repeat `Post` writes nothing and returns the existing entry with
+  `ErrAlreadyPosted`, so at-least-once callers (day close #24, approvals #25) treat that error as done and must
+  not return it from their `InTx` function, or their own change rolls back. Undoing a reversal (re-approving,
+  un-excusing) means reversing the reversal, not posting again. Streak bonuses (#30) should use a per-day source
+  such as (`streak_day`, YYYYMMDD).
+- **Clamping.** With `allowNegativeBalance` off, a deduction is clamped so the balance doesn't drop below 0. If
+  the balance is already at or below 0, it clamps to 0. A clamped entry is still written, with
+  `requested_amount` set. Reversals are never clamped (always the exact negation), so reversing a credit that
+  was already spent can take a balance below zero.
+- **Reversals** take a required note, copy the original's source and can themselves be reversed. A second
+  reversal of one entry fails with `ErrAlreadyReversed` (409 `already_reversed`).
+- **`local_date`** is the caller's date (day close passes the closed day). Otherwise it is the kid's current day:
+  the day whose window, up to the kid's effective day end, contains now. A reversal always gets the current day.
+- **Available** is the balance for now. Holds join `ledger.Available` with rewards (Phase 2).
+- **API.** `GET /kids/{kid}/points` (`balance`, `available`) and `GET /kids/{kid}/points/entries` (paged, newest
+  first, each entry with `balanceAfter` and `reversedById`) need `points:read`. Kids can read only their own.
+  `POST /kids/{kid}/points/adjustments` (`amount` ≠ 0, `note`) and `POST /kids/{kid}/points/entries/{entry}/reversal`
+  (`note`) need `points:manage` (parents).
+
 ## Chore instance lifecycle (points-relevant)
 
 ```

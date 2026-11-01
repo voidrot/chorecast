@@ -751,6 +751,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kids/{kid}/points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A kid's points balance
+         * @description Kids can read only their own.
+         */
+        get: operations["getKidPointsBalance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kids/{kid}/points/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add or subtract points by hand
+         * @description A note is required. With negative balances off, a deduction is clamped to the balance and the entry's `requestedAmount` records what was asked.
+         */
+        post: operations["createKidPointsAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kids/{kid}/points/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A kid's points ledger, newest first
+         * @description Each entry carries the balance after it. Kids can read only their own.
+         */
+        get: operations["listKidPointsEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kids/{kid}/points/entries/{entry}/reversal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reverse a points entry
+         * @description Appends a reversal with the negated amount; nothing is edited or deleted. A note is required. An entry can be reversed once (409 `already_reversed`); a reversal can itself be reversed.
+         */
+        post: operations["reverseKidPointsEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kids/{kid}/unarchive": {
         parameters: {
             query?: never;
@@ -1486,6 +1566,11 @@ export interface components {
             /** @enum {string} */
             weekday: "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
         };
+        PagePointsEntry: {
+            items: components["schemas"]["PointsEntry"][];
+            /** @description Pass as cursor to fetch the next page. Absent on the last page. */
+            nextCursor?: string;
+        };
         PairDeviceInputBody: {
             appVersion?: string;
             code: string;
@@ -1521,6 +1606,81 @@ export interface components {
         PasswordInputBody: {
             /** @description Your account password, to confirm */
             password: string;
+        };
+        PointsAdjustmentInput: {
+            /**
+             * Format: int64
+             * @description Points to add (positive) or subtract (negative); not zero
+             */
+            amount: number;
+            /** @description Why; shown to the kid */
+            note: string;
+        };
+        PointsBalance: {
+            /**
+             * Format: int64
+             * @description Balance minus points held by pending requests
+             */
+            available: number;
+            /**
+             * Format: int64
+             * @description SUM of the kid's ledger entries
+             */
+            balance: number;
+        };
+        PointsEntry: {
+            /**
+             * Format: int64
+             * @description Signed points
+             */
+            amount: number;
+            /**
+             * Format: int64
+             * @description The kid's balance including this entry and every earlier one
+             */
+            balanceAfter: number;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: int64
+             * @description The user who made the entry; absent = the system
+             */
+            createdBy?: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            kidId: number;
+            /** @enum {string} */
+            kind: "chore" | "chore_penalty" | "streak_bonus" | "adjustment" | "reversal";
+            /**
+             * Format: date
+             * @description The kid's household-local day the entry belongs to
+             */
+            localDate: string;
+            note?: string;
+            /**
+             * Format: int64
+             * @description The asked-for amount, when negative balances are off and the deduction was clamped to the balance
+             */
+            requestedAmount?: number;
+            /**
+             * Format: int64
+             * @description The reversal that undid this entry, if any
+             */
+            reversedById?: number;
+            /**
+             * Format: int64
+             * @description Reversals: the entry this one undoes
+             */
+            reversesId?: number;
+            /** Format: int64 */
+            sourceId?: number;
+            /** @description What the entry is for, e.g. chore_instance */
+            sourceKind?: string;
+        };
+        PointsReversalInput: {
+            /** @description Why; shown to the kid */
+            note: string;
         };
         Problem: {
             /**
@@ -4087,6 +4247,263 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getKidPointsBalance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PointsBalance"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createKidPointsAdjustment: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PointsAdjustmentInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PointsEntry"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listKidPointsEntries: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from a previous page's nextCursor. Omit for the first page. */
+                cursor?: string;
+                /** @description Maximum number of items to return. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagePointsEntry"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reverseKidPointsEntry: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+                /** @description The entry to reverse */
+                entry: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PointsReversalInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PointsEntry"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

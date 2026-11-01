@@ -44,7 +44,7 @@ Run from the repo root with mise, or from `server/` with plain Go.
 ## Packages
 
 - `internal/db`: `Open` sets WAL and foreign keys, pins the pool to one connection, and runs embedded goose migrations. `migrations/` holds the schema, `queries/` holds sqlc input, `sqlc/` holds generated code.
-- Domain: `chores` (definitions), `schedule` (rules), `assign` (who gets each occurrence; pure and deterministic), `kids` (profiles and slugs), `household`, `parents`, `account`, `sso`, `devices`, `setup`.
+- Domain: `chores` (definitions), `schedule` (rules), `assign` (who gets each occurrence; pure and deterministic), `kids` (profiles and slugs), `ledger` (points entries and balances), `household`, `parents`, `account`, `sso`, `devices`, `setup`.
 - Cross-cutting: `apierr`, `paging`, `idempotency`, `auth`, `clock`, `caltime`, `events`, `jobs`, `webui`.
 - Services take `(*db.DB, clock.Clock)`. `household.New` takes the bus instead.
 
@@ -66,7 +66,7 @@ No extra step is needed for idempotency. `idempotency.AddHeaderParam` documents 
 - Every operation declares `auth.Require(scopes…)`, which accepts a bearer token or the session cookie, or `auth.Public()`. An operation without either gets 403 `no_access_policy`.
 - Scopes live in `internal/auth/scope.go`. Pick the narrowest one. Parent-only writes use `household:manage`. Owner-only capabilities use `server:manage` or `parents:manage`.
 - Scope sets are per principal kind: parent, owner, kid, shared device, display, and API key. API keys hold no scopes yet and are denied everything.
-- Scopes don't limit data. A handler serving one kid's data must check `Principal.CanAccessKid(id)`. The method exists, but no handler calls it yet.
+- Scopes don't limit data. A handler serving one kid's data must check `Principal.CanAccessKid(id)`. The points handlers (`pointsKid` in `internal/api/points.go`) show the pattern.
 - Bearer tokens accept `app`, `device`, `device_session`, `display` and `api`. `web_session` is accepted only as the cookie (`authenticate` in `internal/auth/middleware.go`).
 - Read the caller with `auth.PrincipalFrom(ctx)`. Operations with a policy always have a principal.
 - Credential endpoints use `auth.NewLimiter`. Sensitive parent changes re-check the password and answer 403 `invalid_password`, not 401.
@@ -83,7 +83,7 @@ No extra step is needed for idempotency. `idempotency.AddHeaderParam` documents 
 - Recurring work is a `jobs.Provider` added with `sched.Add`: `Every`, `KidDayCloses`, `KidWeekCloses` or `HouseholdDayCloses`.
 - Handlers must be idempotent. Delivery is at-least-once.
 - Events are typed structs with `EventType()`. They are emitted inside `bus.InTx` with `tx.Emit`. Subscribers are registered with `bus.Subscribe(eventType, name, handler, opts)` in `background.go`, and decode with `events.Decode[T]`.
-- Only one event exists today, `household.calendar_changed`, and no subscribers are registered.
+- Two events exist today, `household.calendar_changed` and `points.entry_posted`, and no subscribers are registered.
 
 ## Web admin embed
 

@@ -23,6 +23,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/kids"
+	"github.com/voidrot/chorecast/server/internal/ledger"
 	"github.com/voidrot/chorecast/server/internal/parents"
 	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/sso"
@@ -81,7 +82,8 @@ func New(r chi.Router, deps Deps) huma.API {
 	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock),
 		sso: sso.New(deps.Config, deps.DB, deps.Clock), parents: parents.New(deps.DB, deps.Clock),
 		kids: kids.NewService(deps.DB, deps.Clock), household: household.New(deps.DB, deps.Bus),
-		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock)}
+		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock),
+		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock)}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
@@ -106,6 +108,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerHousehold(hapi, h)
 	registerDevices(hapi, h)
 	registerChores(hapi, h)
+	registerPoints(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -133,6 +136,7 @@ type handlers struct {
 	household *household.Service
 	devices   *devices.Service
 	chores    *chores.Service
+	ledger    *ledger.Service
 }
 
 type HealthOutput struct {

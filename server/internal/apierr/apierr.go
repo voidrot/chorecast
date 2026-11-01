@@ -54,6 +54,9 @@ const (
 	CodeInvalidIdempotency  = "invalid_idempotency_key"
 	CodeIdempotencyReuse    = "idempotency_key_reuse"
 	CodeIdempotencyInFlight = "idempotency_key_in_progress"
+	CodePointsEntryNotFound = "points_entry_not_found" // (404)
+	CodeAlreadyReversed     = "already_reversed"       // a points entry can be reversed only once (409)
+	CodeAlreadyPosted       = "already_posted"         // a points entry for this kind and source exists (409)
 )
 
 var defaultCodes = map[int]string{

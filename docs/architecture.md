@@ -152,8 +152,8 @@ Implemented in `internal/auth`:
   complete chores); shared device (read profiles, pick a kid); display (read-only); API key (no scopes until
   per-key grants exist post-v1).
 - **Data scoping** is separate from scopes: a handler that serves one kid's data must call `Principal.CanAccessKid(id)`.
-  Parents and displays cover every kid; a kid only themselves; shared devices and API keys none. Not yet applied:
-  `CanAccessKid` is defined and tested, but no handler calls it, so each kid-scoped endpoint must add the check when it lands.
+  Parents and displays cover every kid; a kid only themselves; shared devices and API keys none. The points
+  endpoints (`pointsKid` in `internal/api/points.go`) apply it; each new kid-scoped endpoint must add the check.
 - Handlers read the caller with `auth.PrincipalFrom(ctx)`.
 - Passwords and PINs use argon2id (OWASP minimum: 19 MiB, t=2, p=1) in PHC format; `VerifySecret` reports when a
   stored hash should be upgraded.
@@ -181,7 +181,7 @@ Implemented in `internal/auth`:
 - Handlers return `apierr.New(status, code, detail)`; plain Huma errors get a default code per status. Unknown
   paths and methods under `/api/v1` answer in the same format.
 
-**Pagination** (`internal/paging`; the convention for new list endpoints, no list endpoint uses it yet)
+**Pagination** (`internal/paging`; the convention for new list endpoints, first used by the points ledger)
 - List operations embed `paging.Params` (`?cursor=&limit=`, limit 1–100, default 50) and return
   `{ "items": [...], "nextCursor": "..." }`; `nextCursor` is absent on the last page.
 - Cursors are opaque (versioned base64url keyset). Handlers fetch `limit+1` rows after the decoded key and call
@@ -279,7 +279,7 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   are durable even if the process dies a moment later.
 - **Inside `InTx`, use only `tx.Q`.** SQLite runs on a single connection, so any other query blocks until the
   transaction ends.
-- Events are typed structs with a stable `EventType()` (today only `household.calendar_changed`); subscribers decode with
+- Events are typed structs with a stable `EventType()` (today `household.calendar_changed` and `points.entry_posted`); subscribers decode with
   `events.Decode[T]`.
 - The dispatcher (woken on commit, polling every second) turns each event into one job per subscriber (key
   `event:<id>:<subscriber>`) and marks it dispatched. Each subscriber therefore retries independently with job
