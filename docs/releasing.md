@@ -8,7 +8,9 @@ on `main` (`.github/workflows/release.yml`, config in `release-please-config.jso
 - release-please keeps one release PR per component (`separate-pull-requests`): **server** (with **web** linked
   to the same version, since the admin is embedded in the server binary) and **android**. Merging a release PR
   tags it (`server-v1.2.3`, `android-v1.2.3`) and creates the GitHub release.
-- `feat:` bumps minor, `fix:` bumps patch, `!` / `BREAKING CHANGE:` bumps major (minor while < 1.0).
+- Below 1.0 (`bump-minor-pre-major`): `feat:` and `!` / `BREAKING CHANGE:` bump minor, `fix:` bumps patch,
+  so the first release is `0.1.0` and nothing reaches 1.0 until a `Release-As: 1.0.0` footer says so.
+  From 1.0: `feat:` minor, `fix:` patch, breaking major.
 - **Server release** → multi-arch images (amd64, arm64) on GHCR:
 
   | Image | Tags | Contents |
@@ -46,6 +48,13 @@ Add these repository secrets (Settings → Secrets and variables → Actions):
 
 The Android release job fails with a clear error if the keystore secret is missing; nothing unsigned is
 published.
+
+## One-time setup: release-please token
+
+`GITHUB_TOKEN` can open release PRs (the repo allows Actions to create pull requests), but PRs it opens don't
+trigger CI. Add a `RELEASE_PLEASE_TOKEN` secret so release PRs get checks: a fine-grained PAT scoped to this
+repo with **Contents**, **Pull requests** and **Issues** read/write (labels), or a GitHub App installation
+token. Without it the workflow falls back to `GITHUB_TOKEN`; close and reopen a release PR to run CI on it.
 
 ## Local builds
 
