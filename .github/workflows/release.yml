@@ -17,9 +17,9 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      server: ${{ steps.rp.outputs['server--release_created'] }}
-      server_version: ${{ steps.rp.outputs['server--version'] }}
-      server_tag: ${{ steps.rp.outputs['server--tag_name'] }}
+      server: ${{ steps.rp.outputs.release_created }}
+      server_version: ${{ steps.rp.outputs.version }}
+      server_tag: ${{ steps.rp.outputs.tag_name }}
       android: ${{ steps.rp.outputs['android--release_created'] }}
       android_tag: ${{ steps.rp.outputs['android--tag_name'] }}
       android_version: ${{ steps.rp.outputs['android--version'] }}

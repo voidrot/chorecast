@@ -5,9 +5,13 @@ on `main` (`.github/workflows/release.yml`, config in `release-please-config.jso
 
 ## How it works
 
-- release-please keeps one release PR per component (`separate-pull-requests`): **server** (with **web** linked
-  to the same version, since the admin is embedded in the server binary) and **android**. Merging a release PR
-  tags it (`server-v1.2.3`, `android-v1.2.3`) and creates the GitHub release.
+- release-please keeps one release PR per component (`separate-pull-requests`):
+  - **server** is the package at the repo root (excluding `android/`), so it covers `server/` and `web/`: the admin
+    ships inside the server binary. Its changelog is `server/CHANGELOG.md`, and `web/package.json`'s `version` is
+    bumped with it. Tags are `server-v1.2.3`.
+  - **android** covers `android/`. Tags are `android-v1.2.3`.
+
+  Merging a release PR tags it and creates the GitHub release.
 - PRs are squash-merged with the **PR title** as the commit title and the PR description as the body, so
   the PR title decides the release (`feat(server): …`, `fix(web): …`, `feat!: …`); a `BREAKING CHANGE:`
   footer in the description also counts. The *PR title* check enforces Conventional Commits on titles.
