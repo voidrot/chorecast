@@ -4,6 +4,7 @@
   "bump-minor-pre-major": true,
   "initial-version": "0.1.0",
   "separate-pull-requests": true,
+  "group-pull-request-title-pattern": "chore${scope}: release${component} libraries",
   "packages": {
     "server": {
       "component": "server",
@@ -23,6 +24,6 @@
     }
   },
   "plugins": [
-    { "type": "linked-versions", "groupName": "server+web", "components": ["server", "web"] }
+    { "type": "linked-versions", "groupName": "server-web", "components": ["server", "web"] }
   ]
 }
