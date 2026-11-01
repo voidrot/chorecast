@@ -17,7 +17,7 @@ android {
         applicationId = "dev.voidrot.chorecast"
         minSdk = 26
         targetSdk = 36
-        versionName = "0.0.0" // x-release-please-version
+        versionName = "0.1.0" // x-release-please-version
         versionCode = versionCodeFor(versionName!!)
     }
 
