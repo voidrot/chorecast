@@ -56,6 +56,18 @@ trigger CI. Add a `RELEASE_PLEASE_TOKEN` secret so release PRs get checks: a fin
 repo with **Contents**, **Pull requests** and **Issues** read/write (labels), or a GitHub App installation
 token. Without it the workflow falls back to `GITHUB_TOKEN`; close and reopen a release PR to run CI on it.
 
+## Dependency updates (Renovate)
+
+Renovate replaces Dependabot here. It runs self-hosted from `.github/workflows/renovate.yml` every 6 hours
+(and on demand via *Run workflow*); `renovate.json` holds the rules: new update PRs open before 6am on Mondays,
+releases must be 3 days old, non-major updates are grouped per ecosystem (Go modules, web packages, Android,
+GitHub Actions, toolchain and images), and security fixes open immediately. Commits use `chore(deps):`, so
+they don't trigger a release on their own. The Dependency Dashboard issue lists pending and rate-limited updates.
+
+It needs a `RENOVATE_TOKEN` secret: a fine-grained PAT scoped to this repo with **Contents**, **Pull requests**,
+**Issues**, **Workflows** and **Commit statuses** read/write, plus **Dependabot alerts** read (for vulnerability
+PRs). Dependabot alerts stay on as a data source; Dependabot security update PRs are off.
+
 ## Local builds
 
 - `mise run build:android:release` builds release APKs. They are **unsigned** unless these are set:
