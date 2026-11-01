@@ -1,0 +1,36 @@
+name: Renovate
+
+on:
+  schedule:
+    # Frequent runs pick up Dependency Dashboard checkboxes and rebases; renovate.json's
+    # schedule decides when new update PRs open.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      log-level:
+        description: Renovate log level
+        type: choice
+        options: [info, debug]
+        default: info
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: renovatebot/github-action@v46.3.11
+        with:
+          # All repo writes use this token (see docs/releasing.md for its scopes), not GITHUB_TOKEN,
+          # so Renovate's PRs trigger CI.
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: required
+          LOG_LEVEL: ${{ inputs.log-level || 'info' }}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits", ":maintainLockFilesWeekly"],
+  "schedule": ["before 6am on monday"],
+  "minimumReleaseAge": "3 days",
+  "labels": ["dependencies"],
+  "postUpdateOptions": ["gomodTidy", "pnpmDedupe"],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": ["dependencies", "security"],
+    "schedule": ["at any time"],
+    "minimumReleaseAge": null
+  },
+  "packageRules": [
+    {
+      "description": "One PR per ecosystem for non-major updates",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "matchManagers": ["gomod"],
+      "groupName": "go modules"
+    },
+    {
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "matchManagers": ["npm"],
+      "groupName": "web packages"
+    },
+    {
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "matchManagers": ["gradle", "gradle-wrapper"],
+      "groupName": "android dependencies"
+    },
+    {
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "matchManagers": ["mise", "dockerfile"],
+      "groupName": "toolchain and images"
+    },
+    {
+      "description": "The Go toolchain moves together across mise.toml, go.mod and the Dockerfile",
+      "matchDepNames": ["go", "golang"],
+      "groupName": "go toolchain"
+    },
+    {
+      "description": "Node moves together across mise.toml and the Dockerfile",
+      "matchDepNames": ["node"],
+      "groupName": "node toolchain"
+    }
+  ]
+}

@@ -7,7 +7,11 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  packages: write
+
+# Never cancel: an interrupted run can leave a release half-created.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release-please:
@@ -23,6 +27,9 @@ jobs:
       - id: rp
         uses: googleapis/release-please-action@v5
         with:
+          # A PAT or GitHub App token, so CI runs on release PRs (PRs opened with
+          # GITHUB_TOKEN don't trigger workflows). Falls back until the secret exists.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
@@ -30,6 +37,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.server == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
