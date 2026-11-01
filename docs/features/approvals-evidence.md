@@ -91,6 +91,27 @@ upload → quarantine/tmp → validate (magic bytes, size, duration)
 - Backups: local media lives in the data dir, so one directory captures everything. With S3, backing up media is
   the bucket's responsibility; documented.
 
+Built (#75, `internal/media`): the photo half of the pipeline, local storage only.
+- `POST /media/photos` (multipart `file`; kids and parents, scope `chores:complete`). The format comes from the
+  magic bytes (JPEG, PNG, WebP; HEIC/AVIF and anything else is 415), the size cap from
+  `CHORECAST_MEDIA_MAX_PHOTO_MB` (413 `payload_too_large`), and images over 40 MP are refused from their header
+  before decoding (413 `image_too_large`). The photo is turned upright from its EXIF orientation, scaled to
+  ≤1600 px plus a ≤320 px thumbnail, and both are re-encoded as lossy WebP holding pixels only (no EXIF, GPS, XMP or
+  ICC). WebP encoding is pure Go (`github.com/gen2brain/vpx`), so the `CGO_ENABLED=0` build keeps working.
+- SHA-256 is of the decoded pixels (dimensions, then RGBA rows), so re-saving a photo with other metadata doesn't
+  change it; dHash is stored for later near-duplicate flagging. A kid's upload that matches `media_hashes` is 409
+  `duplicate_media`; kid uploads are recorded there, which outlives the `media` row. Parents' uploads are neither
+  checked nor recorded.
+- New media is `owner_kind = 'pending'` (no owner id) until #27 attaches it. `GET /media/{id}` returns it with fresh
+  signed links to the photo and thumbnail: parents see all media, a kid only pending media they uploaded, anyone
+  else gets 404 `media_not_found`.
+- Signed links (`GET /media/files/{key}?exp&sig`, public: the signature is the credential) last 10 minutes. The
+  HMAC-SHA256 key is derived from a random server secret created on first use in the `server_keys` table. A wrong
+  or expired signature is 403 `invalid_media_url`; media whose row is gone, whose status is `expired`, or whose file
+  is missing is 410 `media_expired`. Files are served with `Cache-Control: private` and `nosniff`.
+- Files live under `$CHORECAST_DATA_DIR/media/aa/bb/<key>` (`<key>_t` for the thumbnail), keyed by a random
+  128-bit hex key and written to a temp file, then renamed. Photo processing runs one at a time.
+
 ## Review queue (parent)
 
 - List of `submitted` instances, oldest first, grouped by kid, with thumbnails, AI verdict chip, checklist and note.
