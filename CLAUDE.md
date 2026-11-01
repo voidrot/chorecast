@@ -74,10 +74,11 @@ handlers must be idempotent.
   declares neither, and the middleware refuses such operations at runtime.
 - Scopes answer "may this principal call this operation". Data scoping is a separate check, `Principal.CanAccessKid`.
 
-**Release and versioning.** release-please (`release-please-config.json`) opens one release PR per component:
-`server`, `web` and `android`. `web` is linked to `server` so both share a version, since the admin ships in the
-binary, and it has no GitHub release of its own. A merged release PR tags `server-vX.Y.Z` or `android-vX.Y.Z`.
-Before 1.0, `feat` bumps minor and `fix` bumps patch. `docs/releasing.md` covers the rest, including signing.
+**Release and versioning.** release-please (`release-please-config.json`) opens one release PR per component.
+`server` is the package at the repo root (excluding `android/`), so it covers `server/` and `web/`, since the admin
+ships in the binary; its changelog is `server/CHANGELOG.md` and it bumps `web/package.json`'s version. `android`
+covers `android/`. A merged release PR tags `server-vX.Y.Z` or `android-vX.Y.Z`. Before 1.0, `feat` bumps minor
+and `fix` bumps patch. `docs/releasing.md` covers the rest, including signing.
 
 **Image variants.** Both variants run as uid 65532, so one `/data` volume works with either.
 - `runtime` (default): distroless static, published as `ghcr.io/voidrot/chorecast:X.Y.Z`, `:X.Y`, `:latest`.
