@@ -19,6 +19,11 @@ type Chore struct {
 	Steps               string         `json:"steps"`
 	Slots               string         `json:"slots"`
 	Schedule            sql.NullString `json:"schedule"`
+	AssignMode          string         `json:"assign_mode"`
+	AssignKids          string         `json:"assign_kids"`
+	SharedPoints        string         `json:"shared_points"`
+	SharedPenalty       string         `json:"shared_penalty"`
+	RotationState       string         `json:"rotation_state"`
 	RequiresApproval    int64          `json:"requires_approval"`
 	Escalate            int64          `json:"escalate"`
 	AutoApproveHours    sql.NullInt64  `json:"auto_approve_hours"`
@@ -80,6 +85,7 @@ type Household struct {
 	MediaRetentionDays   int64         `json:"media_retention_days"`
 	AutoApproveHours     sql.NullInt64 `json:"auto_approve_hours"`
 	OfflineGraceMinutes  int64         `json:"offline_grace_minutes"`
+	DefaultChoreMinutes  int64         `json:"default_chore_minutes"`
 	CreatedAt            string        `json:"created_at"`
 }
 

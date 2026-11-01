@@ -31,7 +31,12 @@ type choreJSON struct {
 		KidID int64
 		Allow bool
 	}
-	Schedule map[string]any
+	Schedule   map[string]any
+	Assignment struct {
+		Mode                        string
+		KidIDs                      []int64
+		SharedPoints, SharedPenalty string
+	}
 	Disabled bool
 }
 
@@ -91,6 +96,9 @@ func TestChoreDefinitions(t *testing.T) {
 		"unknown kid":                 {map[string]any{"eligibility": []map[string]any{{"kidId": 999, "allow": false}}}, "body.eligibility[0].kidId"},
 		"blank name":                  {map[string]any{"name": "  "}, "body.name"},
 		"schedule without days":       {map[string]any{"schedule": map[string]any{"type": "weekly", "startDate": "2026-11-01"}}, "body.schedule.weekdays"},
+		"fixed without kids":          {map[string]any{"assignment": map[string]any{"mode": "fixed"}}, "body.assignment.kidIds"},
+		"shared with one kid":         {map[string]any{"assignment": map[string]any{"mode": "shared", "kidIds": []int{1}}}, "body.assignment.kidIds"},
+		"assignment unknown kid":      {map[string]any{"assignment": map[string]any{"mode": "rotation", "kidIds": []int{999}}}, "body.assignment.kidIds[0]"},
 		"schedule unknown weekday":    {map[string]any{"schedule": map[string]any{"type": "weekly", "weekdays": []string{"fun"}, "startDate": "2026-11-01"}}, "body.schedule.weekdays[0]"},
 	} {
 		body := map[string]any{"name": "Chore", "points": 1, "requiresApproval": true, "evidence": map[string]any{"photos": 0}}
@@ -184,5 +192,62 @@ func TestChoreSchedules(t *testing.T) {
 	rec = s.do("POST", "/api/v1/chores/preview-schedule", map[string]any{"rule": map[string]any{"type": "once", "date": "2026-10-01"}}, mom)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"occurrences":[]`) {
 		t.Errorf("past once preview = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestChoreAssignment(t *testing.T) {
+	s := newAuthServer(t)
+	mom := sessionCookie(t, s.do("POST", "/api/v1/auth/login", login(nil)))
+	kids, _ := s.store.ListKids(t.Context(), false)
+	if len(kids) < 2 {
+		t.Fatalf("need two kids, have %d", len(kids))
+	}
+	a, b := kids[0].ID, kids[1].ID
+	base := func(assignment map[string]any) map[string]any {
+		m := map[string]any{"name": "Dishes", "points": 3, "requiresApproval": false, "evidence": map[string]any{"photos": 0}}
+		if assignment != nil {
+			m["assignment"] = assignment
+		}
+		return m
+	}
+
+	// Absent = everyone.
+	c := decode[choreJSON](t, s.do("POST", "/api/v1/chores", base(nil), mom))
+	if c.Assignment.Mode != "everyone" || len(c.Assignment.KidIDs) != 0 || c.Assignment.SharedPoints != "" {
+		t.Errorf("default assignment = %+v", c.Assignment)
+	}
+	// Shared gets default policies; everyone drops kids; other modes drop shared policies.
+	rec := s.do("PUT", "/api/v1/chores/"+itoa(c.ID), base(map[string]any{"mode": "shared", "kidIds": []int64{b, a}}), mom)
+	wantCode(t, "shared", rec, 200, "")
+	if got := decode[choreJSON](t, rec).Assignment; got.SharedPoints != "completer_takes_all" || got.SharedPenalty != "all" || fmt.Sprint(got.KidIDs) != fmt.Sprint([]int64{b, a}) {
+		t.Errorf("shared = %+v", got)
+	}
+	got := decode[choreJSON](t, s.do("PUT", "/api/v1/chores/"+itoa(c.ID), base(map[string]any{"mode": "everyone", "kidIds": []int64{a}, "sharedPoints": "split_evenly"}), mom)).Assignment
+	if got.Mode != "everyone" || len(got.KidIDs) != 0 || got.SharedPoints != "" {
+		t.Errorf("everyone = %+v", got)
+	}
+
+	// The rotation's progress survives unrelated edits and resets when the rotation changes.
+	rotation := base(map[string]any{"mode": "rotation", "kidIds": []int64{a, b}})
+	wantCode(t, "rotation", s.do("PUT", "/api/v1/chores/"+itoa(c.ID), rotation, mom), 200, "")
+	if _, err := s.store.SQL.ExecContext(t.Context(), `UPDATE chores SET rotation_state = '{"cursor":1}' WHERE id = ?`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	state := func() string {
+		row, err := s.store.GetChore(t.Context(), c.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return row.RotationState
+	}
+	rotation["points"] = 4
+	wantCode(t, "edit points", s.do("PUT", "/api/v1/chores/"+itoa(c.ID), rotation, mom), 200, "")
+	if st := state(); st != `{"cursor":1}` {
+		t.Errorf("state after unrelated edit = %s", st)
+	}
+	rotation["assignment"] = map[string]any{"mode": "rotation", "kidIds": []int64{b, a}}
+	wantCode(t, "reorder", s.do("PUT", "/api/v1/chores/"+itoa(c.ID), rotation, mom), 200, "")
+	if st := state(); st != "{}" {
+		t.Errorf("state after reorder = %s", st)
 	}
 }

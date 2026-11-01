@@ -78,22 +78,33 @@ Implemented in `server/internal/schedule`:
 | `auto` | one | eligible kid with the lowest load |
 | `shared` | one, assigned to a **group** | any group member can complete it |
 
-**Eligibility** (applied in all modes): not away, household not paused, meets minimum age (computed from birth
-date on the instance's date) unless a per-kid override exists.
+The chore stores `assignment: {mode, kidIds, sharedPoints, sharedPenalty}`; absent means `everyone`. `kidIds` is the
+fixed kids, the rotation order, the auto pool (empty = every kid) or the shared group: there's no separate group
+entity, the group is the chore's kid list. Implemented as a pure planner in `server/internal/assign`: given the kids,
+the chore, its occurrences in order, the rotation state and a fairness ledger, it returns the same instances every
+time, so regenerating the horizon is reproducible.
+
+**Eligibility** (applied in all modes): not archived, not denied by an override, not away / household not paused
+(Phase 2; the planner takes an `Away` hook), and meets the minimum age on the instance's date unless an override
+allows the kid. A kid without a birth date isn't age-gated. Archived kids may stay in a chore's list; they're skipped.
 
 **Rotation**: the chore stores an ordered kid list and a cursor. For each occurrence, walk from the cursor to the
 first eligible kid. If a kid is skipped, they're added to a `owed` list and get the next occurrence they're
-eligible for before the cursor resumes. So the skipped kid "keeps their place" and turns even out.
+eligible for before the cursor resumes. So the skipped kid "keeps their place" and turns even out. Kids who leave for
+good (archived, denied, removed from the list) are never owed. When nobody is eligible there's no instance and
+nobody is owed. The cursor and owed list are stored on the chore (`rotation_state`) and reset when the mode or the
+kid list changes.
 
 **Auto (fair) pick**: load = sum of `estimated_minutes` of the kid's instances over the 7 days ending on the
-instance date (missing minutes counts as a household default, e.g. 10). Pick the lowest load; tie-break on fewest
-recent `auto` picks of this chore, then a stable order. It's deterministic, with no randomness (unlike ownit), so
+instance date (missing minutes counts as the household `defaultChoreMinutes`, default 10). Pick the lowest load; tie-break on fewest
+recent `auto` picks of this chore (same window), then a stable order (the pool's order, or kid id). It's deterministic, with no randomness (unlike ownit), so
 regenerating the horizon is reproducible and testable.
 
 **Shared**: completer taps done and optionally tags helpers from the group. The **completer** must satisfy the
 evidence rules; tagged helpers can attach extra evidence until a parent decides. The AI check runs on the combined set. Points policy per chore:
 `completer_takes_all` or `split_evenly` (remainder to the completer). The penalty when missed goes to every group
-member, or to none, as a per-chore setting.
+member, or to none, as a per-chore setting. For fairness, each member's load gets the chore's minutes divided by the
+group size (rounded up).
 
 ## Rolling horizon generation
 

@@ -44,7 +44,7 @@ func (q *Queries) DeleteSetupToken(ctx context.Context) error {
 }
 
 const getHousehold = `-- name: GetHousehold :one
-SELECT id, name, timezone, day_end, week_start, allow_negative_balance, sibling_visibility, media_retention_days, auto_approve_hours, offline_grace_minutes, created_at FROM household WHERE id = 1
+SELECT id, name, timezone, day_end, week_start, allow_negative_balance, sibling_visibility, media_retention_days, auto_approve_hours, offline_grace_minutes, default_chore_minutes, created_at FROM household WHERE id = 1
 `
 
 func (q *Queries) GetHousehold(ctx context.Context) (Household, error) {
@@ -61,6 +61,7 @@ func (q *Queries) GetHousehold(ctx context.Context) (Household, error) {
 		&i.MediaRetentionDays,
 		&i.AutoApproveHours,
 		&i.OfflineGraceMinutes,
+		&i.DefaultChoreMinutes,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -105,7 +106,8 @@ func (q *Queries) SetSetupToken(ctx context.Context, arg SetSetupTokenParams) er
 
 const updateHousehold = `-- name: UpdateHousehold :exec
 UPDATE household SET name = ?, timezone = ?, day_end = ?, week_start = ?, allow_negative_balance = ?,
-    sibling_visibility = ?, media_retention_days = ?, auto_approve_hours = ?, offline_grace_minutes = ?
+    sibling_visibility = ?, media_retention_days = ?, auto_approve_hours = ?, offline_grace_minutes = ?,
+    default_chore_minutes = ?
 WHERE id = 1
 `
 
@@ -119,6 +121,7 @@ type UpdateHouseholdParams struct {
 	MediaRetentionDays   int64         `json:"media_retention_days"`
 	AutoApproveHours     sql.NullInt64 `json:"auto_approve_hours"`
 	OfflineGraceMinutes  int64         `json:"offline_grace_minutes"`
+	DefaultChoreMinutes  int64         `json:"default_chore_minutes"`
 }
 
 func (q *Queries) UpdateHousehold(ctx context.Context, arg UpdateHouseholdParams) error {
@@ -132,6 +135,7 @@ func (q *Queries) UpdateHousehold(ctx context.Context, arg UpdateHouseholdParams
 		arg.MediaRetentionDays,
 		arg.AutoApproveHours,
 		arg.OfflineGraceMinutes,
+		arg.DefaultChoreMinutes,
 	)
 	return err
 }

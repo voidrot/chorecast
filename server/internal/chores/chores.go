@@ -19,6 +19,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
+	"github.com/voidrot/chorecast/server/internal/assign"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
@@ -46,6 +47,14 @@ type ChoreEligibility struct {
 	Allow bool  `json:"allow" doc:"true: allowed even if younger than minAge; false: never gets this chore"`
 }
 
+// ChoreAssignment is who gets each occurrence. See internal/assign.
+type ChoreAssignment struct {
+	Mode          string  `json:"mode" enum:"fixed,everyone,rotation,auto,shared" doc:"fixed: each listed kid; everyone: each eligible kid; rotation: one kid, taking turns; auto: the eligible kid with the least work over 7 days; shared: one instance for the group"`
+	KidIDs        []int64 `json:"kidIds,omitempty" maxItems:"50" uniqueItems:"true" doc:"fixed: the kids; rotation: the turn order; auto: the pool (empty = every kid); shared: the group. Ignored for everyone."`
+	SharedPoints  string  `json:"sharedPoints,omitempty" enum:"completer_takes_all,split_evenly" doc:"shared: points to the completer, or split evenly with the helpers they tag (remainder to the completer)"`
+	SharedPenalty string  `json:"sharedPenalty,omitempty" enum:"all,none" doc:"shared: when missed, every member gets the penalty, or nobody"`
+}
+
 // ChoreInput is a chore as parents create or edit it.
 type ChoreInput struct {
 	Name             string                 `json:"name" minLength:"1" maxLength:"80"`
@@ -57,6 +66,7 @@ type ChoreInput struct {
 	Steps            []string               `json:"steps,omitempty" maxItems:"20" doc:"Checklist steps shown to the kid"`
 	Slots            []string               `json:"slots,omitempty" maxItems:"6" doc:"Due times (HH:MM) each day it occurs; empty = due at day close. Each slot is its own instance."`
 	Schedule         *schedule.ScheduleRule `json:"schedule,omitempty" doc:"Which days it occurs; absent = not scheduled (kept for later or one-off assignment)"`
+	Assignment       *ChoreAssignment       `json:"assignment,omitempty" doc:"Who gets it; absent = everyone eligible"`
 	RequiresApproval bool                   `json:"requiresApproval" doc:"A parent approves before points are credited"`
 	Escalate         bool                   `json:"escalate,omitempty" doc:"Remind parents if still open 30 minutes before day close (meds, pets)"`
 	AutoApproveHours *int                   `json:"autoApproveHours,omitempty" minimum:"0" maximum:"720" doc:"Absent = household default; 0 = never; N = approve after N hours"`
@@ -130,6 +140,7 @@ func toChore(c sqlc.Chore, equipment []int64, elig []ChoreEligibility) Chore {
 			Name: c.Name, Description: c.Description, Points: int(c.Points), Penalty: int(c.Penalty),
 			EstimatedMinutes: optInt(c.EstimatedMinutes), MinAge: optInt(c.MinAge), Steps: steps, Slots: slots,
 			Schedule:         rule,
+			Assignment:       toAssignment(c),
 			RequiresApproval: c.RequiresApproval == 1, Escalate: c.Escalate == 1, AutoApproveHours: optInt(c.AutoApproveHours),
 			Evidence: EvidenceRules{
 				Photos: int(c.EvidencePhotos), BeforeAfter: c.EvidenceBeforeAfter == 1, Video: c.EvidenceVideo == 1,
@@ -252,6 +263,18 @@ func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, err
 		details = append(details, schedule.Validate(r, "body.schedule")...)
 	}
 
+	in.Assignment = normalizeAssignment(in.Assignment)
+	need := map[string]int{assign.ModeFixed: 1, assign.ModeRotation: 1, assign.ModeShared: 2}[in.Assignment.Mode]
+	if len(in.Assignment.KidIDs) < need {
+		bad("assignment.kidIds", fmt.Sprintf("%s needs at least %d kid(s)", in.Assignment.Mode, need), len(in.Assignment.KidIDs))
+	}
+	for i, id := range in.Assignment.KidIDs {
+		// Archived kids may stay listed (assignment skips them), so archiving a kid doesn't block edits.
+		if _, err := s.db.GetKidByID(ctx, id); err != nil {
+			bad(fmt.Sprintf("assignment.kidIds[%d]", i), "unknown kid", id)
+		}
+	}
+
 	if in.Evidence.BeforeAfter && in.Evidence.Photos < 2 {
 		bad("evidence.beforeAfter", "before and after needs at least 2 photos", in.Evidence.Photos)
 	}
@@ -296,6 +319,51 @@ func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, err
 	return in, nil
 }
 
+func toAssignment(c sqlc.Chore) *ChoreAssignment {
+	a := &ChoreAssignment{Mode: c.AssignMode}
+	_ = json.Unmarshal([]byte(c.AssignKids), &a.KidIDs)
+	if a.Mode == assign.ModeShared {
+		a.SharedPoints, a.SharedPenalty = c.SharedPoints, c.SharedPenalty
+	}
+	return a
+}
+
+// normalizeAssignment fills defaults and drops what the mode doesn't use.
+func normalizeAssignment(a *ChoreAssignment) *ChoreAssignment {
+	if a == nil {
+		return &ChoreAssignment{Mode: assign.ModeEveryone}
+	}
+	out := *a
+	out.KidIDs = slices.Clone(a.KidIDs)
+	if out.Mode == assign.ModeEveryone {
+		out.KidIDs = nil
+	}
+	if out.Mode == assign.ModeShared {
+		if out.SharedPoints == "" {
+			out.SharedPoints = assign.PointsCompleterTakesAll
+		}
+		if out.SharedPenalty == "" {
+			out.SharedPenalty = assign.PenaltyAll
+		}
+	} else {
+		out.SharedPoints, out.SharedPenalty = "", ""
+	}
+	return &out
+}
+
+// assignmentColumns are the stored values; shared policies keep their defaults for other modes.
+func assignmentColumns(a *ChoreAssignment) (mode, kids, points, penalty string) {
+	b, _ := json.Marshal(nonNil(a.KidIDs))
+	points, penalty = assign.PointsCompleterTakesAll, assign.PenaltyAll
+	if a.SharedPoints != "" {
+		points = a.SharedPoints
+	}
+	if a.SharedPenalty != "" {
+		penalty = a.SharedPenalty
+	}
+	return a.Mode, string(b), points, penalty
+}
+
 func scheduleJSON(r *schedule.ScheduleRule) sql.NullString {
 	if r == nil {
 		return sql.NullString{}
@@ -319,12 +387,14 @@ func (s *Service) Create(ctx context.Context, in ChoreInput) (Chore, error) {
 		return Chore{}, err
 	}
 	now := db.Timestamp(s.clock.Now())
+	mode, kids, points, penalty := assignmentColumns(in.Assignment)
 	var id int64
 	err = s.inTx(ctx, func(q *sqlc.Queries) error {
 		c, err := q.CreateChore(ctx, sqlc.CreateChoreParams{
 			Name: in.Name, Description: in.Description, Points: int64(in.Points), Penalty: int64(in.Penalty),
 			EstimatedMinutes: nullInt(in.EstimatedMinutes), MinAge: nullInt(in.MinAge), Steps: mustJSON(in.Steps),
-			Slots: mustJSON(in.Slots), Schedule: scheduleJSON(in.Schedule), RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
+			Slots: mustJSON(in.Slots), Schedule: scheduleJSON(in.Schedule),
+			AssignMode: mode, AssignKids: kids, SharedPoints: points, SharedPenalty: penalty, RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
 			AutoApproveHours: nullInt(in.AutoApproveHours), EvidencePhotos: int64(in.Evidence.Photos),
 			EvidenceBeforeAfter: b2i(in.Evidence.BeforeAfter), EvidenceVideo: b2i(in.Evidence.Video),
 			EvidenceChecklist: b2i(in.Evidence.Checklist), EvidenceNote: b2i(in.Evidence.Note),
@@ -344,22 +414,32 @@ func (s *Service) Create(ctx context.Context, in ChoreInput) (Chore, error) {
 
 // Update replaces a chore's definition. Optional fields left out are cleared.
 func (s *Service) Update(ctx context.Context, id int64, in ChoreInput) (Chore, error) {
-	if _, err := s.Get(ctx, id); err != nil {
-		return Chore{}, err
+	old, err := s.db.GetChore(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Chore{}, errNotFound
 	}
-	in, err := s.normalize(ctx, in)
 	if err != nil {
 		return Chore{}, err
+	}
+	in, err = s.normalize(ctx, in)
+	if err != nil {
+		return Chore{}, err
+	}
+	mode, kids, points, penalty := assignmentColumns(in.Assignment)
+	rotation := old.RotationState
+	if mode != old.AssignMode || kids != old.AssignKids {
+		rotation = "{}" // a different rotation starts from its first kid
 	}
 	err = s.inTx(ctx, func(q *sqlc.Queries) error {
 		if err := q.UpdateChore(ctx, sqlc.UpdateChoreParams{
 			Name: in.Name, Description: in.Description, Points: int64(in.Points), Penalty: int64(in.Penalty),
 			EstimatedMinutes: nullInt(in.EstimatedMinutes), MinAge: nullInt(in.MinAge), Steps: mustJSON(in.Steps),
-			Slots: mustJSON(in.Slots), Schedule: scheduleJSON(in.Schedule), RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
+			Slots: mustJSON(in.Slots), Schedule: scheduleJSON(in.Schedule),
+			AssignMode: mode, AssignKids: kids, SharedPoints: points, SharedPenalty: penalty, RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
 			AutoApproveHours: nullInt(in.AutoApproveHours), EvidencePhotos: int64(in.Evidence.Photos),
 			EvidenceBeforeAfter: b2i(in.Evidence.BeforeAfter), EvidenceVideo: b2i(in.Evidence.Video),
 			EvidenceChecklist: b2i(in.Evidence.Checklist), EvidenceNote: b2i(in.Evidence.Note),
-			LocationID: nullID(in.LocationID), Disabled: b2i(in.Disabled), UpdatedAt: db.Timestamp(s.clock.Now()), ID: id,
+			LocationID: nullID(in.LocationID), Disabled: b2i(in.Disabled), RotationState: rotation, UpdatedAt: db.Timestamp(s.clock.Now()), ID: id,
 		}); err != nil {
 			return err
 		}

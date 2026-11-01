@@ -11,6 +11,7 @@ import {
 
 export type Chore = components['schemas']['Chore']
 export type ChoreInput = components['schemas']['ChoreInput']
+export type ChoreAssignment = components['schemas']['ChoreAssignment']
 
 /** How a chore auto-approves: like the household, never, or after N hours. */
 export type AutoApproveMode = 'household' | 'never' | 'hours'
@@ -25,6 +26,8 @@ export interface ChoreForm {
   steps: string[]
   slots: string[]
   schedule: ScheduleForm
+  /** Who gets it; edited in a later screen, kept as loaded so saving doesn't reset it. */
+  assignment?: ChoreAssignment
   requiresApproval: boolean
   escalate: boolean
   autoApprove: AutoApproveMode
@@ -80,6 +83,7 @@ export function formFromChore(c: Chore, today = todayIn(householdTimeZone.value)
     steps: [...(c.steps ?? [])],
     slots: [...(c.slots ?? [])],
     schedule: scheduleFormFromRule(c.schedule, today),
+    assignment: c.assignment,
     requiresApproval: c.requiresApproval,
     escalate: c.escalate ?? false,
     autoApprove: hours == null ? 'household' : hours === 0 ? 'never' : 'hours',
@@ -118,6 +122,7 @@ export function inputFromForm(f: ChoreForm): ChoreInput {
     ...(steps.length ? { steps } : {}),
     ...(f.slots.length ? { slots: [...new Set(f.slots)].sort() } : {}),
     ...(schedule ? { schedule } : {}),
+    ...(f.assignment ? { assignment: f.assignment } : {}),
     ...(f.escalate ? { escalate: true } : {}),
     ...(f.autoApprove === 'never' ? { autoApproveHours: 0 } : {}),
     ...(f.autoApprove === 'hours' ? { autoApproveHours: f.autoApproveHours } : {}),

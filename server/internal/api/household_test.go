@@ -18,12 +18,14 @@ type householdJSON struct {
 	MediaRetentionDays   int
 	AutoApproveHours     *int
 	OfflineGraceMinutes  int
+	DefaultChoreMinutes  int
 }
 
 func settings(extra map[string]any) map[string]any {
 	m := map[string]any{
 		"name": "The Bradys", "timezone": "America/Chicago", "dayEnd": "21:00", "weekStart": "sunday",
 		"allowNegativeBalance": false, "siblingVisibility": "private", "mediaRetentionDays": 30, "offlineGraceMinutes": 120,
+		"defaultChoreMinutes": 10,
 	}
 	for k, v := range extra {
 		m[k] = v
@@ -37,19 +39,19 @@ func TestHouseholdSettings(t *testing.T) {
 
 	got := decode[householdJSON](t, s.do("GET", "/api/v1/household", nil, mom))
 	if got.Name != "The Bradys" || got.Timezone != "America/Chicago" || got.DayEnd != "21:00" || got.WeekStart != "sunday" ||
-		got.SiblingVisibility != "private" || got.MediaRetentionDays != 30 || got.OfflineGraceMinutes != 120 ||
+		got.SiblingVisibility != "private" || got.MediaRetentionDays != 30 || got.OfflineGraceMinutes != 120 || got.DefaultChoreMinutes != 10 ||
 		got.AutoApproveHours != nil || got.AllowNegativeBalance {
 		t.Errorf("defaults = %+v", got)
 	}
 
 	rec := s.do("PUT", "/api/v1/household", settings(map[string]any{
 		"name": " Brady Bunch ", "allowNegativeBalance": true, "siblingVisibility": "leaderboard",
-		"mediaRetentionDays": 90, "autoApproveHours": 48, "offlineGraceMinutes": 60,
+		"mediaRetentionDays": 90, "autoApproveHours": 48, "offlineGraceMinutes": 60, "defaultChoreMinutes": 15,
 	}), mom)
 	wantCode(t, "update", rec, 200, "")
 	got = decode[householdJSON](t, rec)
 	if got.Name != "Brady Bunch" || !got.AllowNegativeBalance || got.SiblingVisibility != "leaderboard" ||
-		got.MediaRetentionDays != 90 || got.AutoApproveHours == nil || *got.AutoApproveHours != 48 || got.OfflineGraceMinutes != 60 {
+		got.MediaRetentionDays != 90 || got.AutoApproveHours == nil || *got.AutoApproveHours != 48 || got.OfflineGraceMinutes != 60 || got.DefaultChoreMinutes != 15 {
 		t.Errorf("updated = %+v", got)
 	}
 	// Leaving autoApproveHours out means never.
