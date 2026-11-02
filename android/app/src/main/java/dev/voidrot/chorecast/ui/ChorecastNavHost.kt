@@ -23,6 +23,9 @@ import dev.voidrot.chorecast.ui.welcome.WelcomeScreen
 import dev.voidrot.chorecast.ui.connect.ConnectViewModel
 import dev.voidrot.chorecast.ui.home.HomeScreen
 import dev.voidrot.chorecast.ui.home.HomeViewModel
+import dev.voidrot.chorecast.ui.home.OverviewViewModel
+import dev.voidrot.chorecast.ui.review.ReviewScreen
+import dev.voidrot.chorecast.ui.review.ReviewViewModel
 import dev.voidrot.chorecast.ui.login.LoginScreen
 import dev.voidrot.chorecast.ui.login.LoginViewModel
 import dev.voidrot.chorecast.ui.startup.StartupScreen
@@ -105,11 +108,23 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 viewModel = viewModel {
                     HomeViewModel(currentUrl(), container.parentAuth, container.tokenStore, container.householdInfo)
                 },
+                overviewViewModel = viewModel {
+                    OverviewViewModel(currentUrl(), container.parentReview, container.tokenStore)
+                },
                 serverUrl = route.serverUrl,
                 recoveryCodesLeft = route.recoveryCodesLeft,
                 onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
                 onChangeServer = { nav.navigate(ConnectRoute) },
                 onDevices = { nav.navigate(DevicesRoute(route.serverUrl)) },
+                onReview = { nav.navigate(ReviewRoute(route.serverUrl)) },
+            )
+        }
+        composable<ReviewRoute> { entry ->
+            val route = entry.toRoute<ReviewRoute>()
+            ReviewScreen(
+                viewModel = viewModel { ReviewViewModel(currentUrl(), container.parentReview, container.tokenStore) },
+                onBack = { nav.popBackStack() },
+                onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
             )
         }
         composable<DevicesRoute> { entry ->

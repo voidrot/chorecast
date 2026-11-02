@@ -191,7 +191,64 @@
     <string name="home_signed_in">Signed in as %1$s</string>
     <string name="home_server">Server: %1$s</string>
     <string name="home_household">%1$s · day ends at %2$s</string>
-    <string name="home_parent_next">Parent screens and device pairing are coming next.</string>
+    <string name="home_review">Review chores</string>
+    <string name="home_review_pending">Review chores (%1$d waiting)</string>
+    <string name="home_review_pending_more">Review chores (%1$d+ waiting)</string>
+    <string name="home_no_kids">No kids yet. Add them in the web admin.</string>
+    <string name="home_load_failed">Couldn\'t load the kids (%1$s).</string>
+    <string name="home_refresh_failed">Couldn\'t refresh. Showing what we had.</string>
+    <string name="home_kid_nothing_today">Nothing to do today.</string>
+    <string name="home_kid_progress">%1$d of %2$d done today</string>
+    <plurals name="home_kid_pending">
+        <item quantity="one">%d chore waiting for review</item>
+        <item quantity="other">%d chores waiting for review</item>
+    </plurals>
+
+    <string name="review_title">Review</string>
+    <string name="review_empty">Nothing is waiting for review.</string>
+    <string name="review_load_failed">Couldn\'t load the review queue (%1$s).</string>
+    <string name="review_refresh_failed">Couldn\'t refresh. Showing what we had.</string>
+    <string name="review_load_more">Load more</string>
+    <string name="review_select_all">Select all</string>
+    <plurals name="review_approve_selected">
+        <item quantity="one">Approve %d selected</item>
+        <item quantity="other">Approve %d selected</item>
+    </plurals>
+    <string name="review_group">%1$s (%2$d)</string>
+    <string name="review_submitted">Submitted %1$s</string>
+    <plurals name="review_rejected_before">
+        <item quantity="one">Rejected %d time before</item>
+        <item quantity="other">Rejected %d times before</item>
+    </plurals>
+    <string name="review_step_done">Done: %1$s</string>
+    <string name="review_step_not_done">Not done: %1$s</string>
+    <string name="review_note">Note: %1$s</string>
+    <string name="review_photo_open">Open photo %1$d</string>
+    <string name="review_photo_expired">Photo %1$d is no longer available.</string>
+    <string name="review_reject_counter">%1$d/%2$d</string>
+    <string name="review_approve">Approve</string>
+    <string name="review_reject">Reject</string>
+    <string name="review_reject_title">Reject %1$s</string>
+    <string name="review_reject_text">Feedback for the kid</string>
+    <string name="review_reject_hint">Pick a reason, write feedback, or both.</string>
+    <string name="review_reason_not_done">Not done</string>
+    <string name="review_reason_not_finished">Not finished</string>
+    <string name="review_reason_needs_redo">Needs a redo</string>
+    <string name="review_reason_evidence_unclear">Photo or note unclear</string>
+    <plurals name="review_notice_approved">
+        <item quantity="one">Approved %d chore.</item>
+        <item quantity="other">Approved %d chores.</item>
+    </plurals>
+    <plurals name="review_notice_already_decided">
+        <item quantity="one">%d chore was already decided.</item>
+        <item quantity="other">%d chores were already decided.</item>
+    </plurals>
+    <plurals name="review_notice_some_failed">
+        <item quantity="one">%d chore couldn\'t be approved.</item>
+        <item quantity="other">%d chores couldn\'t be approved.</item>
+    </plurals>
+    <string name="review_notice_rejected">Rejected. The kid will see your feedback.</string>
+    <string name="review_notice_failed">Something went wrong (%1$s).</string>
     <plurals name="home_recovery_codes_left">
         <item quantity="one">You have %d recovery code left. Create new ones in the web admin.</item>
         <item quantity="other">You have %d recovery codes left. Create new ones in the web admin.</item>
