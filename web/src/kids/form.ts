@@ -111,3 +111,10 @@ export function initials(name: string): string {
     .map((w) => w[0]?.toUpperCase() ?? '')
     .join('')
 }
+
+/** The multipart body for `PUT /kids/{kid}/avatar/photo`. */
+export function avatarFormData(file: Blob): FormData {
+  const body = new FormData()
+  body.append('file', file)
+  return body
+}

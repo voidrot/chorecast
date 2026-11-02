@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import { initials } from '@/kids/form'
 
 const props = withDefaults(
-  defineProps<{ name: string; color: string; avatar?: string; size?: number }>(),
-  { avatar: '', size: 48 },
+  defineProps<{ name: string; color: string; avatar?: string; photoUrl?: string; size?: number }>(),
+  { avatar: '', photoUrl: '', size: 48 },
 )
 const style = computed(() => ({
   width: `${props.size}px`,
@@ -15,10 +15,10 @@ const style = computed(() => ({
 
 <template>
   <img
-    v-if="avatar"
-    :src="`/avatars/${avatar}.svg`"
+    v-if="photoUrl || avatar"
+    :src="photoUrl || `/avatars/${avatar}.svg`"
     :alt="name"
-    class="shrink-0 rounded-full"
+    class="shrink-0 rounded-full object-cover"
     :style="style"
   >
   <span

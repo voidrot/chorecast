@@ -21,7 +21,9 @@ import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
 import { avatarIds } from '@/avatars'
 import KidAvatar from '@/components/KidAvatar.vue'
+import { earliestExpiry, useLinkRefresh } from '@/composables/useLinkRefresh'
 import {
+  avatarFormData,
   emptyForm,
   formFromKid,
   inputFromForm,
@@ -102,6 +104,83 @@ async function setPin(clear: boolean) {
   message.success(clear ? t('kids.pinCleared') : t('kids.pinSaved'))
 }
 
+const photoBusy = ref(false)
+
+async function pickPhoto(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !kid.value) return
+  const id = String(kid.value.id)
+  await changePhoto(
+    () =>
+      api.PUT('/kids/{kid}/avatar/photo', {
+        params: { path: { kid: id } },
+        // The generated body type is the form's shape; the real body is the multipart form.
+        body: { file: '' },
+        bodySerializer: () => avatarFormData(file),
+      }),
+    'kids.photoSaved',
+  )
+}
+
+async function removePhoto() {
+  if (!kid.value) return
+  const id = String(kid.value.id)
+  await changePhoto(
+    () => api.DELETE('/kids/{kid}/avatar/photo', { params: { path: { kid: id } } }),
+    'kids.photoRemoved',
+  )
+}
+
+/** Takes only the photo link from a fresh kid, keeping the form's unsaved edits. */
+function applyPhoto(fresh: Kid) {
+  if (!kid.value) return
+  kid.value = {
+    ...kid.value,
+    avatarPhotoUrl: fresh.avatarPhotoUrl,
+    avatarPhotoExpiresAt: fresh.avatarPhotoExpiresAt,
+  }
+}
+
+// The photo link lasts minutes: refetch the kid before it lapses, or when the tab regains focus.
+useLinkRefresh(
+  computed(() => earliestExpiry([kid.value?.avatarPhotoExpiresAt])),
+  async () => {
+    if (!kid.value) return
+    const { data } = await api.GET('/kids/{kid}', {
+      params: { path: { kid: String(kid.value.id) } },
+    })
+    if (data) applyPhoto(data)
+  },
+)
+
+/** Runs a photo change; it saves at once, apart from the form's Save button. */
+async function changePhoto(
+  run: () => Promise<{
+    data?: Kid
+    error?: Parameters<typeof ApiError.fromProblem>[1]
+    response: Response
+  }>,
+  done: string,
+) {
+  photoBusy.value = true
+  error.value = undefined
+  try {
+    const res = await run()
+    if (!res.data || !kid.value) {
+      error.value = ApiError.fromProblem(res.response.status, res.error)
+      return
+    }
+    applyPhoto(res.data)
+    message.success(t(done))
+  } catch (e) {
+    error.value = ApiError.network(e)
+  } finally {
+    photoBusy.value = false
+  }
+}
+
 function toggleArchive() {
   const k = kid.value
   if (!k) return
@@ -140,6 +219,7 @@ function toggleArchive() {
         :name="form.displayName || '?'"
         :color="form.color"
         :avatar="form.avatar"
+        :photo-url="kid?.avatarPhotoUrl"
         :size="56"
       />
       <h1 class="text-2xl font-semibold">
@@ -226,6 +306,43 @@ function toggleArchive() {
 
         <fieldset class="mt-4">
           <legend class="mb-2 font-medium">{{ t('kids.avatar') }}</legend>
+          <div
+            v-if="!isNew"
+            class="mb-3 flex flex-wrap items-center gap-3"
+            data-testid="avatar-photo"
+          >
+            <img
+              v-if="kid?.avatarPhotoUrl"
+              :src="kid.avatarPhotoUrl"
+              :alt="t('kids.photoPreview')"
+              class="size-16 rounded-full object-cover"
+            >
+            <label
+              for="avatar-photo-file"
+              class="cursor-pointer rounded border border-gray-400 px-3 py-1.5 focus-within:outline-2"
+              :class="photoBusy ? 'pointer-events-none opacity-50' : ''"
+            >
+              <input
+                id="avatar-photo-file"
+                class="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                :disabled="photoBusy"
+                @change="pickPhoto"
+              >
+              {{ kid?.avatarPhotoUrl ? t('kids.photoReplace') : t('kids.photoUpload') }}
+            </label>
+            <NButton
+              v-if="kid?.avatarPhotoUrl"
+              secondary
+              type="error"
+              :disabled="photoBusy"
+              @click="removePhoto"
+            >
+              {{ t('kids.photoRemove') }}
+            </NButton>
+            <p class="hint basis-full">{{ t('kids.photoHint') }}</p>
+          </div>
           <div class="flex flex-wrap gap-2" data-testid="avatar-picker">
             <label
               v-for="a in avatarIds"

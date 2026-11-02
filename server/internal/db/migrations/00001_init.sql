@@ -317,7 +317,7 @@ CREATE TABLE server_keys (
 -- chore or a piece of equipment.
 CREATE TABLE media (
     id           INTEGER PRIMARY KEY,
-    owner_kind   TEXT    NOT NULL DEFAULT 'pending' CHECK (owner_kind IN ('pending', 'evidence', 'rejection', 'chore', 'equipment')),
+    owner_kind   TEXT    NOT NULL DEFAULT 'pending' CHECK (owner_kind IN ('pending', 'evidence', 'rejection', 'chore', 'equipment', 'kid_avatar')),
     owner_id     INTEGER,
     uploaded_by  INTEGER REFERENCES users (id) ON DELETE SET NULL,
     storage_key  TEXT    NOT NULL UNIQUE,
@@ -334,7 +334,7 @@ CREATE TABLE media (
     status       TEXT    NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'deleting', 'expired')), -- deleting: retention claimed it, files not yet gone
     keep         INTEGER NOT NULL DEFAULT 0 CHECK (keep IN (0, 1)),
     created_at   TEXT    NOT NULL,
-    expires_at   TEXT,                         -- NULL = never; pending: upload + media.PendingTTL; evidence: set when the instance resolves
+    expires_at   TEXT,                         -- NULL = never (kid_avatar); pending: upload + media.PendingTTL; evidence: set when the instance resolves
     CHECK ((owner_kind = 'pending') = (owner_id IS NULL))
 );
 
@@ -476,6 +476,10 @@ CREATE TABLE audit_log (
 );
 CREATE UNIQUE INDEX audit_log_once ON audit_log (event_id, created_at) WHERE event_id IS NOT NULL;
 CREATE INDEX audit_log_by_age ON audit_log (created_at);
+
+-- ==== Kid photo avatars (#88) ====
+-- A kid has at most one ready avatar photo: media with owner_kind 'kid_avatar' and owner_id = the kid.
+CREATE UNIQUE INDEX media_kid_avatar_one ON media (owner_id) WHERE owner_kind = 'kid_avatar' AND status = 'ready';
 
 -- +goose Down
 DROP TABLE audit_log;

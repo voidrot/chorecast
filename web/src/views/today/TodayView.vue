@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
 import KidAvatar from '@/components/KidAvatar.vue'
+import { earliestExpiry, useLinkRefresh } from '@/composables/useLinkRefresh'
 import { householdTimeZone } from '@/format'
 import type { RejectBody } from '@/review/queue'
 import { useReviewQueueStore } from '@/stores/reviewQueue'
@@ -27,7 +28,14 @@ const { t, te } = useI18n()
 const message = useMessage()
 const reviewQueue = useReviewQueueStore()
 
-type KidRow = { id: number; displayName: string; color: string; avatar?: string }
+type KidRow = {
+  id: number
+  displayName: string
+  color: string
+  avatar?: string
+  avatarPhotoUrl?: string
+  avatarPhotoExpiresAt?: string
+}
 
 const kids = ref<KidRow[]>([])
 const instances = ref<Instance[]>([])
@@ -80,6 +88,13 @@ async function load() {
     if (mine === seq) loading.value = false
   }
 }
+
+useLinkRefresh(
+  computed(() => earliestExpiry(kids.value.map((k) => k.avatarPhotoExpiresAt))),
+  () => {
+    if (!loading.value) void load()
+  },
+)
 
 function setBusy(id: number, on: boolean) {
   const next = new Set(busyIds.value)
@@ -248,6 +263,7 @@ onMounted(load)
             :name="kidById.get(p.kidId)?.displayName ?? ''"
             :color="kidById.get(p.kidId)?.color ?? ''"
             :avatar="kidById.get(p.kidId)?.avatar"
+            :photo-url="kidById.get(p.kidId)?.avatarPhotoUrl"
             :size="36"
           />
           {{ kidById.get(p.kidId)?.displayName }}

@@ -316,6 +316,13 @@
   "kids": {
     "title": "Kids",
     "points": "Points and streaks",
+    "photoUpload": "Upload a photo",
+    "photoReplace": "Replace photo",
+    "photoRemove": "Remove photo",
+    "photoPreview": "Current photo",
+    "photoHint": "A photo replaces the picture below until you remove it. JPEG, PNG or WebP. It's saved straight away.",
+    "photoSaved": "Photo saved",
+    "photoRemoved": "Photo removed",
     "add": "Add a kid",
     "showArchived": "Show archived",
     "archived": "Archived",
