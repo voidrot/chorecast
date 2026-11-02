@@ -1813,6 +1813,15 @@
             "description": "Built-in avatar id; the image is /avatars/\u003cid\u003e.svg",
             "type": "string"
           },
+          "avatarPhotoExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "avatarPhotoUrl": {
+            "description": "Signed link to the kid's photo avatar (shown instead of the bundled avatar), valid until avatarPhotoExpiresAt; refetch the kid for a new one. Absent when there is no photo.",
+            "format": "uri",
+            "type": "string"
+          },
           "birthDate": {
             "format": "date",
             "type": "string"
@@ -8154,6 +8163,222 @@
           }
         ],
         "summary": "Archive a kid",
+        "tags": [
+          "kids"
+        ]
+      }
+    },
+    "/kids/{kid}/avatar/photo": {
+      "delete": {
+        "description": "The kid goes back to the bundled avatar. Removing when there is no photo does nothing.",
+        "operationId": "removeKidAvatarPhoto",
+        "parameters": [
+          {
+            "description": "Kid id or slug",
+            "in": "path",
+            "name": "kid",
+            "required": true,
+            "schema": {
+              "description": "Kid id or slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Kid"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:manage"
+            ]
+          },
+          {
+            "session": [
+              "household:manage"
+            ]
+          }
+        ],
+        "summary": "Remove a kid's photo avatar",
+        "tags": [
+          "kids"
+        ]
+      },
+      "put": {
+        "description": "A multipart form with the image in `file`, processed like any photo upload (same size and pixel limits, EXIF and GPS stripped). It replaces any earlier photo, which is deleted, and is shown instead of the bundled avatar until removed. It never expires. The kid-evidence rules don't apply.",
+        "operationId": "setKidAvatarPhoto",
+        "parameters": [
+          {
+            "description": "Kid id or slug",
+            "in": "path",
+            "name": "kid",
+            "required": true,
+            "schema": {
+              "description": "Kid id or slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "encoding": {
+                "file": {
+                  "contentType": "application/octet-stream"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "file": {
+                    "contentEncoding": "binary",
+                    "contentMediaType": "application/octet-stream",
+                    "description": "The image: JPEG, PNG or WebP",
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Kid"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "household:manage"
+            ]
+          },
+          {
+            "session": [
+              "household:manage"
+            ]
+          }
+        ],
+        "summary": "Set a kid's photo avatar",
         "tags": [
           "kids"
         ]

@@ -3,12 +3,14 @@ package api
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/kids"
+	"github.com/voidrot/chorecast/server/internal/media"
 )
 
 func registerKids(hapi huma.API, h *handlers) {
@@ -63,6 +65,31 @@ func registerKids(hapi huma.API, h *handlers) {
 		Errors:        []int{http.StatusNotFound, http.StatusUnprocessableEntity},
 	}, h.setKidPIN)
 	huma.Register(hapi, huma.Operation{
+		OperationID: "setKidAvatarPhoto",
+		Method:      http.MethodPut,
+		Path:        "/kids/{kid}/avatar/photo",
+		Summary:     "Set a kid's photo avatar",
+		Description: "A multipart form with the image in `file`, processed like any photo upload (same size and " +
+			"pixel limits, EXIF and GPS stripped). It replaces any earlier photo, which is deleted, and is shown " +
+			"instead of the bundled avatar until removed. It never expires. The kid-evidence rules don't apply.",
+		Tags:            []string{"kids"},
+		Security:        manage,
+		MaxBodyBytes:    h.cfg.Media.MaxPhotoBytes() + multipartOverhead,
+		BodyReadTimeout: 2 * time.Minute,
+		Errors: []int{http.StatusNotFound, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
+			http.StatusUnprocessableEntity, http.StatusTooManyRequests, http.StatusServiceUnavailable},
+	}, h.setKidAvatarPhoto)
+	huma.Register(hapi, huma.Operation{
+		OperationID: "removeKidAvatarPhoto",
+		Method:      http.MethodDelete,
+		Path:        "/kids/{kid}/avatar/photo",
+		Summary:     "Remove a kid's photo avatar",
+		Description: "The kid goes back to the bundled avatar. Removing when there is no photo does nothing.",
+		Tags:        []string{"kids"},
+		Security:    manage,
+		Errors:      []int{http.StatusNotFound},
+	}, h.removeKidAvatarPhoto)
+	huma.Register(hapi, huma.Operation{
 		OperationID: "archiveKid",
 		Method:      http.MethodPost,
 		Path:        "/kids/{kid}/archive",
@@ -102,6 +129,11 @@ func (h *handlers) listKids(ctx context.Context, in *ListKidsInput) (*KidsOutput
 	if err != nil {
 		return nil, err
 	}
+	for i := range items {
+		if items[i], err = h.withAvatarPhoto(ctx, items[i]); err != nil {
+			return nil, err
+		}
+	}
 	out := &KidsOutput{}
 	out.Body.Items = items
 	return out, nil
@@ -124,7 +156,7 @@ func (h *handlers) getKid(ctx context.Context, in *KidRefInput) (*KidOutput, err
 	if k.ArchivedAt != nil && !p.Has(auth.ScopeHouseholdManage) {
 		return nil, apierr.New(http.StatusNotFound, apierr.CodeKidNotFound, "no such kid")
 	}
-	return &KidOutput{Body: k}, nil
+	return h.kidOutput(ctx, k)
 }
 
 type CreateKidInput struct {
@@ -136,7 +168,7 @@ func (h *handlers) createKid(ctx context.Context, in *CreateKidInput) (*KidOutpu
 	if err != nil {
 		return nil, err
 	}
-	return &KidOutput{Body: k}, nil
+	return h.kidOutput(ctx, k)
 }
 
 type UpdateKidInput struct {
@@ -149,7 +181,7 @@ func (h *handlers) updateKid(ctx context.Context, in *UpdateKidInput) (*KidOutpu
 	if err != nil {
 		return nil, err
 	}
-	return &KidOutput{Body: k}, nil
+	return h.kidOutput(ctx, k)
 }
 
 type SetKidPINInput struct {
@@ -168,7 +200,7 @@ func (h *handlers) archiveKid(ctx context.Context, in *KidRefInput) (*KidOutput,
 	if err != nil {
 		return nil, err
 	}
-	return &KidOutput{Body: k}, nil
+	return h.kidOutput(ctx, k)
 }
 
 func (h *handlers) unarchiveKid(ctx context.Context, in *KidRefInput) (*KidOutput, error) {
@@ -176,5 +208,75 @@ func (h *handlers) unarchiveKid(ctx context.Context, in *KidRefInput) (*KidOutpu
 	if err != nil {
 		return nil, err
 	}
+	return h.kidOutput(ctx, k)
+}
+
+func (h *handlers) kidOutput(ctx context.Context, k kids.Kid) (*KidOutput, error) {
+	k, err := h.withAvatarPhoto(ctx, k)
+	if err != nil {
+		return nil, err
+	}
 	return &KidOutput{Body: k}, nil
+}
+
+// withAvatarPhoto sets the kid's signed photo link (the 320 px thumbnail, plenty for an avatar)
+// when they have a photo avatar. Callers have checked the principal may read the kid profile.
+func (h *handlers) withAvatarPhoto(ctx context.Context, k kids.Kid) (kids.Kid, error) {
+	m, err := h.media.KidAvatar(ctx, k.ID)
+	if err != nil || m == nil {
+		return k, err
+	}
+	urls, err := h.signedURLs(ctx, *m)
+	if err != nil {
+		return k, err
+	}
+	k.AvatarPhotoURL, k.AvatarPhotoExpiresAt = urls.ThumbURL, &urls.Expires
+	return k, nil
+}
+
+// manageKid resolves a kid the caller may change the avatar of.
+func (h *handlers) manageKid(ctx context.Context, ref string) (kids.Kid, error) {
+	k, err := h.kids.Get(ctx, ref)
+	if err != nil {
+		return kids.Kid{}, err
+	}
+	p, _ := auth.PrincipalFrom(ctx)
+	if !p.CanAccessKid(k.ID) {
+		return kids.Kid{}, apierr.New(http.StatusForbidden, apierr.CodeForbidden, "you can't change this kid's profile")
+	}
+	return k, nil
+}
+
+type SetKidAvatarPhotoInput struct {
+	Kid     string `path:"kid" doc:"Kid id or slug"`
+	RawBody huma.MultipartFormFiles[MediaUploadForm]
+}
+
+func (h *handlers) setKidAvatarPhoto(ctx context.Context, in *SetKidAvatarPhotoInput) (*KidOutput, error) {
+	f := in.RawBody.Data().File
+	defer func() { _ = f.Close() }()
+	k, err := h.manageKid(ctx, in.Kid)
+	if err != nil {
+		return nil, err
+	}
+	limit := h.cfg.Media.MaxPhotoBytes()
+	if f.Size > limit {
+		return nil, media.TooLarge(limit)
+	}
+	p, _ := auth.PrincipalFrom(ctx)
+	if _, err := h.media.SetKidAvatar(ctx, p, k.ID, f, limit); err != nil {
+		return nil, err
+	}
+	return h.kidOutput(ctx, k)
+}
+
+func (h *handlers) removeKidAvatarPhoto(ctx context.Context, in *KidRefInput) (*KidOutput, error) {
+	k, err := h.manageKid(ctx, in.Kid)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.media.ReleaseKidAvatar(ctx, k.ID); err != nil {
+		return nil, err
+	}
+	return h.kidOutput(ctx, k)
 }

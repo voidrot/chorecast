@@ -44,18 +44,20 @@ type SchoolHours struct {
 
 // Kid is a kid profile as the API returns it.
 type Kid struct {
-	ID             int64        `json:"id"`
-	Slug           string       `json:"slug" doc:"Stable short name usable anywhere a kid id is"`
-	DisplayName    string       `json:"displayName"`
-	Color          string       `json:"color"`
-	Avatar         string       `json:"avatar,omitempty" doc:"Built-in avatar id; the image is /avatars/<id>.svg"`
-	BirthDate      caltime.Date `json:"birthDate,omitempty" format:"date"`
-	PINRequired    bool         `json:"pinRequired"`
-	PINSet         bool         `json:"pinSet"`
-	DayEndOverride string       `json:"dayEndOverride,omitempty" doc:"HH:MM; the kid's day ends earlier than the household's"`
-	QuietHours     *DailyWindow `json:"quietHours,omitempty"`
-	SchoolHours    *SchoolHours `json:"schoolHours,omitempty"`
-	ArchivedAt     *time.Time   `json:"archivedAt,omitempty"`
+	ID                   int64        `json:"id"`
+	Slug                 string       `json:"slug" doc:"Stable short name usable anywhere a kid id is"`
+	DisplayName          string       `json:"displayName"`
+	Color                string       `json:"color"`
+	Avatar               string       `json:"avatar,omitempty" doc:"Built-in avatar id; the image is /avatars/<id>.svg"`
+	AvatarPhotoURL       string       `json:"avatarPhotoUrl,omitempty" format:"uri" doc:"Signed link to the kid's photo avatar (shown instead of the bundled avatar), valid until avatarPhotoExpiresAt; refetch the kid for a new one. Absent when there is no photo."`
+	AvatarPhotoExpiresAt *time.Time   `json:"avatarPhotoExpiresAt,omitempty"`
+	BirthDate            caltime.Date `json:"birthDate,omitempty" format:"date"`
+	PINRequired          bool         `json:"pinRequired"`
+	PINSet               bool         `json:"pinSet"`
+	DayEndOverride       string       `json:"dayEndOverride,omitempty" doc:"HH:MM; the kid's day ends earlier than the household's"`
+	QuietHours           *DailyWindow `json:"quietHours,omitempty"`
+	SchoolHours          *SchoolHours `json:"schoolHours,omitempty"`
+	ArchivedAt           *time.Time   `json:"archivedAt,omitempty"`
 }
 
 // KidInput is a kid profile as parents create or edit it. Optional fields left empty are cleared.

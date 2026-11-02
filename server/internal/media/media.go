@@ -36,8 +36,11 @@ const URLTTL = 10 * time.Minute
 const (
 	OwnerPending  = "pending"
 	OwnerEvidence = "evidence"
-	KindPhoto     = "photo"
-	MimeWebP      = "image/webp"
+	// OwnerKidAvatar is a kid's profile photo (owner id = the kid). It has no expiry, so
+	// retention never takes it; replacing or removing it releases it (ReleaseKidAvatar).
+	OwnerKidAvatar = "kid_avatar"
+	KindPhoto      = "photo"
+	MimeWebP       = "image/webp"
 )
 
 // Media statuses (media.status). Retention claims an item (deleting), deletes its files and
@@ -185,6 +188,87 @@ func (s *Service) UploadPhoto(ctx context.Context, p *auth.Principal, r io.Reade
 		return sqlc.Medium{}, false, err
 	}
 	return m, retried, nil
+}
+
+// SetKidAvatar processes a parent's photo of at most limit bytes and makes it kid's avatar,
+// releasing the previous one. It reuses UploadPhoto's limits and re-encoding (no EXIF survives);
+// the kid fresh-evidence rules don't apply, so nothing is hashed. p must be allowed to manage kid.
+func (s *Service) SetKidAvatar(ctx context.Context, p *auth.Principal, kid int64, r io.Reader, limit int64) (sqlc.Medium, error) {
+	photo, _, err := s.process(ctx, p, r, limit)
+	if err != nil {
+		return sqlc.Medium{}, err
+	}
+	key, err := NewKey()
+	if err != nil {
+		return sqlc.Medium{}, err
+	}
+	thumbKey := ThumbKey(key)
+	if err := s.store.Put(ctx, key, bytes.NewReader(photo.WebP)); err != nil {
+		return sqlc.Medium{}, err
+	}
+	if err := s.store.Put(ctx, thumbKey, bytes.NewReader(photo.Thumb)); err != nil {
+		s.removeFiles(key, thumbKey)
+		return sqlc.Medium{}, err
+	}
+	m, err := s.attachKidAvatar(ctx, p, kid, key, thumbKey, photo)
+	if err != nil {
+		s.removeFiles(key, thumbKey)
+		return sqlc.Medium{}, err
+	}
+	return m, nil
+}
+
+func (s *Service) attachKidAvatar(ctx context.Context, p *auth.Principal, kid int64, key, thumbKey string, photo *Photo) (sqlc.Medium, error) {
+	tx, err := s.db.SQL.BeginTx(ctx, nil)
+	if err != nil {
+		return sqlc.Medium{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := s.db.WithTx(tx)
+	if err := q.ReleaseKidAvatar(ctx, sql.NullInt64{Int64: kid, Valid: true}); err != nil {
+		return sqlc.Medium{}, fmt.Errorf("release kid avatar: %w", err)
+	}
+	m, err := q.CreateMedia(ctx, sqlc.CreateMediaParams{
+		UploadedBy: sql.NullInt64{Int64: p.UserID, Valid: p.UserID != 0},
+		StorageKey: key, ThumbKey: sql.NullString{String: thumbKey, Valid: true},
+		Kind: KindPhoto, Mime: MimeWebP, Bytes: int64(len(photo.WebP)),
+		Width: int64(photo.Width), Height: int64(photo.Height),
+		ThumbWidth:  sql.NullInt64{Int64: int64(photo.ThumbWidth), Valid: true},
+		ThumbHeight: sql.NullInt64{Int64: int64(photo.ThumbHeight), Valid: true},
+		Sha256:      photo.SHA256[:], Dhash: int64(photo.DHash), //nolint:gosec // stored bit-for-bit
+		CreatedAt: db.Timestamp(s.clock.Now()),
+	})
+	if err != nil {
+		return sqlc.Medium{}, fmt.Errorf("create media: %w", err)
+	}
+	if err := q.AttachKidAvatar(ctx, sqlc.AttachKidAvatarParams{
+		OwnerID: sql.NullInt64{Int64: kid, Valid: true}, ID: m.ID,
+	}); err != nil {
+		return sqlc.Medium{}, fmt.Errorf("attach kid avatar: %w", err)
+	}
+	m, err = q.GetMedia(ctx, m.ID)
+	if err != nil {
+		return sqlc.Medium{}, err
+	}
+	return m, tx.Commit()
+}
+
+// ReleaseKidAvatar removes kid's avatar photo, if any: the media is claimed (status deleting) and
+// the retention job deletes its files. Reads show it as expired from here on.
+func (s *Service) ReleaseKidAvatar(ctx context.Context, kid int64) error {
+	return s.db.ReleaseKidAvatar(ctx, sql.NullInt64{Int64: kid, Valid: true})
+}
+
+// KidAvatar returns kid's avatar photo, or nil when there is none.
+func (s *Service) KidAvatar(ctx context.Context, kid int64) (*sqlc.Medium, error) {
+	m, err := s.db.GetKidAvatarMedia(ctx, sql.NullInt64{Int64: kid, Valid: true})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load kid avatar: %w", err)
+	}
+	return &m, nil
 }
 
 // TooLarge is the 413 for an upload over limit bytes.

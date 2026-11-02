@@ -62,6 +62,11 @@ func newMediaEnv(t *testing.T, cfg config.Config) *mediaEnv {
 // token or a session cookie.
 func (e *mediaEnv) upload(auth any, data []byte, partType string) *httptest.ResponseRecorder {
 	e.t.Helper()
+	return e.uploadTo("POST", "/api/v1/media/photos", auth, data, partType)
+}
+
+func (e *mediaEnv) uploadTo(method, path string, auth any, data []byte, partType string) *httptest.ResponseRecorder {
+	e.t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	h := textproto.MIMEHeader{}
@@ -73,7 +78,7 @@ func (e *mediaEnv) upload(auth any, data []byte, partType string) *httptest.Resp
 	}
 	_, _ = part.Write(data)
 	_ = w.Close()
-	return e.raw("POST", "/api/v1/media/photos", auth, &body, w.FormDataContentType())
+	return e.raw(method, path, auth, &body, w.FormDataContentType())
 }
 
 func (e *mediaEnv) raw(method, path string, auth any, body *bytes.Buffer, contentType string) *httptest.ResponseRecorder {

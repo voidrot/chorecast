@@ -92,10 +92,19 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
 - **Built-in avatar set**: 24 DiceBear **Pixel Art** avatars (CC0), generated once by `mise run gen:avatars`
   into `web/public/avatars/pixel-NN.svg` and served by the server at `/avatars/<id>.svg` (the Android app loads
   them from there, so there's one copy). Licence in `THIRD_PARTY_NOTICES.md`. First-run setup assigns one to each
-  kid. An optional **uploaded photo** (processed like evidence, never expires) comes with the media pipeline (#27).
+  kid. An optional **uploaded photo** replaces it (see below).
 - **API** (`internal/kids`): `GET /kids` (`?archived=true` for parents), `GET/PUT /kids/{id|slug}`, `POST /kids`,
   `PUT /kids/{kid}/pin`, `POST /kids/{kid}/archive|unarchive`. Editing replaces the profile; optional fields left
   out are cleared. The slug stays unless a new one is given (changing it breaks old links/scripts).
+- Built (#88): **photo avatars**. `PUT /kids/{kid}/avatar/photo` (multipart `file`, `household:manage`, parents only)
+  runs the normal photo pipeline (limits, EXIF stripping) and stores the result as media with `owner_kind =
+  'kid_avatar'`, `owner_id` = the kid, and no `expires_at`, so retention never takes it. The kid-evidence rules
+  (hashing, duplicates, the pending cap) don't apply. A new photo or `DELETE /kids/{kid}/avatar/photo` marks the old
+  media `deleting`, and the retention job deletes its files. Kid responses gain optional `avatarPhotoUrl` (a signed
+  link to the 320 px thumbnail) and `avatarPhotoExpiresAt` (links last 10 minutes, so refetch the kid); the bundled
+  `avatar` id stays set, so removing the photo falls back to it. Archiving keeps the photo. Deleting a kid doesn't
+  exist yet (Phase 4); it must release the photo with `media.Service.ReleaseKidAvatar`. The admin's kid editor has the
+  upload, replace and remove controls.
 - **Day-end override**: a kid's day can end **at or before** the household day end (e.g. 19:30 for a 6-year-old).
   Everything that says "day close" for a kid (missed, streaks, reminders, offline grace) uses the kid's
   **effective day end**. Household-level jobs (daily summary, horizon generation) run at the household day end,

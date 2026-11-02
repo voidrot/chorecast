@@ -10,6 +10,21 @@ import (
 	"database/sql"
 )
 
+const attachKidAvatar = `-- name: AttachKidAvatar :exec
+UPDATE media SET owner_kind = 'kid_avatar', owner_id = ?, expires_at = NULL WHERE id = ? AND owner_kind = 'pending'
+`
+
+type AttachKidAvatarParams struct {
+	OwnerID sql.NullInt64 `json:"owner_id"`
+	ID      int64         `json:"id"`
+}
+
+// Makes a just-created pending upload the kid's avatar: no owner expiry, so retention never takes it.
+func (q *Queries) AttachKidAvatar(ctx context.Context, arg AttachKidAvatarParams) error {
+	_, err := q.db.ExecContext(ctx, attachKidAvatar, arg.OwnerID, arg.ID)
+	return err
+}
+
 const claimExpiredMedia = `-- name: ClaimExpiredMedia :execrows
 UPDATE media SET status = 'deleting'
 WHERE media.id = ?1 AND media.status = 'ready' AND media.keep = 0
@@ -145,6 +160,38 @@ func (q *Queries) DiscardPendingMedia(ctx context.Context, arg DiscardPendingMed
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const getKidAvatarMedia = `-- name: GetKidAvatarMedia :one
+SELECT id, owner_kind, owner_id, uploaded_by, storage_key, thumb_key, kind, mime, bytes, width, height, thumb_width, thumb_height, sha256, dhash, status, keep, created_at, expires_at FROM media WHERE owner_kind = 'kid_avatar' AND owner_id = ? AND status = 'ready'
+`
+
+// The kid's current avatar photo.
+func (q *Queries) GetKidAvatarMedia(ctx context.Context, ownerID sql.NullInt64) (Medium, error) {
+	row := q.db.QueryRowContext(ctx, getKidAvatarMedia, ownerID)
+	var i Medium
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.UploadedBy,
+		&i.StorageKey,
+		&i.ThumbKey,
+		&i.Kind,
+		&i.Mime,
+		&i.Bytes,
+		&i.Width,
+		&i.Height,
+		&i.ThumbWidth,
+		&i.ThumbHeight,
+		&i.Sha256,
+		&i.Dhash,
+		&i.Status,
+		&i.Keep,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+	)
+	return i, err
 }
 
 const getMedia = `-- name: GetMedia :one
@@ -402,6 +449,16 @@ func (q *Queries) RecordMediaHash(ctx context.Context, arg RecordMediaHashParams
 	var sha256 []byte
 	err := row.Scan(&sha256)
 	return sha256, err
+}
+
+const releaseKidAvatar = `-- name: ReleaseKidAvatar :exec
+UPDATE media SET status = 'deleting' WHERE owner_kind = 'kid_avatar' AND owner_id = ? AND status = 'ready'
+`
+
+// Hands the kid's avatar photo to the retention job's second step, which deletes its files.
+func (q *Queries) ReleaseKidAvatar(ctx context.Context, ownerID sql.NullInt64) error {
+	_, err := q.db.ExecContext(ctx, releaseKidAvatar, ownerID)
+	return err
 }
 
 const replaceServerKey = `-- name: ReplaceServerKey :exec
