@@ -495,6 +495,45 @@ func (q *Queries) ListLatestChoreInstanceRejectionsBetween(ctx context.Context, 
 	return items, nil
 }
 
+const listSubmittedInstancesForAutoApprove = `-- name: ListSubmittedInstancesForAutoApprove :many
+SELECT i.id, i.completed_at, c.auto_approve_hours
+FROM chore_instances i JOIN chores c ON c.id = i.chore_id
+WHERE i.status = 'submitted' AND i.completed_at IS NOT NULL
+  AND (c.auto_approve_hours IS NULL OR c.auto_approve_hours > 0)
+ORDER BY i.completed_at, i.id
+`
+
+type ListSubmittedInstancesForAutoApproveRow struct {
+	ID               int64          `json:"id"`
+	CompletedAt      sql.NullString `json:"completed_at"`
+	AutoApproveHours sql.NullInt64  `json:"auto_approve_hours"`
+}
+
+// Submitted instances, oldest submission first, whose chore doesn't say "never" (0). The job
+// applies the household default and the timeout in Go.
+func (q *Queries) ListSubmittedInstancesForAutoApprove(ctx context.Context) ([]ListSubmittedInstancesForAutoApproveRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSubmittedInstancesForAutoApprove)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSubmittedInstancesForAutoApproveRow{}
+	for rows.Next() {
+		var i ListSubmittedInstancesForAutoApproveRow
+		if err := rows.Scan(&i.ID, &i.CompletedAt, &i.AutoApproveHours); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reassignChoreInstance = `-- name: ReassignChoreInstance :execrows
 UPDATE chore_instances SET kid_id = ?1, reassigned_from = COALESCE(reassigned_from, kid_id),
     due_at = ?2, manually_reassigned = 1, auto_assigned = 0, updated_at = ?3

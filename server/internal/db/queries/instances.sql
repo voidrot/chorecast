@@ -108,3 +108,12 @@ SELECT r.* FROM chore_instance_rejections r
 JOIN chore_instances i ON i.id = r.instance_id
 WHERE i.occurrence_date >= ? AND i.occurrence_date <= ?
   AND r.id = (SELECT MAX(r2.id) FROM chore_instance_rejections r2 WHERE r2.instance_id = r.instance_id);
+
+-- name: ListSubmittedInstancesForAutoApprove :many
+-- Submitted instances, oldest submission first, whose chore doesn't say "never" (0). The job
+-- applies the household default and the timeout in Go.
+SELECT i.id, i.completed_at, c.auto_approve_hours
+FROM chore_instances i JOIN chores c ON c.id = i.chore_id
+WHERE i.status = 'submitted' AND i.completed_at IS NOT NULL
+  AND (c.auto_approve_hours IS NULL OR c.auto_approve_hours > 0)
+ORDER BY i.completed_at, i.id;

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/voidrot/chorecast/server/internal/auth"
+	"github.com/voidrot/chorecast/server/internal/autoapprove"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -112,6 +113,9 @@ func newBackground(store *db.DB, clk clock.Clock, log *slog.Logger) (*jobs.Runne
 	closer.AfterKidDay = streakSvc.EvaluateKidDay
 	closer.AfterShared = streakSvc.EvaluateDay
 	closer.Register(runner, sched, log)
+
+	// Submitted instances nobody reviewed within their timeout are approved by the system.
+	autoapprove.New(store, bus, clk).Register(runner, sched, log)
 
 	return runner, sched, bus
 }
