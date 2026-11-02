@@ -99,6 +99,21 @@ class ReviewQueueTest {
     }
 
     @Test
+    fun rejectionTextIsCappedInCodePointsNotUtf16Units() {
+        val text = buildRejection(null, "😀".repeat(600))!!.text!!
+        assertEquals(REJECT_TEXT_MAX, text.codePointCount(0, text.length))
+        assertEquals("ab", "abc".takeCodePoints(2))
+    }
+
+    @Test
+    fun photoLinkLapsesAtItsExpiry() {
+        val photo = EvidencePhoto(mediaId = 1, urlExpiresAt = OffsetDateTime.parse("2026-05-04T10:00:00Z"))
+        assertTrue(photo.linkLapsed(Instant.parse("2026-05-04T10:00:01Z")))
+        assertFalse(photo.linkLapsed(Instant.parse("2026-05-04T09:59:00Z")))
+        assertFalse(EvidencePhoto(mediaId = 2).linkLapsed(Instant.now()))
+    }
+
+    @Test
     fun queueGoesStaleBeforeSignedPhotoLinksLapse() {
         val t = Instant.parse("2026-05-04T10:00:00Z")
         assertTrue(isQueueStale(null, t))

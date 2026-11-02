@@ -1,6 +1,7 @@
 package dev.voidrot.chorecast.ui.review
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,7 +41,9 @@ import dev.voidrot.chorecast.api.models.RejectChoreInstanceInputBody
 import dev.voidrot.chorecast.api.models.ReviewQueueItem
 import dev.voidrot.chorecast.core.REJECT_REASONS
 import dev.voidrot.chorecast.core.REJECT_TEXT_MAX
+import dev.voidrot.chorecast.core.linkLapsed
 import dev.voidrot.chorecast.core.openableUrl
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -114,6 +118,7 @@ fun ReviewScreen(
                                 onToggle = { viewModel.toggle(item.instance.id) },
                                 onApprove = { viewModel.approve(item.instance.id) },
                                 onReject = { viewModel.openReject(item) },
+                                onReload = viewModel::refresh,
                             )
                         }
                     }
@@ -158,6 +163,7 @@ private fun ReviewCard(
     onToggle: () -> Unit,
     onApprove: () -> Unit,
     onReject: () -> Unit,
+    onReload: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     ElevatedCard(Modifier.fillMaxWidth()) {
@@ -192,7 +198,10 @@ private fun ReviewCard(
                 if (link == null) {
                     Text(stringResource(R.string.review_photo_expired, index + 1), style = MaterialTheme.typography.bodySmall)
                 } else {
-                    TextButton(onClick = { uriHandler.openUri(link) }) {
+                    TextButton(onClick = {
+                        // A lapsed signed link is dead: reload the queue for fresh ones instead.
+                        if (photo.linkLapsed(Instant.now())) onReload() else uriHandler.openUri(link)
+                    }) {
                         Text(stringResource(R.string.review_photo_open, index + 1))
                     }
                 }
@@ -220,20 +229,29 @@ private fun RejectDialog(
         title = { Text(stringResource(R.string.review_reject_title, draft.item.instance.choreName)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                REJECT_REASONS.forEach { reason ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable(enabled = enabled) { onReason(reason) },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = draft.reason == reason, onClick = { onReason(reason) }, enabled = enabled)
-                        Text(reasonLabel(reason))
+                Column(Modifier.selectableGroup()) {
+                    REJECT_REASONS.forEach { reason ->
+                        Row(
+                            Modifier.fillMaxWidth().selectable(
+                                selected = draft.reason == reason,
+                                enabled = enabled,
+                                role = Role.RadioButton,
+                                onClick = { onReason(reason) },
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = draft.reason == reason, onClick = null, enabled = enabled)
+                            Text(reasonLabel(reason), modifier = Modifier.padding(start = 8.dp))
+                        }
                     }
                 }
                 OutlinedTextField(
                     value = draft.text,
                     onValueChange = onText,
                     label = { Text(stringResource(R.string.review_reject_text)) },
-                    supportingText = { Text("${draft.text.length}/$REJECT_TEXT_MAX") },
+                    supportingText = {
+                        Text(stringResource(R.string.review_reject_counter, draft.text.codePointCount(0, draft.text.length), REJECT_TEXT_MAX))
+                    },
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 )

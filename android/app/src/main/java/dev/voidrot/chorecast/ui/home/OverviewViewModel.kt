@@ -40,6 +40,11 @@ class OverviewViewModel(
         refresh()
     }
 
+    /** Back on screen (e.g. from the review queue): reload so the pending counts are current. */
+    fun onResume() {
+        if (job?.isActive != true) refresh()
+    }
+
     /** First load, pull-to-refresh and the retry button. */
     fun refresh() {
         val token = tokens.read() ?: return _state.update { it.copy(signedOut = true) }
@@ -47,12 +52,12 @@ class OverviewViewModel(
         _state.update { it.copy(loading = it.overview == null, refreshing = it.overview != null) }
         job = viewModelScope.launch {
             val result = client.overview(url, token)
+            if (result == Fetch.Unauthorized) tokens.clear()
             _state.update {
                 val idle = it.copy(loading = false, refreshing = false)
                 when (result) {
                     is Fetch.Ok -> idle.copy(overview = result.value, error = null)
                     Fetch.Unauthorized -> {
-                        tokens.clear()
                         idle.copy(signedOut = true)
                     }
                     is Fetch.Unreachable -> idle.copy(error = result.reason)

@@ -63,12 +63,14 @@ class ParentReviewTest {
     fun serverErrorKeepsTheKeyButAnAnswerDropsIt() = runTest {
         val keys = mutableListOf<String?>()
         var status = HttpStatusCode.InternalServerError
+        var code = "internal"
         val client = ParentReview(MockEngine { req ->
             keys += req.headers["Idempotency-Key"]
-            reply(status, problem("internal"))
+            reply(status, problem(code))
         })
         assertEquals(Decision.Failed("http_500"), client.approve(url, "tok", 1))
         status = HttpStatusCode.Conflict
+        code = "instance_not_submitted"
         assertEquals(Decision.AlreadyDecided, client.approve(url, "tok", 1))
         assertEquals(keys[0], keys[1])
         client.approve(url, "tok", 1)
@@ -76,10 +78,63 @@ class ParentReviewTest {
     }
 
     @Test
+    fun inProgressKeyIsNotADecisionAndKeepsTheKey() = runTest {
+        val keys = mutableListOf<String?>()
+        val client = ParentReview(MockEngine { req ->
+            keys += req.headers["Idempotency-Key"]
+            reply(HttpStatusCode.Conflict, problem("idempotency_key_in_progress"))
+        })
+        assertEquals(Decision.Failed("idempotency_key_in_progress"), client.approve(url, "tok", 1))
+        client.approve(url, "tok", 1)
+        assertEquals(keys[0], keys[1])
+        val out = client.approveAll(url, "tok", listOf(1, 2))
+        assertEquals(Decision.Failed("idempotency_key_in_progress"), out.stopped)
+        assertEquals(listOf(1L, 2L), out.unsent)
+        assertTrue(out.summary.removable.isEmpty())
+    }
+
+    @Test
+    fun successfulQueueReloadDropsKeptKeys() = runTest {
+        val keys = mutableListOf<String?>()
+        var down = true
+        val client = ParentReview(MockEngine { req ->
+            if (req.url.encodedPath == "/api/v1/review-queue") {
+                reply(HttpStatusCode.OK, """{"items":[]}""")
+            } else {
+                keys += req.headers["Idempotency-Key"]
+                if (down) throw IOException("timeout")
+                reply(HttpStatusCode.OK, instanceJson)
+            }
+        })
+        assertTrue(client.approve(url, "tok", 1) is Decision.Unreachable)
+        assertTrue(client.queue(url, "tok") is Fetch.Ok)
+        down = false
+        assertEquals(Decision.Done, client.approve(url, "tok", 1))
+        assertNotEquals(keys[0], keys[1])
+    }
+
+    @Test
+    fun bulkBodyIsCanonicalWhateverTheSelectionOrder() = runTest {
+        val bodies = mutableListOf<String>()
+        val keys = mutableListOf<String?>()
+        val client = ParentReview(MockEngine { req ->
+            keys += req.headers["Idempotency-Key"]
+            bodies += String(req.body.toByteArray())
+            throw IOException("timeout")
+        })
+        client.approveAll(url, "tok", listOf(3, 1, 2, 2))
+        client.approveAll(url, "tok", listOf(2, 3, 1))
+        assertEquals(bodies[0], bodies[1])
+        assertEquals(keys[0], keys[1])
+        assertTrue(bodies[0].contains("[1,2,3]"))
+    }
+
+    @Test
     fun mapsErrorStatuses() {
         assertEquals(Decision.Unauthorized, decisionFor(401, "x"))
         assertEquals(Decision.Forbidden, decisionFor(403, "x"))
         assertEquals(Decision.AlreadyDecided, decisionFor(409, "instance_not_submitted"))
+        assertEquals(Decision.Failed("idempotency_key_in_progress"), decisionFor(409, "idempotency_key_in_progress"))
         assertEquals(Decision.AlreadyDecided, decisionFor(404, "instance_not_found"))
         assertEquals(Decision.Invalid("validation_failed"), decisionFor(422, "validation_failed"))
         assertEquals(Decision.Failed("http_503"), decisionFor(503, "x"))

@@ -70,6 +70,9 @@ fun pruneSelection(selected: Set<Long>, items: List<ReviewQueueItem>): Set<Long>
 fun isQueueStale(loadedAt: Instant?, now: Instant): Boolean =
     loadedAt == null || now.isBefore(loadedAt) || Duration.between(loadedAt, now) > QUEUE_STALE_AFTER
 
+/** True when the photo's signed link has lapsed at [now]: the queue should be reloaded for a fresh one. */
+fun EvidencePhoto.linkLapsed(now: Instant): Boolean = urlExpiresAt?.toInstant()?.isBefore(now) == true
+
 /** A photo link worth opening: the full image unless it has expired. */
 fun EvidencePhoto.openableUrl(): String? = if (expired == true) null else (url ?: thumbUrl)?.toString()
 
@@ -110,19 +113,29 @@ fun summarizeApprovals(results: List<ReviewQueueApprovalResult>): ApprovalSummar
     return ApprovalSummary(approved, decided, failed)
 }
 
-/** Distinct ids, split into requests of at most [BULK_APPROVE_MAX], keeping order. */
-fun bulkChunks(ids: Collection<Long>): List<List<Long>> = ids.distinct().chunked(BULK_APPROVE_MAX)
+/**
+ * Distinct ids in ascending order, split into requests of at most [BULK_APPROVE_MAX]. Sorting makes
+ * the body canonical, so the same selection in any order sends the same bytes under the same key.
+ */
+fun bulkChunks(ids: Collection<Long>): List<List<Long>> = ids.distinct().sorted().chunked(BULK_APPROVE_MAX)
+
+/** The first [max] code points of the string (the server counts characters, not UTF-16 units). */
+fun String.takeCodePoints(max: Int): String =
+    if (codePointCount(0, length) <= max) this else substring(0, offsetByCodePoints(0, max))
 
 /** A rejection needs a reason, text, or both; null when it has neither. */
 fun buildRejection(reason: RejectChoreInstanceInputBody.Reason?, text: String): RejectChoreInstanceInputBody? {
-    val trimmed = text.trim().take(REJECT_TEXT_MAX)
+    val trimmed = text.trim().takeCodePoints(REJECT_TEXT_MAX).trim()
     if (reason == null && trimmed.isEmpty()) return null
     return RejectChoreInstanceInputBody(reason = reason, text = trimmed.ifEmpty { null })
 }
 
 /**
  * Idempotency-Key policy: one key per action attempt, reused on every retry of the same action,
- * and dropped once the server has given a definitive answer. An action is named by what it sends
+ * and dropped once the server has given a definitive answer, or when the queue is reloaded
+ * ([clear]: the reload shows what really happened). The server deduplicates only JSON-body POSTs,
+ * so the key matters for bulk approval and rejection; a single approval has no body and is safe to
+ * repeat anyway (a second one answers `instance_not_submitted`). An action is named by what it sends
  * (kind, instance ids, reason and text), so an edited rejection or a different selection gets a
  * fresh key instead of replaying a request with another body. Kept in the app container, so a
  * retry after the screen was recreated still carries the original key.
@@ -132,6 +145,10 @@ class AttemptKeys(private val newKey: () -> String = { UUID.randomUUID().toStrin
 
     @Synchronized
     fun begin(action: String): String = open.getOrPut(action, newKey)
+
+    /** Forgets every kept key, e.g. after a successful reload of the queue. */
+    @Synchronized
+    fun clear() = open.clear()
 
     /** Call with the outcome: the key is kept only when the server may not have seen the request. */
     @Synchronized

@@ -192,7 +192,8 @@
     <string name="home_server">Server: %1$s</string>
     <string name="home_household">%1$s · day ends at %2$s</string>
     <string name="home_review">Review chores</string>
-    <string name="home_review_pending">Review chores (%1$s waiting)</string>
+    <string name="home_review_pending">Review chores (%1$d waiting)</string>
+    <string name="home_review_pending_more">Review chores (%1$d+ waiting)</string>
     <string name="home_no_kids">No kids yet. Add them in the web admin.</string>
     <string name="home_load_failed">Couldn\'t load the kids (%1$s).</string>
     <string name="home_refresh_failed">Couldn\'t refresh. Showing what we had.</string>
@@ -223,7 +224,8 @@
     <string name="review_step_not_done">Not done: %1$s</string>
     <string name="review_note">Note: %1$s</string>
     <string name="review_photo_open">Open photo %1$d</string>
-    <string name="review_photo_expired">Photo %1$d expired. Pull down to reload.</string>
+    <string name="review_photo_expired">Photo %1$d is no longer available.</string>
+    <string name="review_reject_counter">%1$d/%2$d</string>
     <string name="review_approve">Approve</string>
     <string name="review_reject">Reject</string>
     <string name="review_reject_title">Reject %1$s</string>

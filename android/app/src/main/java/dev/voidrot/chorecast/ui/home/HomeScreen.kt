@@ -24,10 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.core.KidOverview
-import dev.voidrot.chorecast.core.ParentOverview
 
 /** Parent home: each kid's progress today, balance, streak and waiting reviews, and the way into the queue. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +47,10 @@ fun HomeScreen(
     val overview by overviewViewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.signedOut) { if (state.signedOut) onSignedOut() }
     LaunchedEffect(overview.signedOut) { if (overview.signedOut) onSignedOut() }
+    LifecycleResumeEffect(overviewViewModel) {
+        overviewViewModel.onResume()
+        onPauseOrDispose {}
+    }
 
     PullToRefreshBox(isRefreshing = overview.refreshing, onRefresh = overviewViewModel::refresh, modifier = modifier.fillMaxSize()) {
         LazyColumn(
@@ -76,10 +80,10 @@ fun HomeScreen(
                 val data = overview.overview
                 Button(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        if (data == null || data.pendingTotal == 0) {
-                            stringResource(R.string.home_review)
-                        } else {
-                            stringResource(R.string.home_review_pending, pendingText(data))
+                        when {
+                            data == null || data.pendingTotal == 0 -> stringResource(R.string.home_review)
+                            data.pendingMore -> stringResource(R.string.home_review_pending_more, data.pendingTotal)
+                            else -> stringResource(R.string.home_review_pending, data.pendingTotal)
                         },
                     )
                 }
@@ -112,8 +116,6 @@ fun HomeScreen(
         }
     }
 }
-
-private fun pendingText(o: ParentOverview): String = if (o.pendingMore) "${o.pendingTotal}+" else o.pendingTotal.toString()
 
 @Composable
 private fun KidCard(row: KidOverview) {

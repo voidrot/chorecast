@@ -43,16 +43,25 @@ sealed interface Decision {
 val Decision.outcomeKnown: Boolean
     get() = when (this) {
         is Decision.Unreachable -> false
-        is Decision.Failed -> !code.startsWith("http_5") && code != "unexpected"
+        is Decision.Failed -> !code.startsWith("http_5") && code != "unexpected" && code != CODE_IN_PROGRESS
         else -> true
     }
 
-/** Maps a failed single approval or rejection to a [Decision]. */
-fun decisionFor(status: Int, code: String): Decision = when (status) {
-    401 -> Decision.Unauthorized
-    403 -> Decision.Forbidden
-    404, 409 -> Decision.AlreadyDecided
-    422 -> Decision.Invalid(code)
+/** An earlier request with the same key is still running: the outcome is not known yet. */
+private const val CODE_IN_PROGRESS = "idempotency_key_in_progress"
+
+/**
+ * Maps a failed approval or rejection (single or bulk) to a [Decision]. Only `instance_not_submitted`
+ * and `instance_not_found` mean "already decided". Any other 404 or 409, such as an in-progress key,
+ * is a failure that keeps the chore (and the key, when the outcome is unknown).
+ */
+fun decisionFor(status: Int, code: String): Decision = when {
+    status == 401 -> Decision.Unauthorized
+    status == 403 -> Decision.Forbidden
+    (status == 404 || status == 409) && (code == "instance_not_submitted" || code == "instance_not_found") ->
+        Decision.AlreadyDecided
+    status == 404 || status == 409 -> Decision.Failed(code)
+    status == 422 -> Decision.Invalid(code)
     else -> Decision.Failed("http_$status")
 }
 
@@ -124,6 +133,7 @@ class ParentReview(
         val resp = review(url, token).listReviewQueue(cursor = cursor)
         if (!resp.success) return@guard resp.failure()
         val page = resp.body()
+        keys.clear() // the reload shows what happened to any attempt whose answer was lost
         Fetch.Ok(ReviewPage(page.items, page.nextCursor))
     }
 

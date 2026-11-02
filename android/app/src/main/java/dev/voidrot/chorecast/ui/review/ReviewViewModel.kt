@@ -16,6 +16,7 @@ import dev.voidrot.chorecast.core.isQueueStale
 import dev.voidrot.chorecast.core.mergeReviewPage
 import dev.voidrot.chorecast.core.pruneSelection
 import dev.voidrot.chorecast.core.removeReviewItems
+import dev.voidrot.chorecast.core.takeCodePoints
 import dev.voidrot.chorecast.core.toggleSelected
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,6 +90,7 @@ class ReviewViewModel(
         _state.update { it.copy(loading = it.items.isEmpty(), refreshing = it.items.isNotEmpty(), loadingMore = false) }
         loadJob = viewModelScope.launch {
             val result = client.queue(url, token)
+            if (result == Fetch.Unauthorized) tokens.clear()
             if (result is Fetch.Ok) loadedAt = now()
             _state.update {
                 val idle = it.copy(loading = false, refreshing = false)
@@ -119,6 +121,7 @@ class ReviewViewModel(
         _state.update { it.copy(loadingMore = true) }
         loadJob = viewModelScope.launch {
             val result = client.queue(url, token, cursor)
+            if (result == Fetch.Unauthorized) tokens.clear()
             _state.update {
                 val idle = it.copy(loadingMore = false)
                 when (result) {
@@ -134,7 +137,6 @@ class ReviewViewModel(
 
     private fun failed(s: ReviewState, result: Fetch<*>): ReviewState = when (result) {
         Fetch.Unauthorized -> {
-            tokens.clear()
             s.copy(signedOut = true)
         }
         is Fetch.Unreachable -> s.copy(error = result.reason)
@@ -155,6 +157,7 @@ class ReviewViewModel(
         _state.update { it.copy(working = true) }
         viewModelScope.launch {
             val decision = client.approve(url, token, id)
+            if (decision == Decision.Unauthorized) tokens.clear()
             _state.update { afterDecision(it, decision, setOf(id), ReviewNotice.Approved(1)) }
         }
     }
@@ -167,6 +170,7 @@ class ReviewViewModel(
         _state.update { it.copy(working = true) }
         viewModelScope.launch {
             val out = client.approveAll(url, token, ids)
+            if (out.stopped == Decision.Unauthorized) tokens.clear()
             _state.update {
                 val gone = out.summary.removable
                 val base = it.copy(
@@ -177,7 +181,6 @@ class ReviewViewModel(
                 when (val stopped = out.stopped) {
                     null -> base.copy(notice = bulkNotice(out.summary.approved.size, out.summary.alreadyDecided.size, out.summary.failed.size))
                     Decision.Unauthorized -> {
-                        tokens.clear()
                         base.copy(signedOut = true)
                     }
                     is Decision.Unreachable -> base.copy(notice = ReviewNotice.Offline(stopped.reason))
@@ -201,7 +204,7 @@ class ReviewViewModel(
         s.copy(reject = s.reject?.let { it.copy(reason = if (it.reason == reason) null else reason) })
     }
 
-    fun setText(text: String) = _state.update { s -> s.copy(reject = s.reject?.copy(text = text.take(REJECT_TEXT_MAX))) }
+    fun setText(text: String) = _state.update { s -> s.copy(reject = s.reject?.copy(text = text.takeCodePoints(REJECT_TEXT_MAX))) }
 
     fun confirmReject() {
         val s = _state.value
@@ -213,6 +216,7 @@ class ReviewViewModel(
         _state.update { it.copy(working = true) }
         viewModelScope.launch {
             val decision = client.reject(url, token, id, body)
+            if (decision == Decision.Unauthorized) tokens.clear()
             _state.update { afterDecision(it, decision, setOf(id), ReviewNotice.Rejected) }
         }
     }
@@ -228,7 +232,6 @@ class ReviewViewModel(
             Decision.Done -> removed.copy(notice = done)
             Decision.AlreadyDecided -> removed.copy(notice = ReviewNotice.AlreadyDecided(1))
             Decision.Unauthorized -> {
-                tokens.clear()
                 left.copy(signedOut = true)
             }
             is Decision.Unreachable -> left.copy(notice = ReviewNotice.Offline(decision.reason))
