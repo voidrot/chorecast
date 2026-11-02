@@ -56,6 +56,7 @@ describe('chore form', () => {
       points: 5,
       requiresApproval: true,
       evidence: { photos: 0 },
+      assignment: { mode: 'everyone' },
       steps: ['Hall'],
       slots: ['07:00', '18:00'],
     })
