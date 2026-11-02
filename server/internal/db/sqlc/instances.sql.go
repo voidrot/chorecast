@@ -495,6 +495,46 @@ func (q *Queries) ListLatestChoreInstanceRejectionsBetween(ctx context.Context, 
 	return items, nil
 }
 
+const listSubmittedInstancesForAutoApprove = `-- name: ListSubmittedInstancesForAutoApprove :many
+SELECT i.id
+FROM chore_instances i JOIN chores c ON c.id = i.chore_id
+WHERE i.status = 'submitted' AND i.completed_at IS NOT NULL
+  AND COALESCE(c.auto_approve_hours, ?1) > 0
+  AND i.completed_at <= strftime('%Y-%m-%dT%H:%M:%fZ', ?2, '-' || COALESCE(c.auto_approve_hours, ?1) || ' hours')
+ORDER BY i.completed_at, i.id
+`
+
+type ListSubmittedInstancesForAutoApproveParams struct {
+	HouseholdHours sql.NullInt64 `json:"household_hours"`
+	Now            interface{}   `json:"now"`
+}
+
+// Submitted instances past their timeout, oldest submission first: the chore's auto_approve_hours
+// (0 = never), else the household's (NULL = never). now is a db.Timestamp. The partial index
+// chore_instances_submitted serves it (asserted by a test).
+func (q *Queries) ListSubmittedInstancesForAutoApprove(ctx context.Context, arg ListSubmittedInstancesForAutoApproveParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listSubmittedInstancesForAutoApprove, arg.HouseholdHours, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reassignChoreInstance = `-- name: ReassignChoreInstance :execrows
 UPDATE chore_instances SET kid_id = ?1, reassigned_from = COALESCE(reassigned_from, kid_id),
     due_at = ?2, manually_reassigned = 1, auto_assigned = 0, updated_at = ?3

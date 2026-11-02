@@ -394,6 +394,10 @@ CREATE TABLE chore_instance_rejections (
 );
 CREATE INDEX chore_instance_rejections_by_instance ON chore_instance_rejections (instance_id, id);
 
+-- ==== Auto-approve (#29) ====
+-- The auto-approve job lists submitted instances by when they were submitted (internal/autoapprove).
+CREATE INDEX chore_instances_submitted ON chore_instances (completed_at) WHERE status = 'submitted';
+
 -- +goose Down
 DROP TABLE kid_chore_streaks;
 DROP TABLE kid_streaks;

@@ -42,8 +42,21 @@ Built (#25, `internal/instances`; evidence is #27). Steps 3 and 4 are `instances
 Every rejection is kept in `chore_instance_rejections` (reason, text, the rejected completer, the parent, when),
 and the instance carries `rejection_count`; the API returns `rejectionCount` and `lastRejection`. A rejection
 after the instance's day has closed makes it `missed`, with its penalty, instead of `open`, since the kid can't
-redo it. For auto-approve (#29): `instances.Approve(ctx, tx, clock, id, 0, "Auto-approved")` posts the credit with
+redo it. For auto-approve (#29): `instances.Approve(ctx, tx, clock, id, 0, "auto-approved")` posts the credit with
 `created_by` NULL and that note, and `ErrNotSubmitted` means someone already decided, so the job skips it.
+
+Built (#29, `internal/autoapprove`, server only). Step 5 is the job kind `autoapprove.run`, scheduled every 5
+minutes (`jobs.Every`, wired in `background.go`). Each run lists the `submitted` instances already past their timeout (decided in SQL) and approves, one
+transaction each, those whose latest submission (`completed_at`; a resubmission after a rejection restarts the
+clock) is older than the effective timeout. The timeout is the chore's `auto_approve_hours` (NULL = household
+default, **0 = never**, N = N hours), else the household's `auto_approve_hours` (NULL = never). Both are read at
+each run, so a settings change applies on the next tick, and a run after downtime approves everything overdue.
+The approval is `instances.Approve(..., 0, "auto-approved")`: the credit has `created_by` NULL and that note, and
+the usual `instance.approved` event (`by` 0) is the audit hook until the audit log (#37) exists. The job
+re-reads each instance inside its transaction and skips one that was decided, or resubmitted, since the listing,
+so repeated or concurrent runs are no-ops. `blocked()` is the seam for Phase 3 blockers (an AI `not_yet`
+verdict, a near-duplicate flag); it returns false today. A partial index `chore_instances_submitted` on
+`completed_at` serves the listing.
 
 ## Fresh-evidence rules (no reusing old photos)
 
