@@ -3,6 +3,7 @@ package ledger_test
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
@@ -196,6 +197,87 @@ func TestReverseOnce(t *testing.T) {
 	}
 }
 
+func TestReversalKeepsTheOriginalsDate(t *testing.T) {
+	f := newFixture(t)
+	lastWeek := caltime.Date{Year: 2026, Month: 10, Day: 24}
+	p := chore(f.sam, 7, 10)
+	p.LocalDate = lastWeek
+	credit := f.mustPost(p)
+
+	rev, err := f.reverse(credit.ID, "wasn't done")
+	if err != nil || rev.LocalDate != lastWeek {
+		t.Fatalf("reversal = %+v, %v; want local date %s", rev, err, lastWeek)
+	}
+	// A week on, undoing the undo still belongs to the chore's day.
+	f.clk.Advance(7 * 24 * time.Hour)
+	if again, err := f.reverse(rev.ID, "it was"); err != nil || again.LocalDate != lastWeek {
+		t.Errorf("reversal of the reversal = %+v, %v; want local date %s", again, err, lastWeek)
+	}
+}
+
+func (f *fixture) tip(kid int64, kind string, src ledger.Source) (e ledger.PointsEntry, inEffect, found bool) {
+	f.t.Helper()
+	err := f.bus.InTx(f.t.Context(), func(tx *events.Tx) error {
+		var err error
+		e, inEffect, found, err = ledger.Tip(f.t.Context(), tx, kid, kind, src)
+		return err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return e, inEffect, found
+}
+
+func TestTipFollowsTheReversalChain(t *testing.T) {
+	f := newFixture(t)
+	src := ledger.Source{Kind: ledger.SourceChoreInstance, ID: 7}
+	if _, _, found := f.tip(f.sam, ledger.KindChore, src); found {
+		t.Fatal("tip of an unposted source was found")
+	}
+
+	credit := f.mustPost(chore(f.sam, 7, 10))
+	f.mustPost(chore(f.ada, 7, 4)) // the same source for another kid is its own chain
+	f.mustPost(penalty(f.sam, 7, 0))
+	wantTip := func(step string, id int64, inEffect bool, balance int64) {
+		t.Helper()
+		e, on, found := f.tip(f.sam, ledger.KindChore, src)
+		if !found || e.ID != id || on != inEffect || e.ReversedByID != 0 || f.balance(f.sam) != balance {
+			t.Errorf("%s: tip = %+v, inEffect %v, found %v, balance %d; want id %d, inEffect %v, balance %d",
+				step, e, on, found, f.balance(f.sam), id, inEffect, balance)
+		}
+	}
+	wantTip("posted", credit.ID, true, 10)
+
+	// Undo, re-apply, undo: each step reverses the current tip.
+	tip := credit.ID
+	for i, want := range []struct {
+		inEffect bool
+		balance  int64
+	}{{false, 0}, {true, 10}, {false, 0}} {
+		rev, err := f.reverse(tip, "toggle")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tip = rev.ID
+		wantTip(fmt.Sprintf("after reversal %d", i+1), tip, want.inEffect, want.balance)
+	}
+
+	// Ada's chain is untouched: her credit is its own tip.
+	if e, on, found := f.tip(f.ada, ledger.KindChore, src); !found || !on || e.Amount != 4 || e.KidID != f.ada {
+		t.Errorf("ada's tip = %+v, inEffect %v, found %v", e, on, found)
+	}
+	if _, _, found := f.tip(f.sam, ledger.KindStreakBonus, src); found {
+		t.Error("tip found for a kind never posted for the source")
+	}
+	err := f.bus.InTx(t.Context(), func(tx *events.Tx) error {
+		_, _, _, err := ledger.Tip(t.Context(), tx, f.sam, ledger.KindAdjustment, src)
+		return err
+	})
+	if err == nil {
+		t.Error("Tip accepted adjustments, which can repeat per source")
+	}
+}
+
 func TestClampWhenNegativeBalanceIsOff(t *testing.T) {
 	f := newFixture(t)
 	f.mustPost(adjust(f.sam, 5))
@@ -266,16 +348,20 @@ func TestPostAtMostOncePerSource(t *testing.T) {
 		t.Errorf("balance = %d", b)
 	}
 
-	// After a reversal the source still counts as posted: undo the reversal instead.
+	// After a reversal the source still counts as posted, and the repeat shows the reversal:
+	// undo the reversal instead.
 	rev, err := f.reverse(first.ID, "undo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.post(chore(f.sam, 7, 10)); !errors.Is(err, ledger.ErrAlreadyPosted) {
-		t.Errorf("re-post after reversal: err = %v", err)
+	if dup, err := f.post(chore(f.sam, 7, 10)); !errors.Is(err, ledger.ErrAlreadyPosted) || dup.ReversedByID != rev.ID {
+		t.Errorf("re-post after reversal = %+v, %v; want ReversedByID %d", dup, err, rev.ID)
 	}
 	if _, err := f.reverse(rev.ID, "redo"); err != nil {
 		t.Error(err)
+	}
+	if dup, err := f.post(chore(f.sam, 7, 10)); !errors.Is(err, ledger.ErrAlreadyPosted) || dup.ReversedByID != rev.ID {
+		t.Errorf("re-post after redo = %+v, %v; want ReversedByID %d", dup, err, rev.ID)
 	}
 
 	// A rolled-back transaction leaves no entry and no event.
@@ -460,6 +546,39 @@ func TestBalanceIsSumOfEntries(t *testing.T) {
 		}
 		if b, err := f.svc.Balance(t.Context(), f.sam); err != nil || b.Balance != balance() || b.Available != b.Balance {
 			t.Fatalf("seed %d: Balance = %+v, %v", seed, b, err)
+		}
+	}
+}
+
+// TestServiceBalanceIsOneRead checks that Balance and Available come from one read: with writes
+// landing concurrently, the two never disagree (Available has no holds yet).
+func TestServiceBalanceIsOneRead(t *testing.T) {
+	f := newFixture(t)
+	done := make(chan error, 1)
+	go func() {
+		for i := range 300 {
+			if _, err := f.post(adjust(f.sam, int64(i%7+1))); err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+			return
+		default:
+		}
+		b, err := f.svc.Balance(t.Context(), f.sam)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.Available != b.Balance {
+			t.Fatalf("Balance = %+v: balance and available disagree", b)
 		}
 	}
 }

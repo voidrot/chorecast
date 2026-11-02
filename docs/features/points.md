@@ -11,7 +11,7 @@ Status: accepted (planning session, 2026-10-30). Covers earning, spending, corre
 | Due time | **Soft target.** Anything completed before the kid's day closes earns full points. No reduced-points late window. |
 | Day close | **Household setting `day_end_time`**, default `00:00`, in the household timezone, with an optional **per-kid override** that ends at or before it (see [household.md](household.md)). "Day close" for a kid always means their effective day end. At day close, open required chores become `missed`. |
 | Missed chores | Optional **fixed penalty in points** per chore. Parent can **excuse** a missed chore, which reverses the penalty. |
-| Negative balance | **Household setting `allow_negative_balance`.** When off, a deduction is clamped to the current balance (the entry records the clamp). |
+| Negative balance | **Household setting `allow_negative_balance`.** When off, a deduction is clamped to the current balance (the entry records the clamp). Reversals are excluded on purpose: a reversal is always the exact negation of the entry it undoes, so it can take a balance below zero (owner decision). |
 | Corrections | **Append-only ledger.** Mistakes are fixed with a reversing entry linked to the original; nothing is edited or deleted. |
 | Manual adjustments | Parent can add or subtract points with a **required note**. **Recurring adjustments** (e.g. weekly base allowance): per kid, amount + note + schedule rule (same model as chores), pausable; writes `adjustment` entries. |
 | Transfers | Kids can gift points to a sibling; **parent approves**. |
@@ -48,7 +48,8 @@ points_entries
 ```
 
 Rules:
-- An entry can be reversed at most once (`UNIQUE(reverses_id)`); a reversal's amount is the negated original.
+- An entry can be reversed at most once (`UNIQUE(reverses_id)`); a reversal's amount is the negated original and
+  its `local_date` is the original's.
 - **Holds** are not ledger entries. A pending reward redemption or transfer request reserves points:
   `available = balance − SUM(cost of pending redemptions and transfers)`. A request is allowed only if
   `available ≥ cost`, regardless of `allow_negative_balance`.
@@ -69,16 +70,22 @@ features add sources without schema changes. `created_by` is NULL for the system
   `ErrAlreadyPosted`, so at-least-once callers (day close #24, approvals #25) treat that error as done and must
   not return it from their `InTx` function, or their own change rolls back. Undoing a reversal (re-approving,
   un-excusing) means reversing the reversal, not posting again. Streak bonuses (#30) should use a per-day source
-  such as (`streak_day`, YYYYMMDD).
+  such as (`streak_day`, YYYYMMDD). A repeat's returned entry has `ReversedByID` set when it was reversed.
+- **Undo and re-apply.** A source's entry and its reversals form a chain C → R1 → R2 ….
+  `ledger.Tip(ctx, tx, kidID, kind, src) (entry, inEffect, found, err)` returns the chain's unreversed end, and
+  `inEffect` is true when the source's effect stands (an even number of reversals). To undo an effect in force,
+  or re-apply one that was undone, `Reverse` the tip. `Tip` takes only the once-per-source kinds.
 - **Clamping.** With `allowNegativeBalance` off, a deduction is clamped so the balance doesn't drop below 0. If
   the balance is already at or below 0, it clamps to 0. A clamped entry is still written, with
   `requested_amount` set. Reversals are never clamped (always the exact negation), so reversing a credit that
-  was already spent can take a balance below zero.
+  was already spent can take a balance below zero. That exclusion is an owner decision, not an oversight.
 - **Reversals** take a required note, copy the original's source and can themselves be reversed. A second
-  reversal of one entry fails with `ErrAlreadyReversed` (409 `already_reversed`).
+  reversal of one entry fails with `ErrAlreadyReversed` (409 `already_reversed`). Inside a caller's own
+  transaction, a retry that gets `ErrAlreadyReversed` is done, the same as `ErrAlreadyPosted`.
 - **`local_date`** is the caller's date (day close passes the closed day). Otherwise it is the kid's current day:
-  the day whose window, up to the kid's effective day end, contains now. A reversal always gets the current day.
-- **Available** is the balance for now. Holds join `ledger.Available` with rewards (Phase 2).
+  the day whose window, up to the kid's effective day end, contains now. A reversal gets the `local_date` of the
+  entry it reverses (owner decision), so un-approving last week's chore corrects last week.
+- **Available** is the balance for now. The API reads `balance` and `available` in one transaction, so they agree. Holds join `ledger.Available` with rewards (Phase 2).
 - **API.** `GET /kids/{kid}/points` (`balance`, `available`) and `GET /kids/{kid}/points/entries` (paged, newest
   first, each entry with `balanceAfter` and `reversedById`) need `points:read`. Kids can read only their own.
   `POST /kids/{kid}/points/adjustments` (`amount` ≠ 0, `note`) and `POST /kids/{kid}/points/entries/{entry}/reversal`
