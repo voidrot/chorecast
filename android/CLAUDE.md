@@ -30,7 +30,7 @@ Most tests are in `core/src/test`, which is plain JVM and needs no emulator. `ap
 
 ## Modules
 
-- `core`: Kotlin/JVM with no `android.*` imports. Server URL parsing (`ServerUrl`), pairing QR parsing, API compatibility (`Compatibility`), the API clients (`ServerChecker`, `ParentAuth`, `DeviceClient`, `HouseholdInfo`, `KidChores`), the kid's today logic (`KidToday.kt`: grouping by slot, today vs planned, status and evidence presentation), PKCE, `ApiClients.config`, and the `TokenStore` interface. Code that can run without Android belongs here.
+- `core`: Kotlin/JVM with no `android.*` imports. Server URL parsing (`ServerUrl`), pairing QR parsing, API compatibility (`Compatibility`), the API clients (`ServerChecker`, `ParentAuth`, `DeviceClient`, `HouseholdInfo`, `KidChores`), the kid's today logic (`KidToday.kt`: grouping by slot, today vs planned, status and evidence presentation), the complete flow (`Completion.kt`: draft, evidence rules, request, idempotency keys, error mapping; `CompleteChore.kt`: upload and submit), PKCE, `ApiClients.config`, and the `TokenStore` interface. Code that can run without Android belongs here.
 - `api-client`: the Kotlin client, generated at build time by `openApiGenerate` from `api/openapi-3.0.json` (the 3.0 copy, not `openapi.json`). Nothing generated is committed. After an API change, run `mise run gen:openapi` and commit the spec; CI fails on a stale spec. Build clients with `ApiClients.config`, because the generated client registers no JSON converter.
 - `app`: Compose UI, Keystore, SharedPreferences, the CameraX QR scanner and the OkHttp engine. Only this module depends on Android.
 

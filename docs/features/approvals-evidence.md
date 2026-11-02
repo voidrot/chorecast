@@ -112,6 +112,19 @@ Built (#27, `internal/evidence`, server only; Android capture is #31, the review
   the cap, again if the cap check fails (a racing first upload), and atomically in the insert transaction. Parents
   aren't capped.
 
+Built (#101, Android): the kid's chore detail has a Complete button that opens the evidence form: the checklist
+steps, a note and the photos. Photos come only from the in-app CameraX camera (no gallery); the shutter fixes
+`capturedAt` and a UUID `captureId`, and the JPEG stays in the app's private storage until the completion is
+accepted. The camera permission is asked when the camera opens and a refusal leaves a retry button. A before/after
+chore needs two photos (the first is sent as `before`, the others as `after`). Submit uploads each photo through
+`POST /media/photos` (resending the same file after a lost response returns the pending photo, so a retry never
+uses another pending slot), then sends `POST /instances/{id}/completion` with an `Idempotency-Key` that is reused
+while the body is unchanged. Errors map to: offline or 5xx (retry as is), 429 on upload (too many pending photos,
+wait), 409 `duplicate_media` / 413 / 415 (the photo is dropped, retake), 422 (a photo the server no longer accepts
+is uploaded again), 409 `instance_closed` / `instance_not_open` (the list refreshes), and 422
+`video_evidence_unsupported`. Resubmitting after a rejection is the same flow. The logic is in `:core`
+(`Completion.kt`, `CompleteChore.kt`).
+
 ## Fresh-evidence rules (no reusing old photos)
 
 Goal: a kid can't satisfy today's chore with an old photo or one taken from the gallery or downloaded.

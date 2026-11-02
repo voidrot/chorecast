@@ -60,7 +60,13 @@ fun KidHomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    BackHandler(enabled = state.selected != null, onBack = viewModel::close)
+    BackHandler(enabled = state.selected != null) {
+        when {
+            state.cameraOpen -> viewModel.closeCamera()
+            state.completing -> if (!state.submitting) viewModel.cancelComplete()
+            else -> viewModel.close()
+        }
+    }
     // A phone left open overnight shows yesterday's chores until it is looked at again.
     LifecycleResumeEffect(viewModel) {
         viewModel.refreshIfStale()
@@ -70,11 +76,38 @@ fun KidHomeScreen(
     LaunchedEffect(state.error) { if (state.error == TodayError.SignedOut) onUnauthorized() }
 
     val selected = state.selectedChore
-    if (selected != null) {
+    val needs = state.selectedNeeds
+    val draft = state.selectedDraft
+    if (selected != null && state.completing && state.cameraOpen) {
+        CameraCapture(
+            newFile = viewModel::newCaptureFile,
+            onCaptured = viewModel::onCaptured,
+            onFailed = viewModel::onCaptureFailed,
+            onCancel = viewModel::closeCamera,
+            modifier = modifier,
+        )
+    } else if (selected != null && state.completing && needs != null && draft != null) {
+        CompleteForm(
+            choreName = selected.instance.choreName,
+            needs = needs,
+            draft = draft,
+            submitting = state.submitting,
+            error = state.completeError,
+            onToggleStep = viewModel::toggleStep,
+            onNote = viewModel::setNote,
+            onTakePhoto = viewModel::openCamera,
+            onRemovePhoto = viewModel::removePhoto,
+            onSubmit = viewModel::submit,
+            onCancel = viewModel::cancelComplete,
+            modifier = modifier,
+        )
+    } else if (selected != null) {
         ChoreDetailScreen(
             chore = selected,
             details = state.selectedChoreDetails,
             detailsFailed = state.choreFailed,
+            completeError = state.completeError,
+            onComplete = viewModel::beginComplete,
             onBack = viewModel::close,
             modifier = modifier,
         )

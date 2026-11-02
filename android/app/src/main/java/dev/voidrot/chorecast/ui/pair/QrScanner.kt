@@ -23,22 +23,27 @@ import com.google.zxing.ReaderException
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Camera preview that reports the text of the first QR code it sees. Uses CameraX for frames and
  * ZXing to decode them, so it needs no Google Play services.
  */
 @Composable
-fun QrScanner(onScanned: (String) -> Unit, modifier: Modifier = Modifier) {
+fun QrScanner(onScanned: (String) -> Unit, modifier: Modifier = Modifier, onUnavailable: () -> Unit = {}) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val latest = rememberUpdatedState(onScanned)
+    val latestUnavailable = rememberUpdatedState(onUnavailable)
+    // The future can complete after the screen is gone; the listener then must not bind.
+    val disposed = remember { AtomicBoolean(false) }
     val executor = remember { Executors.newSingleThreadExecutor() }
     val providerFuture = remember { ProcessCameraProvider.getInstance(context) }
 
     DisposableEffect(Unit) {
         onDispose {
-            if (providerFuture.isDone) providerFuture.get().unbindAll()
+            disposed.set(true)
+            if (providerFuture.isDone) runCatching { providerFuture.get().unbindAll() }
             executor.shutdown()
         }
     }
@@ -46,18 +51,30 @@ fun QrScanner(onScanned: (String) -> Unit, modifier: Modifier = Modifier) {
         factory = { ctx ->
             val view = PreviewView(ctx)
             providerFuture.addListener({
-                val provider = providerFuture.get()
-                val preview = Preview.Builder().build().also { it.setSurfaceProvider(view.surfaceProvider) }
-                val analysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { a ->
-                        a.setAnalyzer(executor, QrAnalyzer { text ->
-                            ContextCompat.getMainExecutor(ctx).execute { latest.value(text) }
-                        })
+                if (disposed.get()) return@addListener
+                try {
+                    val provider = providerFuture.get()
+                    val preview = Preview.Builder().build().also { it.setSurfaceProvider(view.surfaceProvider) }
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { a ->
+                            a.setAnalyzer(executor, QrAnalyzer { text ->
+                                ContextCompat.getMainExecutor(ctx).execute { latest.value(text) }
+                            })
+                        }
+                    // A device without a back camera (some tablets) takes the front one.
+                    val selector = listOf(CameraSelector.DEFAULT_BACK_CAMERA, CameraSelector.DEFAULT_FRONT_CAMERA)
+                        .firstOrNull { provider.hasCamera(it) }
+                    if (selector == null) {
+                        latestUnavailable.value()
+                    } else {
+                        provider.unbindAll()
+                        provider.bindToLifecycle(lifecycleOwner, selector, preview, analysis)
                     }
-                provider.unbindAll()
-                provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                } catch (_: Exception) {
+                    latestUnavailable.value()
+                }
             }, ContextCompat.getMainExecutor(ctx))
             view
         },
