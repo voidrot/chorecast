@@ -7,7 +7,12 @@ export type AdjustmentBody = components['schemas']['PointsAdjustmentInput']
 export const NOTE_MAX = 500
 export const AMOUNT_MAX = 1_000_000
 
-/** Appends a page, skipping entries already listed (a new entry shifts later pages' cursors). */
+/** A note's length in characters (code points), which is how the server counts, not UTF-16 units. */
+export function noteLength(s: string): number {
+  return [...s].length
+}
+
+/** Appends a page, skipping entries already listed (a write between page loads can repeat one). */
 export function mergePage(existing: readonly PointsEntry[], page: readonly PointsEntry[]) {
   const seen = new Set(existing.map((e) => e.id))
   return [...existing, ...page.filter((e) => !seen.has(e.id))]
@@ -39,7 +44,7 @@ export function buildAdjustment(
   }
   const trimmed = note.trim()
   if (!trimmed) return { problem: 'noteRequired' }
-  if (trimmed.length > NOTE_MAX) return { problem: 'noteTooLong' }
+  if (noteLength(trimmed) > NOTE_MAX) return { problem: 'noteTooLong' }
   return { body: { amount: sign === 'add' ? amount : -amount, note: trimmed } }
 }
 
@@ -47,6 +52,6 @@ export function buildAdjustment(
 export function buildReversalNote(note: string): { note: string } | { problem: string } {
   const trimmed = note.trim()
   if (!trimmed) return { problem: 'noteRequired' }
-  if (trimmed.length > NOTE_MAX) return { problem: 'noteTooLong' }
+  if (noteLength(trimmed) > NOTE_MAX) return { problem: 'noteTooLong' }
   return { note: trimmed }
 }

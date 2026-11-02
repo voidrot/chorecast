@@ -42,6 +42,14 @@ describe('buildAdjustment', () => {
   })
 })
 
+describe('note length', () => {
+  it('counts characters, so 500 astral characters fit', () => {
+    const note = '😀'.repeat(NOTE_MAX)
+    expect(buildAdjustment('add', 1, note)).toEqual({ body: { amount: 1, note } })
+    expect(buildReversalNote(`${note}😀`)).toEqual({ problem: 'noteTooLong' })
+  })
+})
+
 describe('buildReversalNote', () => {
   it('requires a note', () => {
     expect(buildReversalNote(' ')).toEqual({ problem: 'noteRequired' })

@@ -2,7 +2,7 @@
 import { NAlert, NButton, NInput, NModal } from 'naive-ui'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { buildReversalNote, NOTE_MAX } from '@/points/ledger'
+import { buildReversalNote, NOTE_MAX, noteLength } from '@/points/ledger'
 
 const props = defineProps<{ show: boolean; busy: boolean; error?: string }>()
 const emit = defineEmits<{ close: []; submit: [note: string] }>()
@@ -47,7 +47,8 @@ function submit() {
         <NInput
           v-model:value="note"
           type="textarea"
-          :maxlength="NOTE_MAX"
+          :allow-input="(v: string) => noteLength(v) <= NOTE_MAX"
+          :count-graphemes="noteLength"
           show-count
           :autosize="{ minRows: 2 }"
           :input-props="{ id: 'rev-note' }"

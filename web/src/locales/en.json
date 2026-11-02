@@ -5,6 +5,7 @@
   "points": {
     "title": "{name}'s points",
     "profile": "Edit profile",
+    "refreshFailed": "Saved, but the ledger could not be refreshed. Reload the page to see the latest.",
     "balance": "Balance",
     "available": "Available",
     "availableHint": "Balance minus points held by pending requests.",

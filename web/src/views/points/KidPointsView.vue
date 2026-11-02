@@ -129,16 +129,16 @@ async function refreshQuietly() {
   try {
     await reload(pagesLoaded)
   } catch {
-    // The next action or a page reload will surface a persistent failure.
+    message.warning(t('points.refreshFailed'))
   }
 }
 
-async function adjust(body: AdjustmentBody, done: () => void) {
+async function adjust(body: AdjustmentBody, key: string, done: () => void) {
   adjustBusy.value = true
   adjustError.value = undefined
   try {
     const { error, response } = await api.POST('/kids/{kid}/points/adjustments', {
-      params: { path: path.value },
+      params: { path: path.value, header: { 'Idempotency-Key': key } },
       body,
     })
     if (!response.ok) throw ApiError.fromProblem(response.status, error)

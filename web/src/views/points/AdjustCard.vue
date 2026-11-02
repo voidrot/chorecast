@@ -1,17 +1,30 @@
 <script setup lang="ts">
 import { NAlert, NButton, NCard, NInput, NInputNumber, NRadioButton, NRadioGroup } from 'naive-ui'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { type AdjustmentBody, AMOUNT_MAX, buildAdjustment, NOTE_MAX } from '@/points/ledger'
+import {
+  type AdjustmentBody,
+  AMOUNT_MAX,
+  buildAdjustment,
+  NOTE_MAX,
+  noteLength,
+} from '@/points/ledger'
 
 defineProps<{ busy: boolean; error?: string }>()
-const emit = defineEmits<{ submit: [body: AdjustmentBody, done: () => void] }>()
+const emit = defineEmits<{ submit: [body: AdjustmentBody, key: string, done: () => void] }>()
 
 const { t } = useI18n()
 const sign = ref<'add' | 'subtract'>('add')
 const amount = ref<number | null>(null)
 const note = ref('')
 const problem = ref<string>()
+
+// One key per filled-in form: a retry of the same submission replays the first response, while a
+// success or any edit starts a new submission.
+let key = crypto.randomUUID()
+watch([sign, amount, note], () => {
+  key = crypto.randomUUID()
+})
 
 function submit() {
   const result = buildAdjustment(sign.value, amount.value, note.value)
@@ -20,9 +33,10 @@ function submit() {
     return
   }
   problem.value = undefined
-  emit('submit', result.body, () => {
+  emit('submit', result.body, key, () => {
     amount.value = null
     note.value = ''
+    key = crypto.randomUUID()
   })
 }
 </script>
@@ -53,7 +67,8 @@ function submit() {
         <NInput
           v-model:value="note"
           type="textarea"
-          :maxlength="NOTE_MAX"
+          :allow-input="(v: string) => noteLength(v) <= NOTE_MAX"
+          :count-graphemes="noteLength"
           show-count
           :autosize="{ minRows: 2 }"
           :input-props="{ id: 'adj-note' }"
