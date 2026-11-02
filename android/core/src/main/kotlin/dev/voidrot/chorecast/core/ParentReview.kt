@@ -152,7 +152,7 @@ class ParentReview(
         val resp = review(url, token).listReviewQueue(cursor = cursor)
         if (!resp.success) return@guard resp.failure()
         val page = resp.body()
-        keys.clear() // the reload shows what happened to any attempt whose answer was lost
+        keys.clear(::isReviewAction) // the reload shows what happened to any attempt whose answer was lost
         Fetch.Ok(ReviewPage(page.items, page.nextCursor))
     }
 
@@ -224,16 +224,16 @@ class ParentReview(
     suspend fun adjust(url: ServerUrl, token: String, kidId: Long, body: PointsAdjustmentInput): ActionResult<PointsEntry> =
         act(adjustAction(kidId, body)) { key -> points(url, token).createKidPointsAdjustment(kidId.toString(), body, key) }
 
-    suspend fun excuse(url: ServerUrl, token: String, instanceId: Long, body: ChoreInstanceNoteInputBody): ActionResult<ChoreInstance> =
-        act(excuseAction(instanceId, body)) { key -> instances(url, token).excuseChoreInstance(instanceId, key, body) }
+    suspend fun excuse(url: ServerUrl, token: String, instance: ChoreInstance, body: ChoreInstanceNoteInputBody): ActionResult<ChoreInstance> =
+        act(excuseAction(instance, body)) { key -> instances(url, token).excuseChoreInstance(instance.id, key, body) }
 
     suspend fun reverseApproval(
         url: ServerUrl,
         token: String,
-        instanceId: Long,
+        instance: ChoreInstance,
         body: ChoreInstanceNoteInputBody,
     ): ActionResult<ChoreInstance> =
-        act(reverseAction(instanceId, body)) { key -> instances(url, token).reverseChoreInstanceApproval(instanceId, key, body) }
+        act(reverseAction(instance, body)) { key -> instances(url, token).reverseChoreInstanceApproval(instance.id, key, body) }
 
     suspend fun reassign(url: ServerUrl, token: String, instanceId: Long, kidId: Long): ActionResult<ChoreInstance> =
         act(reassignAction(instanceId, kidId)) { key ->

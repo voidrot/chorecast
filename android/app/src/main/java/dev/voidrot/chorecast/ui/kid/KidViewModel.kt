@@ -56,6 +56,7 @@ sealed interface KidNotice {
 
     /** The chore had changed; the list was reloaded. */
     data class Stale(val reason: StaleReason) : KidNotice
+    data object Forbidden : KidNotice
     data class Offline(val reason: String) : KidNotice
     data class Failed(val code: String) : KidNotice
 }
@@ -100,8 +101,13 @@ class KidViewModel(
         _state.update { it.copy(loading = it.data == null, refreshing = it.data != null) }
         job = viewModelScope.launch {
             val settings = household.get(url, token)
-            val zone = settings?.let { runCatching { ZoneId.of(it.timezone) }.getOrNull() } ?: ZoneId.systemDefault()
-            val today = householdToday(zone, settings?.dayEnd ?: "00:00", now())
+            val zone = settings?.let { runCatching { ZoneId.of(it.timezone) }.getOrNull() }
+            if (settings == null || zone == null) {
+                // Without the household's day there is no telling which days to ask for.
+                _state.update { it.copy(loading = false, refreshing = false, error = "household_unavailable") }
+                return@launch
+            }
+            val today = householdToday(zone, settings.dayEnd, now())
             val result = client.kidDay(url, token, kidId, today.minusDays(KID_DAY_LOOKBACK), today)
             if (result == Fetch.Unauthorized) tokens.clear()
             _state.update {
@@ -162,12 +168,12 @@ class KidViewModel(
 
     fun confirmExcuse() {
         val d = _state.value.dialog as? KidDialog.Excuse ?: return
-        write(KidNotice.Excused) { token -> client.excuse(url, token, d.instance.id, buildActionNote(d.note)) }
+        write(KidNotice.Excused) { token -> client.excuse(url, token, d.instance, buildActionNote(d.note)) }
     }
 
     fun confirmReverse() {
         val d = _state.value.dialog as? KidDialog.Reverse ?: return
-        write(KidNotice.Reversed) { token -> client.reverseApproval(url, token, d.instance.id, buildActionNote(d.note)) }
+        write(KidNotice.Reversed) { token -> client.reverseApproval(url, token, d.instance, buildActionNote(d.note)) }
     }
 
     fun reassignTo(target: Kid) {
@@ -193,7 +199,7 @@ class KidViewModel(
                     is ActionResult.Done -> left.copy(dialog = null, notice = done)
                     is ActionResult.Stale -> left.copy(dialog = null, notice = KidNotice.Stale(staleReasonFor(result.code)))
                     ActionResult.Unauthorized -> left.copy(signedOut = true)
-                    ActionResult.Forbidden -> left.copy(notice = KidNotice.Failed("http_403"))
+                    ActionResult.Forbidden -> left.copy(notice = KidNotice.Forbidden)
                     is ActionResult.Invalid -> left.copy(notice = KidNotice.Failed(result.code))
                     is ActionResult.Unreachable -> left.copy(notice = KidNotice.Offline(result.reason))
                     is ActionResult.Failed -> left.copy(notice = KidNotice.Failed(result.code))

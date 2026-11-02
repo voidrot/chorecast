@@ -146,9 +146,11 @@ class AttemptKeys(private val newKey: () -> String = { UUID.randomUUID().toStrin
     @Synchronized
     fun begin(action: String): String = open.getOrPut(action, newKey)
 
-    /** Forgets every kept key, e.g. after a successful reload of the queue. */
+    /** Forgets the kept keys of the actions that [matching] accepts, e.g. after a reload of the queue. */
     @Synchronized
-    fun clear() = open.clear()
+    fun clear(matching: (action: String) -> Boolean) {
+        open.keys.removeAll(matching)
+    }
 
     /** Call with the outcome: the key is kept only when the server may not have seen the request. */
     @Synchronized
@@ -156,6 +158,10 @@ class AttemptKeys(private val newKey: () -> String = { UUID.randomUUID().toStrin
         if (outcomeKnown) open.remove(action)
     }
 }
+
+/** True for the review queue's own actions, the only ones a queue reload may forget. */
+fun isReviewAction(action: String): Boolean =
+    action.startsWith("approve:") || action.startsWith("approve-all:") || action.startsWith("reject:")
 
 fun approveAction(instanceId: Long) = "approve:$instanceId"
 

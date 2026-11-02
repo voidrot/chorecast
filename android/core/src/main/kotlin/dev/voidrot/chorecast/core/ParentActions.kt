@@ -128,15 +128,24 @@ fun actionFailureFor(status: Int, code: String): ActionResult<Nothing> = when {
 
 fun adjustAction(kidId: Long, body: PointsAdjustmentInput) = "adjust:$kidId:${body.amount}:${body.note}"
 
-fun excuseAction(instanceId: Long, body: ChoreInstanceNoteInputBody) = "excuse:$instanceId:${body.note.orEmpty()}"
+/**
+ * Names the chore's current round (when it was last completed and how often it was rejected), so a
+ * kept key can't replay an old answer after the chore came back to the same status in a new round.
+ */
+private fun ChoreInstance.round() = "$id@${completedAt?.toInstant()}#${rejectionCount ?: 0}"
 
-fun reverseAction(instanceId: Long, body: ChoreInstanceNoteInputBody) = "reverse:$instanceId:${body.note.orEmpty()}"
+fun excuseAction(i: ChoreInstance, body: ChoreInstanceNoteInputBody) = "excuse:${i.round()}:${body.note.orEmpty()}"
+
+fun reverseAction(i: ChoreInstance, body: ChoreInstanceNoteInputBody) = "reverse:${i.round()}:${body.note.orEmpty()}"
 
 fun reassignAction(instanceId: Long, kidId: Long) = "reassign:$instanceId:$kidId"
 
 /**
  * The household's current date: the day whose close is still ahead. [dayEnd] is "HH:MM"; "00:00" and
- * "24:00" mean midnight. An unreadable [dayEnd] is read as midnight.
+ * "24:00" mean midnight. An unreadable [dayEnd] is read as midnight. Shortcut: on the repeated hour of
+ * a fall-back night, a day end inside it is read from the second pass too, where the server would
+ * already have closed the day; a day end inside a spring-forward gap counts as passed once the clock
+ * is past it. The worst case is a lookback window one day off.
  */
 fun householdToday(zone: ZoneId, dayEnd: String, now: Instant): LocalDate {
     val local = now.atZone(zone)

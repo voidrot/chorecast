@@ -181,8 +181,8 @@ class ParentActionsTest {
             bodies += String(req.body.toByteArray())
             reply(HttpStatusCode.OK, instanceJson)
         })
-        assertTrue(client.excuse(url, "tok", 4, buildActionNote("")) is ActionResult.Done)
-        assertTrue(client.reverseApproval(url, "tok", 5, buildActionNote("oops")) is ActionResult.Done)
+        assertTrue(client.excuse(url, "tok", inst(4, ChoreInstance.Status.MISSED), buildActionNote("")) is ActionResult.Done)
+        assertTrue(client.reverseApproval(url, "tok", inst(5, ChoreInstance.Status.APPROVED), buildActionNote("oops")) is ActionResult.Done)
         assertEquals("/api/v1/instances/4/excusal", seen[0].url.encodedPath)
         assertEquals("/api/v1/instances/5/approval/reversal", seen[1].url.encodedPath)
         for (req in seen) {
@@ -333,5 +333,72 @@ class ParentActionsTest {
         assertEquals(listOf(2L, 3L), plan.attention.map { it.id })
         assertEquals(listOf(4L, 5L, 8L), plan.today.map { it.id })
         assertEquals(listOf(1L), plan.earlier.map { it.id })
+    }
+
+    @Test
+    fun aQueueReloadDoesNotForgetAnUnansweredAdjustmentKey() = runTest {
+        val keys = mutableListOf<String?>()
+        var down = true
+        val client = ParentReview(MockEngine { req ->
+            when {
+                req.url.encodedPath.endsWith("/adjustments") -> {
+                    keys += req.headers["Idempotency-Key"]
+                    if (down) throw IOException("timeout")
+                    reply(HttpStatusCode.InternalServerError, "")
+                }
+                else -> reply(HttpStatusCode.OK, """{"items":[]}""")
+            }
+        })
+        val body = valid(false, "5", "n")
+        client.adjust(url, "tok", 3, body)
+        assertTrue(client.queue(url, "tok") is Fetch.Ok)
+        down = false
+        client.adjust(url, "tok", 3, body)
+        assertEquals(keys[0], keys[1])
+    }
+
+    @Test
+    fun aQueueReloadForgetsAnUnansweredApprovalKey() = runTest {
+        val keys = mutableListOf<String?>()
+        var calls = 0
+        val client = ParentReview(MockEngine { req ->
+            if (req.url.encodedPath.endsWith("/approval")) {
+                keys += req.headers["Idempotency-Key"]
+                if (++calls == 1) throw IOException("timeout")
+                reply(HttpStatusCode.OK, instanceJson)
+            } else {
+                reply(HttpStatusCode.OK, """{"items":[]}""")
+            }
+        })
+        client.approve(url, "tok", 1)
+        client.queue(url, "tok")
+        client.approve(url, "tok", 1)
+        assertNotEquals(keys[0], keys[1])
+    }
+
+    @Test
+    fun aKeptReversalKeyIsNotReusedForALaterRoundOfTheSameChore() = runTest {
+        val keys = mutableListOf<String?>()
+        val client = ParentReview(MockEngine { req ->
+            keys += req.headers["Idempotency-Key"]
+            throw IOException("timeout")
+        })
+        val first = inst(5, ChoreInstance.Status.APPROVED).copy(completedAt = OffsetDateTime.parse("2026-05-04T10:00:00Z"))
+        val again = first.copy(completedAt = OffsetDateTime.parse("2026-05-04T12:00:00Z"))
+        val note = buildActionNote("")
+        client.reverseApproval(url, "tok", first, note)
+        client.reverseApproval(url, "tok", first, note)
+        client.reverseApproval(url, "tok", again, note)
+        assertEquals(keys[0], keys[1])
+        assertNotEquals(keys[1], keys[2])
+    }
+
+    @Test
+    fun householdTodayAroundASpringForwardGap() {
+        val ny = ZoneId.of("America/New_York") // 2026-03-08 02:00 EST jumps to 03:00 EDT
+        // 01:59 EST: before a 02:30 day end, which does not exist that night.
+        assertEquals(LocalDate.parse("2026-03-08"), householdToday(ny, "02:30", Instant.parse("2026-03-08T06:59:00Z")))
+        // 03:00 EDT: past it.
+        assertEquals(LocalDate.parse("2026-03-09"), householdToday(ny, "02:30", Instant.parse("2026-03-08T07:00:00Z")))
     }
 }

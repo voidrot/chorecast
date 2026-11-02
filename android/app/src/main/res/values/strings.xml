@@ -283,5 +283,6 @@
     <string name="kid_stale_taken">That kid already has this chore. Showing the latest.</string>
     <string name="kid_stale_shared">A shared chore can\'t be reassigned. Showing the latest.</string>
     <string name="kid_stale_changed">That chore changed in the meantime. Showing the latest.</string>
+    <string name="kid_notice_forbidden">You aren\'t allowed to do that.</string>
     <string name="kid_notice_failed">Something went wrong (%1$s).</string>
 </resources>

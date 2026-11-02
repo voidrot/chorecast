@@ -339,6 +339,7 @@ private fun noticeText(n: KidNotice): String = when (n) {
             StaleReason.NOT_FOUND, StaleReason.CHANGED -> R.string.kid_stale_changed
         },
     )
+    KidNotice.Forbidden -> stringResource(R.string.kid_notice_forbidden)
     is KidNotice.Offline -> stringResource(R.string.device_offline, n.reason)
     is KidNotice.Failed -> stringResource(R.string.kid_notice_failed, n.code)
 }
