@@ -51,6 +51,11 @@ const router = createRouter({
           component: () => import('@/views/chores/ChoreEditView.vue'),
         },
         {
+          path: 'today',
+          name: 'today',
+          component: () => import('@/views/today/TodayView.vue'),
+        },
+        {
           path: 'review',
           name: 'review',
           component: () => import('@/views/review/ReviewView.vue'),

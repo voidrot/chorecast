@@ -44,6 +44,9 @@ async function signOut() {
           <RouterLink :to="{ name: 'home' }" exact-active-class="font-semibold">{{
             t('nav.home')
           }}</RouterLink>
+          <RouterLink :to="{ name: 'today' }" active-class="font-semibold">{{
+            t('nav.today')
+          }}</RouterLink>
           <RouterLink :to="{ name: 'chores' }" active-class="font-semibold">{{
             t('nav.chores')
           }}</RouterLink>

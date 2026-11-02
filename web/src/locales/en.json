@@ -75,7 +75,8 @@
     "settings": "Settings",
     "devices": "Devices",
     "chores": "Chores",
-    "review": "Review"
+    "review": "Review",
+    "today": "Today"
   },
   "session": {
     "parent": "Parent",
@@ -644,6 +645,76 @@
     "errors": {
       "already_approved": "This chore is already approved.",
       "instance_not_submitted": "Someone already decided this chore.",
+      "instance_not_found": "This chore no longer exists."
+    }
+  },
+  "today": {
+    "title": "Today",
+    "empty": "No chores in the next week.",
+    "loading": "Loading...",
+    "shared": "Shared chores",
+    "unknownKid": "Other kid",
+    "planned": "planned",
+    "cancel": "Cancel",
+    "buckets": {
+      "attention": "Needs you",
+      "today": "Today",
+      "upcoming": "Coming up",
+      "earlier": "Earlier"
+    },
+    "status": {
+      "open": "Open",
+      "submitted": "Waiting for approval",
+      "approved": "Approved",
+      "missed": "Missed",
+      "excused": "Excused"
+    },
+    "actions": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "reverse": "Undo approval",
+      "excuse": "Excuse",
+      "reassign": "Reassign",
+      "complete": "Mark done"
+    },
+    "confirm": {
+      "reverse": "Undo the approval of {chore}? Its points will be taken back.",
+      "excuse": "Excuse {chore}? It will not count as missed.",
+      "complete": "Mark {chore} done for the kid? Chores that need photos or other proof cannot be completed here."
+    },
+    "done": {
+      "approve": "Approved {chore}.",
+      "reject": "Rejected {chore}.",
+      "reverse": "Undid the approval of {chore}.",
+      "excuse": "Excused {chore}.",
+      "reassign": "Reassigned {chore}.",
+      "complete": "Marked {chore} done."
+    },
+    "rejectedBefore": "Rejected {n} time before | Rejected {n} times before",
+    "reassignTitle": "Reassign {chore}",
+    "reassignTo": "Give it to",
+    "completeTitle": "Mark {chore} done",
+    "completeFor": "Who did it",
+    "chooseKid": "Choose a kid.",
+    "showEvidence": "Show evidence",
+    "hideEvidence": "Hide evidence",
+    "noEvidence": "No evidence was submitted.",
+    "attempt": "Submission {n}, {at}",
+    "note": "Note:",
+    "stepsDone": "{n} checklist step ticked | {n} checklist steps ticked",
+    "noPhotos": "No photos.",
+    "mediaExpired": "Media expired",
+    "openPhoto": "Open photo {n} of {total}",
+    "photoAlt": "Photo {n} for {chore}",
+    "errors": {
+      "instance_closed": "That day is over, so this chore can no longer be changed.",
+      "instance_not_open": "This chore is no longer open.",
+      "instance_not_submitted": "This chore is not waiting for approval any more.",
+      "instance_not_approved": "This chore is not approved.",
+      "instance_not_missed": "This chore was not missed.",
+      "instance_planned": "This chore is for a later day.",
+      "instance_shared": "A shared chore cannot be reassigned.",
+      "instance_taken": "That kid already has this chore on that day.",
       "instance_not_found": "This chore no longer exists."
     }
   }
