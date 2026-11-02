@@ -292,9 +292,59 @@ CREATE TABLE chore_instance_members (
 );
 CREATE INDEX chore_instance_members_by_kid ON chore_instance_members (kid_id);
 
+-- ==== Media pipeline (#75) ====
+-- Server-generated secrets, one row per purpose, created on first use (32 random bytes).
+-- "media_url": internal/media derives the media URL signing key from it; rotate it with
+-- `chorecast admin rotate-media-key`. Database backups contain these secrets.
+CREATE TABLE server_keys (
+    name       TEXT PRIMARY KEY,
+    key        BLOB NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- Uploaded photos (internal/media). The files live in storage under storage_key / thumb_key; the
+-- row stays after retention deletes them (status = 'expired'). owner_kind/owner_id say what the
+-- media belongs to: 'pending' (owner_id NULL) until it is attached to evidence, a rejection, a
+-- chore or a piece of equipment.
+CREATE TABLE media (
+    id           INTEGER PRIMARY KEY,
+    owner_kind   TEXT    NOT NULL DEFAULT 'pending' CHECK (owner_kind IN ('pending', 'evidence', 'rejection', 'chore', 'equipment')),
+    owner_id     INTEGER,
+    uploaded_by  INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    storage_key  TEXT    NOT NULL UNIQUE,
+    thumb_key    TEXT    UNIQUE,
+    kind         TEXT    NOT NULL CHECK (kind IN ('photo')),
+    mime         TEXT    NOT NULL,
+    bytes        INTEGER NOT NULL,
+    width        INTEGER NOT NULL,
+    height       INTEGER NOT NULL,
+    thumb_width  INTEGER,
+    thumb_height INTEGER,
+    sha256       BLOB    NOT NULL,             -- of the decoded pixels before orientation and resizing (media.Photo.SHA256)
+    dhash        INTEGER NOT NULL,             -- 64-bit difference hash (uint64 stored as int64)
+    status       TEXT    NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'expired')),
+    keep         INTEGER NOT NULL DEFAULT 0 CHECK (keep IN (0, 1)),
+    created_at   TEXT    NOT NULL,
+    expires_at   TEXT,                         -- NULL = never (set when the owning instance resolves)
+    CHECK ((owner_kind = 'pending') = (owner_id IS NULL))
+);
+
+-- Hashes of every kid evidence photo, kept after the media is deleted so reuse is still caught.
+-- An exact SHA-256 match is rejected on upload; dhash is for near-duplicate flagging.
+CREATE TABLE media_hashes (
+    sha256     BLOB    PRIMARY KEY,
+    dhash      INTEGER NOT NULL,
+    kid_id     INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    media_id   INTEGER REFERENCES media (id) ON DELETE SET NULL,
+    created_at TEXT    NOT NULL
+);
+
 -- +goose Down
 DROP TABLE chore_instance_members;
 DROP TABLE chore_instances;
+DROP TABLE media_hashes;
+DROP TABLE media;
+DROP TABLE server_keys;
 DROP TABLE points_entries;
 DROP TABLE events;
 DROP TABLE idempotency_keys;

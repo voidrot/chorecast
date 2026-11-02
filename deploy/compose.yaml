@@ -14,6 +14,12 @@ services:
       # CHORECAST_OIDC_ISSUER: https://auth.example.com/application/o/chorecast/
       # CHORECAST_OIDC_CLIENT_ID: chorecast
       # CHORECAST_OIDC_CLIENT_SECRET: change-me
+      # Largest accepted photo upload in MB (default 15):
+      # CHORECAST_MEDIA_MAX_PHOTO_MB: 15
+      # Memory: processing one photo peaks at about 210 MB (photos are processed one at a time).
+      # With a container memory limit, set GOMEMLIMIT a little below it so the Go runtime frees
+      # memory before the limit is hit, e.g. mem_limit: 512m with:
+      # GOMEMLIMIT: 400MiB
 
 volumes:
   chorecast-data:
