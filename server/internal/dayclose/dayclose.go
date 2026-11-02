@@ -8,9 +8,11 @@
 //   - A close at instant T takes every open instance due by T, so one run also catches up on
 //     earlier days that never closed (the server was down, a job failed). An instance due after
 //     its kid's day end (a slot later than an early day-end override) waits for the next close.
-//   - Each instance is closed in its own transaction: an atomic open → missed update, the
-//     penalties and an InstanceMissed event. A re-run or a duplicate job finds nothing open, and a
-//     penalty that was already posted counts as done.
+//     A close whose instant is still ahead (the day end moved later after the job was queued)
+//     does nothing; the moved close is its own occurrence.
+//   - Each instance is closed in its own transaction (MissInTx): an atomic open → missed update,
+//     the penalties and an InstanceMissed event. A re-run or a duplicate job finds nothing open,
+//     and a penalty that was already posted counts as done.
 //
 // Close and horizon regeneration don't overlap: a close only touches instances due by now, and
 // the horizon freezes every instance whose due time has passed.
@@ -43,7 +45,7 @@ const (
 	KindShared  = "dayclose.shared"
 )
 
-// InstanceMissed is emitted for each instance a close marks missed.
+// InstanceMissed is emitted for each instance marked missed.
 type InstanceMissed struct {
 	InstanceID int64   `json:"instanceId"`
 	KidIDs     []int64 `json:"kidIds"` // the assignee, or a shared instance's members
@@ -92,12 +94,7 @@ func (c *Closer) closeKid(ctx context.Context, kidID int64, day caltime.Date, fl
 	if err != nil {
 		return Result{}, fmt.Errorf("load kid %d: %w", kidID, err)
 	}
-	end := dayEnd(cal, kid.DayEndOverride)
-	at := cal.DayClose(day, end)
-	if flexible {
-		at = cal.WeekClose(day, end)
-	}
-	return c.close(ctx, cal, kidID, at, flexible)
+	return c.close(ctx, kidID, closeInstant(cal, day, flexible, dayEnd(cal, kid.DayEndOverride)), flexible)
 }
 
 // CloseShared closes the shared instances, flexible ones included, due by the household close
@@ -110,7 +107,7 @@ func (c *Closer) CloseShared(ctx context.Context, day caltime.Date) (Result, err
 	at := cal.DayClose(day, cal.DayEnd)
 	var total Result
 	for _, flexible := range []bool{false, true} {
-		res, err := c.close(ctx, cal, 0, at, flexible)
+		res, err := c.close(ctx, 0, at, flexible)
 		total.Missed += res.Missed
 		total.Penalties += res.Penalties
 		if err != nil {
@@ -120,24 +117,29 @@ func (c *Closer) CloseShared(ctx context.Context, day caltime.Date) (Result, err
 	return total, nil
 }
 
-// close marks missed every open instance of kid (0 = shared) due by at. at is capped at now, so
-// a close never touches an instance the horizon may still regenerate.
-func (c *Closer) close(ctx context.Context, cal caltime.Household, kid int64, at time.Time, flexible bool) (Result, error) {
-	now := c.clock.Now()
-	if at.After(now) {
-		at = now
+// close marks missed every open instance of kid (0 = shared) due by at. A close still ahead does
+// nothing: closing early would penalize a kid whose day is still open, and could touch an
+// instance the horizon may still regenerate.
+func (c *Closer) close(ctx context.Context, kid int64, at time.Time, flexible bool) (Result, error) {
+	if at.After(c.clock.Now()) {
+		return Result{}, nil
 	}
-	due, err := c.db.ListDueOpenChoreInstances(ctx, sqlc.ListDueOpenChoreInstancesParams{
+	ids, err := c.db.ListDueOpenChoreInstanceIDs(ctx, sqlc.ListDueOpenChoreInstanceIDsParams{
 		DueBy: db.Timestamp(at), Kid: kid, Flexible: b2i(flexible),
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("list due instances: %w", err)
 	}
 	var total Result
-	for _, inst := range due {
-		res, err := c.miss(ctx, cal, inst)
+	for _, id := range ids {
+		var res Result
+		err := c.bus.InTx(ctx, func(tx *events.Tx) error {
+			var err error
+			res, err = MissInTx(ctx, tx, c.clock, id)
+			return err
+		})
 		if err != nil {
-			return total, fmt.Errorf("close instance %d: %w", inst.ID, err)
+			return total, fmt.Errorf("close instance %d: %w", id, err)
 		}
 		total.Missed += res.Missed
 		total.Penalties += res.Penalties
@@ -145,55 +147,115 @@ func (c *Closer) close(ctx context.Context, cal caltime.Household, kid int64, at
 	return total, nil
 }
 
-// miss marks one instance missed and posts its penalties, unless it's no longer open.
-func (c *Closer) miss(ctx context.Context, cal caltime.Household, inst sqlc.ListDueOpenChoreInstancesRow) (Result, error) {
-	date, err := caltime.ParseDate(inst.OccurrenceDate)
+// MissInTx moves an open instance to missed inside the caller's transaction, posts its chore's
+// penalty and emits InstanceMissed. An instance that isn't open is left alone and gives a zero
+// Result. The assignee, members and penalty are read in the transaction, so they're current.
+//
+// The penalty goes to the assignee, or for a shared instance to every member when the chore's
+// shared_penalty is 'all' and to nobody when it's 'none'; a penalty of 0 posts nothing. It's
+// dated the instance's day, or for a flexible instance the last day of its week.
+//
+// ErrAlreadyPosted counts as done: it means the instance's penalty was posted before (the
+// instance was missed, then reopened), and it stands because no transition yet reopens an
+// instance whose penalty was reversed (excused is final). A transition that does (excused →
+// open, or reopening after a parent reversed the penalty entry) must make the miss re-apply the
+// penalty with ledger.Tip and Reverse when inEffect is false; otherwise the instance ends up
+// missed with no penalty in effect.
+func MissInTx(ctx context.Context, tx *events.Tx, clk clock.Clock, instanceID int64) (Result, error) {
+	inst, err := tx.Q.MarkChoreInstanceMissed(ctx, sqlc.MarkChoreInstanceMissedParams{
+		UpdatedAt: db.Timestamp(clk.Now()), ID: instanceID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return Result{}, nil // not open: someone else moved it first
+	}
 	if err != nil {
 		return Result{}, err
 	}
-	if inst.Flexible == 1 {
-		date = cal.WeekStartOf(date).AddDays(6) // a flexible miss belongs to the day its week closed
+	res := Result{Missed: 1}
+	kids := []int64{inst.KidID.Int64}
+	if !inst.KidID.Valid {
+		if kids, err = tx.Q.ListChoreInstanceMembers(ctx, instanceID); err != nil {
+			return Result{}, err
+		}
 	}
-	var res Result
-	err = c.bus.InTx(ctx, func(tx *events.Tx) error {
-		res = Result{}
-		n, err := tx.Q.MarkChoreInstanceMissed(ctx, sqlc.MarkChoreInstanceMissedParams{
-			UpdatedAt: db.Timestamp(c.clock.Now()), ID: inst.ID,
-		})
-		if err != nil || n == 0 {
-			return err // n == 0: someone else moved it first
-		}
-		res.Missed = 1
-		kids := []int64{inst.KidID.Int64}
-		if !inst.KidID.Valid {
-			if kids, err = tx.Q.ListChoreInstanceMembers(ctx, inst.ID); err != nil {
-				return err
-			}
-		}
-		if inst.Penalty > 0 && (inst.KidID.Valid || inst.SharedPenalty == assign.PenaltyAll) {
-			for _, k := range kids {
-				_, err := ledger.Post(ctx, tx, c.clock, ledger.Posting{
-					KidID: k, Kind: ledger.KindChorePenalty, Amount: -inst.Penalty,
-					Source:    ledger.Source{Kind: ledger.SourceChoreInstance, ID: inst.ID},
-					LocalDate: date,
-				})
-				switch {
-				case errors.Is(err, ledger.ErrAlreadyPosted):
-				case err != nil:
-					return fmt.Errorf("penalty for kid %d: %w", k, err)
-				default:
-					res.Penalties++
-				}
-			}
-		}
-		return tx.Emit(ctx, InstanceMissed{
-			InstanceID: inst.ID, KidIDs: kids, From: horizon.StatusOpen, To: horizon.StatusMissed,
-		})
-	})
+	chore, err := tx.Q.GetChorePenalty(ctx, inst.ChoreID)
 	if err != nil {
+		return Result{}, fmt.Errorf("load chore %d: %w", inst.ChoreID, err)
+	}
+	if chore.Penalty > 0 && (inst.KidID.Valid || chore.SharedPenalty == assign.PenaltyAll) {
+		date, err := caltime.ParseDate(inst.OccurrenceDate)
+		if err != nil {
+			return Result{}, err
+		}
+		if inst.Flexible == 1 {
+			cal, err := household.Calendar(ctx, tx.Q)
+			if err != nil {
+				return Result{}, err
+			}
+			date = cal.WeekStartOf(date).AddDays(6) // a flexible miss belongs to the day its week closed
+		}
+		for _, k := range kids {
+			_, err := ledger.Post(ctx, tx, clk, ledger.Posting{
+				KidID: k, Kind: ledger.KindChorePenalty, Amount: -chore.Penalty,
+				Source:    ledger.Source{Kind: ledger.SourceChoreInstance, ID: instanceID},
+				LocalDate: date,
+			})
+			switch {
+			case errors.Is(err, ledger.ErrAlreadyPosted):
+			case err != nil:
+				return Result{}, fmt.Errorf("penalty for kid %d: %w", k, err)
+			default:
+				res.Penalties++
+			}
+		}
+	}
+	if err := tx.Emit(ctx, InstanceMissed{
+		InstanceID: instanceID, KidIDs: kids, From: horizon.StatusOpen, To: horizon.StatusMissed,
+	}); err != nil {
 		return Result{}, err
 	}
 	return res, nil
+}
+
+// ClosesAt is when a close takes the instance: the close of its day (its kid's effective day end,
+// or the household's for a shared instance), or of its week when flexible. An instance due after
+// that (a slot later than an early day end) is taken by the first close at or after its due time.
+// Pass tx.Q inside a transaction.
+func ClosesAt(ctx context.Context, q *sqlc.Queries, inst sqlc.ChoreInstance) (time.Time, error) {
+	cal, err := household.Calendar(ctx, q)
+	if err != nil {
+		return time.Time{}, err
+	}
+	date, err := caltime.ParseDate(inst.OccurrenceDate)
+	if err != nil {
+		return time.Time{}, err
+	}
+	due, err := db.ParseTimestamp(inst.DueAt)
+	if err != nil {
+		return time.Time{}, err
+	}
+	end := cal.DayEnd
+	if inst.KidID.Valid {
+		kid, err := q.GetKidByID(ctx, inst.KidID.Int64)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("load kid %d: %w", inst.KidID.Int64, err)
+		}
+		end = dayEnd(cal, kid.DayEndOverride)
+	}
+	flexible := inst.Flexible == 1
+	at := closeInstant(cal, date, flexible, end)
+	if !flexible && due.After(at) { // flexible instances are due at their week close
+		_, at = cal.NextDayClose(due.Add(-time.Nanosecond), end) // the first close at or after due
+	}
+	return at, nil
+}
+
+// closeInstant is when day closes for dayEnd, or its week when flexible.
+func closeInstant(cal caltime.Household, day caltime.Date, flexible bool, dayEnd caltime.TimeOfDay) time.Time {
+	if flexible {
+		return cal.WeekClose(day, dayEnd)
+	}
+	return cal.DayClose(day, dayEnd)
 }
 
 // Register adds the close job kinds to runner and their schedules to sched: each kid's day and

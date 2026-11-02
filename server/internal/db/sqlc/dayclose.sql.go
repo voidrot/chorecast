@@ -10,6 +10,22 @@ import (
 	"database/sql"
 )
 
+const getChorePenalty = `-- name: GetChorePenalty :one
+SELECT penalty, shared_penalty FROM chores WHERE id = ?
+`
+
+type GetChorePenaltyRow struct {
+	Penalty       int64  `json:"penalty"`
+	SharedPenalty string `json:"shared_penalty"`
+}
+
+func (q *Queries) GetChorePenalty(ctx context.Context, id int64) (GetChorePenaltyRow, error) {
+	row := q.db.QueryRowContext(ctx, getChorePenalty, id)
+	var i GetChorePenaltyRow
+	err := row.Scan(&i.Penalty, &i.SharedPenalty)
+	return i, err
+}
+
 const listChoreInstanceMembers = `-- name: ListChoreInstanceMembers :many
 SELECT kid_id FROM chore_instance_members WHERE instance_id = ? ORDER BY kid_id
 `
@@ -37,52 +53,34 @@ func (q *Queries) ListChoreInstanceMembers(ctx context.Context, instanceID int64
 	return items, nil
 }
 
-const listDueOpenChoreInstances = `-- name: ListDueOpenChoreInstances :many
-SELECT i.id, i.kid_id, i.occurrence_date, i.flexible, c.penalty, c.shared_penalty
-FROM chore_instances i
-JOIN chores c ON c.id = i.chore_id
-WHERE i.status = 'open' AND i.due_at <= ?1
-  AND COALESCE(i.kid_id, 0) = CAST(?2 AS INTEGER) AND i.flexible = ?3
-ORDER BY i.due_at, i.id
+const listDueOpenChoreInstanceIDs = `-- name: ListDueOpenChoreInstanceIDs :many
+SELECT id FROM chore_instances
+WHERE status = 'open' AND due_at <= ?1
+  AND COALESCE(kid_id, 0) = CAST(?2 AS INTEGER) AND flexible = ?3
+ORDER BY due_at, id
 `
 
-type ListDueOpenChoreInstancesParams struct {
+type ListDueOpenChoreInstanceIDsParams struct {
 	DueBy    string `json:"due_by"`
 	Kid      int64  `json:"kid"`
 	Flexible int64  `json:"flexible"`
 }
 
-type ListDueOpenChoreInstancesRow struct {
-	ID             int64         `json:"id"`
-	KidID          sql.NullInt64 `json:"kid_id"`
-	OccurrenceDate string        `json:"occurrence_date"`
-	Flexible       int64         `json:"flexible"`
-	Penalty        int64         `json:"penalty"`
-	SharedPenalty  string        `json:"shared_penalty"`
-}
-
 // Open instances due by the instant (a timestamp): one kid's (kid > 0) or the shared ones
-// (kid = 0), flexible or not, with what missing them costs.
-func (q *Queries) ListDueOpenChoreInstances(ctx context.Context, arg ListDueOpenChoreInstancesParams) ([]ListDueOpenChoreInstancesRow, error) {
-	rows, err := q.db.QueryContext(ctx, listDueOpenChoreInstances, arg.DueBy, arg.Kid, arg.Flexible)
+// (kid = 0), flexible or not. Uses chore_instances_open_due.
+func (q *Queries) ListDueOpenChoreInstanceIDs(ctx context.Context, arg ListDueOpenChoreInstanceIDsParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listDueOpenChoreInstanceIDs, arg.DueBy, arg.Kid, arg.Flexible)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListDueOpenChoreInstancesRow{}
+	items := []int64{}
 	for rows.Next() {
-		var i ListDueOpenChoreInstancesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.KidID,
-			&i.OccurrenceDate,
-			&i.Flexible,
-			&i.Penalty,
-			&i.SharedPenalty,
-		); err != nil {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -93,8 +91,9 @@ func (q *Queries) ListDueOpenChoreInstances(ctx context.Context, arg ListDueOpen
 	return items, nil
 }
 
-const markChoreInstanceMissed = `-- name: MarkChoreInstanceMissed :execrows
+const markChoreInstanceMissed = `-- name: MarkChoreInstanceMissed :one
 UPDATE chore_instances SET status = 'missed', updated_at = ? WHERE id = ? AND status = 'open'
+RETURNING kid_id, occurrence_date, flexible, chore_id
 `
 
 type MarkChoreInstanceMissedParams struct {
@@ -102,11 +101,23 @@ type MarkChoreInstanceMissedParams struct {
 	ID        int64  `json:"id"`
 }
 
-// 0 rows: the instance isn't open any more (someone else moved it), so leave it.
-func (q *Queries) MarkChoreInstanceMissed(ctx context.Context, arg MarkChoreInstanceMissedParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, markChoreInstanceMissed, arg.UpdatedAt, arg.ID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+type MarkChoreInstanceMissedRow struct {
+	KidID          sql.NullInt64 `json:"kid_id"`
+	OccurrenceDate string        `json:"occurrence_date"`
+	Flexible       int64         `json:"flexible"`
+	ChoreID        int64         `json:"chore_id"`
+}
+
+// No row: the instance isn't open any more (someone else moved it), so leave it. The returned
+// columns are read in the same statement, so a reassignment can't slip in between.
+func (q *Queries) MarkChoreInstanceMissed(ctx context.Context, arg MarkChoreInstanceMissedParams) (MarkChoreInstanceMissedRow, error) {
+	row := q.db.QueryRowContext(ctx, markChoreInstanceMissed, arg.UpdatedAt, arg.ID)
+	var i MarkChoreInstanceMissedRow
+	err := row.Scan(
+		&i.KidID,
+		&i.OccurrenceDate,
+		&i.Flexible,
+		&i.ChoreID,
+	)
+	return i, err
 }

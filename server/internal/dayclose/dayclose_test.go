@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -62,6 +63,7 @@ type fixture struct {
 	closer   *dayclose.Closer
 	runner   *jobs.Runner
 	sched    *jobs.Scheduler
+	kids     *kids.Service
 	ann, ben int64
 }
 
@@ -85,6 +87,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	ks := kids.NewService(d, clk, nil)
+	f.kids = ks
 	for _, k := range []struct {
 		id     *int64
 		name   string
@@ -538,5 +541,157 @@ func TestSlotAfterKidDayEndClosesNextDay(t *testing.T) {
 	}
 	if p := f.penalties(f.ben); len(p) == 0 || p[0].Instance != inst.ID || p[0].Date != "2026-11-04" {
 		t.Fatalf("penalties %+v: want the first for instance %d on 2026-11-04", p, inst.ID)
+	}
+}
+
+// A close still ahead does nothing: Ben's day end moves later after his close was queued, so the
+// queued close leaves his day open and the moved close takes it.
+func TestDayEndMovedLaterAfterCloseWasQueued(t *testing.T) {
+	f := newFixture(t)
+	c := f.chore(daily("Dishes", 2))
+	f.generate()
+	f.run()
+	inst := f.instance(c.ID, f.ben, "2026-11-04") // due at 19:00
+
+	f.clock.Set(local("2026-11-04 19:00"))
+	if _, err := f.sched.Tick(t.Context()); err != nil { // queued, not run yet
+		t.Fatal(err)
+	}
+	f.exec(`UPDATE users SET day_end_override = '20:30' WHERE id = ?`, f.ben)
+	f.clock.Set(local("2026-11-04 19:00").Add(5 * time.Second))
+	f.run()
+	if f.status(inst.ID) != horizon.StatusOpen || len(f.penalties(f.ben)) != 0 {
+		t.Fatal("a queued close ran before Ben's moved day end")
+	}
+
+	f.at("2026-11-04 20:30")
+	if f.status(inst.ID) != horizon.StatusMissed || len(f.penalties(f.ben)) != 1 {
+		t.Fatalf("at the moved close: %s with %d penalties; want missed with 1", f.status(inst.ID), len(f.penalties(f.ben)))
+	}
+}
+
+// MissInTx reads the assignee in its own transaction: an instance reassigned after a close
+// listed it penalizes the new assignee. An instance that isn't open is left alone.
+func TestMissInTxPenalizesTheCurrentAssignee(t *testing.T) {
+	f := newFixture(t)
+	f.exec(`UPDATE household SET allow_negative_balance = 1`)
+	c := f.chore(chores.ChoreInput{Name: "Trash", Penalty: 2, Schedule: daily("x", 0).Schedule,
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeFixed, KidIDs: []int64{f.ann}}})
+	f.generate()
+	inst := f.instance(c.ID, f.ann, "2026-11-04")
+	f.exec(`UPDATE chore_instances SET kid_id = ?, manually_reassigned = 1 WHERE id = ?`, f.ben, inst.ID)
+
+	miss := func() dayclose.Result {
+		t.Helper()
+		var res dayclose.Result
+		if err := f.bus.InTx(t.Context(), func(tx *events.Tx) error {
+			var err error
+			res, err = dayclose.MissInTx(t.Context(), tx, f.clock, inst.ID)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	if res := miss(); res != (dayclose.Result{Missed: 1, Penalties: 1}) {
+		t.Fatalf("miss = %+v", res)
+	}
+	wantPenalties(t, "Ben", f.penalties(f.ben), []penalty{{inst.ID, -2, 0, "2026-11-04"}})
+	wantPenalties(t, "Ann", f.penalties(f.ann), nil)
+	if evs := f.missedEvents(); len(evs) != 1 || !slices.Equal(evs[0].KidIDs, []int64{f.ben}) {
+		t.Fatalf("events = %+v, want one for Ben", evs)
+	}
+	if res := miss(); res != (dayclose.Result{}) || len(f.missedEvents()) != 1 {
+		t.Fatalf("second miss = %+v; want nothing", res)
+	}
+}
+
+// A shared flexible instance closes at the household week close, with a penalty for each member
+// dated the week's last day.
+func TestSharedFlexibleClosesAtHouseholdWeekClose(t *testing.T) {
+	f := newFixture(t)
+	f.exec(`UPDATE household SET allow_negative_balance = 1`)
+	group := []int64{f.ann, f.ben}
+	c := f.chore(chores.ChoreInput{Name: "Wash the car", Penalty: 2,
+		Schedule:   &schedule.ScheduleRule{Type: schedule.TypeFlexibleWeekly, StartDate: date("2026-10-01"), TimesPerWeek: 1},
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeShared, KidIDs: group, SharedPenalty: assign.PenaltyAll}})
+	f.generate()
+	f.run()
+	inst := f.instance(c.ID, 0, "2026-11-01")
+
+	f.at("2026-11-06 21:00") // Friday's household close
+	f.at("2026-11-07 19:00") // Ben's week closes; the group's doesn't
+	if f.status(inst.ID) != horizon.StatusOpen {
+		t.Fatal("closed before the household week close")
+	}
+	f.at("2026-11-07 21:00")
+	if f.status(inst.ID) != horizon.StatusMissed {
+		t.Fatalf("status %s, want missed", f.status(inst.ID))
+	}
+	for _, kid := range group {
+		wantPenalties(t, "member", f.penalties(kid), []penalty{{inst.ID, -2, 0, "2026-11-07"}})
+	}
+}
+
+// An archived kid's day still closes: an instance already due when they were archived is missed.
+func TestArchivedKidsDaysStillClose(t *testing.T) {
+	f := newFixture(t)
+	f.exec(`UPDATE household SET allow_negative_balance = 1`)
+	c := f.chore(chores.ChoreInput{Name: "Feed the fish", Penalty: 1, Slots: []string{"13:00"}, Schedule: daily("x", 0).Schedule,
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeFixed, KidIDs: []int64{f.ann}}})
+	f.generate()
+	f.run()
+	inst := f.instance(c.ID, f.ann, "2026-11-04")
+
+	f.at("2026-11-04 14:00") // the 13:00 slot is due, so the horizon keeps it
+	if _, err := f.kids.Archive(t.Context(), strconv.FormatInt(f.ann, 10)); err != nil {
+		t.Fatal(err)
+	}
+	f.generate()
+
+	f.at("2026-11-04 21:00")
+	if f.status(inst.ID) != horizon.StatusMissed {
+		t.Fatalf("status %s, want missed", f.status(inst.ID))
+	}
+	wantPenalties(t, "Ann", f.penalties(f.ann), []penalty{{inst.ID, -1, 0, "2026-11-04"}})
+}
+
+// ClosesAt agrees with the jobs: the kid's own day end, the household's for shared instances,
+// the week close for flexible ones, and the next close for a slot after an early day end.
+func TestClosesAt(t *testing.T) {
+	f := newFixture(t)
+	mine := f.chore(daily("Dishes", 0))
+	shared := f.chore(chores.ChoreInput{Name: "Tidy", Schedule: daily("x", 0).Schedule,
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeShared, KidIDs: []int64{f.ann, f.ben}}})
+	flexible := f.chore(chores.ChoreInput{Name: "Piano",
+		Schedule:   &schedule.ScheduleRule{Type: schedule.TypeFlexibleWeekly, StartDate: date("2026-10-01"), TimesPerWeek: 1},
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeFixed, KidIDs: []int64{f.ben}}})
+	late := f.chore(chores.ChoreInput{Name: "Cat", Slots: []string{"20:00"}, Schedule: daily("x", 0).Schedule,
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeFixed, KidIDs: []int64{f.ben}}})
+	f.generate()
+
+	for _, tc := range []struct {
+		name string
+		inst horizon.ChoreInstance
+		want string
+	}{
+		{"Ben's day", f.instance(mine.ID, f.ben, "2026-11-04"), "2026-11-04 19:00"},
+		{"Ann's day", f.instance(mine.ID, f.ann, "2026-11-04"), "2026-11-04 21:00"},
+		{"shared", f.instance(shared.ID, 0, "2026-11-04"), "2026-11-04 21:00"},
+		{"flexible", f.instance(flexible.ID, f.ben, "2026-11-01"), "2026-11-07 19:00"},
+		{"slot after day end", f.instance(late.ID, f.ben, "2026-11-04"), "2026-11-05 19:00"},
+	} {
+		row := sqlc.ChoreInstance{ID: tc.inst.ID}
+		if err := f.db.SQL.QueryRowContext(t.Context(), `SELECT kid_id, occurrence_date, due_at, flexible
+			FROM chore_instances WHERE id = ?`, tc.inst.ID).Scan(&row.KidID, &row.OccurrenceDate, &row.DueAt, &row.Flexible); err != nil {
+			t.Fatal(err)
+		}
+		got, err := dayclose.ClosesAt(t.Context(), f.db.Queries, row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.Equal(local(tc.want)) {
+			t.Errorf("%s: closes at %s, want %s", tc.name, got.In(chicago), tc.want)
+		}
 	}
 }
