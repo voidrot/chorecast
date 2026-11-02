@@ -3,6 +3,8 @@ package dev.voidrot.chorecast.core
 import dev.voidrot.chorecast.api.models.Chore
 import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.EvidenceRules
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeParseException
@@ -74,6 +76,16 @@ fun buildTodayPlan(instances: List<ChoreInstance>, chores: Map<Long, Chore>): To
             .sortedBy { it.date },
     )
 }
+
+/** How long a loaded today list is trusted when the screen comes back to the foreground. */
+val TODAY_STALE_AFTER: Duration = Duration.ofMinutes(1)
+
+/**
+ * Whether the list loaded at [loadedAt] (null: never) should be reloaded at [now]. A clock that went
+ * backwards counts as stale, since the age can't be trusted.
+ */
+fun isTodayStale(loadedAt: Instant?, now: Instant): Boolean =
+    loadedAt == null || now.isBefore(loadedAt) || Duration.between(loadedAt, now) > TODAY_STALE_AFTER
 
 /** Parses a slot ("HH:MM"); null when absent or malformed, which sorts and shows as day close. */
 fun slotTime(slot: String?): LocalTime? = try {

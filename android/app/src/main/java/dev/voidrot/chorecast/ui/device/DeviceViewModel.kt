@@ -1,6 +1,8 @@
 package dev.voidrot.chorecast.ui.device
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewModelScope
 import dev.voidrot.chorecast.api.models.DevicePicker
 import dev.voidrot.chorecast.api.models.KidProfile
@@ -49,6 +51,11 @@ sealed interface ActiveSession {
 /** A kid looking at their chores, with the token to ask the API with (their session, or their own device's). */
 data class KidAccess(val kidId: Long, val name: String, val token: String)
 
+/** Holds the view models of one kid's session, so they survive rotation but not the session. */
+class KidSessionStore(val access: KidAccess) : ViewModelStoreOwner {
+    override val viewModelStore = ViewModelStore()
+}
+
 data class DeviceState(
     val loading: Boolean = true,
     /** The device token stopped working (revoked, or the kid was archived): pair again. */
@@ -79,6 +86,10 @@ class DeviceViewModel(
     private val _state = MutableStateFlow(DeviceState())
     val state: StateFlow<DeviceState> = _state.asStateFlow()
     private var lockJob: Job? = null
+    private var kidSession: KidSessionStore? = null
+
+    /** The device token the kid home already re-checked after a 401, so a persistent 401 can't loop. */
+    private var recheckedToken: String? = null
 
     init {
         load()
@@ -108,10 +119,40 @@ class DeviceViewModel(
         _state.value.active?.let(::endLocally)
     }
 
+    /**
+     * A kid-bound device's token was refused by the chores API. Check in with the picker once: if the
+     * device was unpaired, that finds out. If the picker still accepts the token, the error stays on
+     * screen (with its retry button) instead of checking in again and again.
+     */
+    fun deviceTokenRefused() {
+        val token = _state.value.ownKid?.token ?: return
+        if (recheckedToken == token) return
+        recheckedToken = token
+        load()
+    }
+
+    /**
+     * Where the kid's view models live. They are created for one kid session (or a kid-bound device)
+     * and live here, not in the screen, so a rotation keeps them; the session ending clears them.
+     */
+    fun kidStore(access: KidAccess): ViewModelStoreOwner {
+        kidSession?.takeIf { it.access == access }?.let { return it }
+        clearKidStore()
+        return KidSessionStore(access).also { kidSession = it }
+    }
+
+    private fun clearKidStore() {
+        kidSession?.viewModelStore?.clear()
+        kidSession = null
+    }
+
+    override fun onCleared() = clearKidStore()
+
     private fun endLocally(active: ActiveSession) {
         if (_state.value.active != active) return
         lockJob?.cancel()
         _state.update { it.copy(active = null) }
+        clearKidStore()
     }
 
     private suspend fun refreshPicker() {
@@ -121,6 +162,7 @@ class DeviceViewModel(
             if (picker == null) {
                 tokens.clear()
                 _state.update { it.copy(unpaired = true) }
+                clearKidStore()
             } else {
                 _state.update { it.copy(picker = picker, offline = null) }
             }
@@ -131,6 +173,8 @@ class DeviceViewModel(
 
     fun load() {
         val token = tokens.read() ?: return _state.update { it.copy(loading = false, unpaired = true) }
+        // The kid home is replaced by the spinner, so its view models start over when it comes back.
+        clearKidStore()
         _state.update { it.copy(loading = true, offline = null) }
         viewModelScope.launch {
             try {
@@ -204,6 +248,7 @@ class DeviceViewModel(
                     is SessionResult.Failed -> idle.copy(pinError = PinError.Failed(result.code))
                 }
             }
+            if (result is SessionResult.Unpaired) clearKidStore()
             scheduleLock()
         }
     }
@@ -231,6 +276,7 @@ class DeviceViewModel(
         lockJob?.cancel()
         val active = _state.value.active ?: return
         _state.update { it.copy(active = null) }
+        clearKidStore()
         viewModelScope.launch { client.lock(url, active.token) }
     }
 

@@ -64,7 +64,7 @@
     <string name="kid_due_planned">Planned for %1$s</string>
     <string name="kid_group_day_close">By the end of the day</string>
     <string name="kid_empty">Nothing to do today. Enjoy!</string>
-    <string name="kid_loading_error_signed_out">This session has ended. Lock the device and pick your profile again.</string>
+    <string name="kid_loading_error_signed_out">This device was refused. Ask a parent to check it under Devices in the web admin, or pair it again.</string>
     <string name="kid_loading_error_failed">Something went wrong (%1$s).</string>
     <string name="kid_refresh_failed">Couldn\'t refresh. Showing what we had.</string>
     <plurals name="kid_points">

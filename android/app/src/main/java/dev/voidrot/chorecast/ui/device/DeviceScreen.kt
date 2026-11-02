@@ -24,7 +24,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -44,7 +43,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -82,13 +80,17 @@ fun DeviceScreen(
                 Text(stringResource(R.string.device_offline, state.offline.orEmpty()))
                 Button(onClick = viewModel::load) { Text(stringResource(R.string.action_retry)) }
             }
-            active is ActiveSession.Kid -> KidHome(
-                KidAccess(active.kid.id, active.kid.displayName, active.token),
-                todayViewModel,
-                onLock = viewModel::lock,
-                onParent = null,
-                onUnauthorized = viewModel::sessionRefused,
-            )
+            active is ActiveSession.Kid -> {
+                val access = KidAccess(active.kid.id, active.kid.displayName, active.token)
+                KidHome(
+                    access,
+                    viewModel.kidStore(access),
+                    todayViewModel,
+                    onLock = viewModel::lock,
+                    onParent = null,
+                    onUnauthorized = viewModel::sessionRefused,
+                )
+            }
             active is ActiveSession.Parent -> Centered {
                 Text(stringResource(R.string.device_parent_mode, active.parent.displayName), style = MaterialTheme.typography.headlineSmall)
                 Countdown(active.expiresAt)
@@ -97,11 +99,12 @@ fun DeviceScreen(
             }
             ownKid != null -> KidHome(
                 ownKid,
+                viewModel.kidStore(ownKid),
                 todayViewModel,
                 onLock = null,
                 onParent = if (picker?.parents.isNullOrEmpty()) null else ({ viewModel.chooseParent(true) }),
-                // load() re-checks the device token with the picker and unpairs if it was revoked.
-                onUnauthorized = viewModel::load,
+                // Checks the device token with the picker once, which unpairs the device if it was revoked.
+                onUnauthorized = viewModel::deviceTokenRefused,
             )
             picker != null -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(stringResource(R.string.device_who), style = MaterialTheme.typography.headlineSmall)
@@ -162,25 +165,20 @@ fun DeviceScreen(
 }
 
 /**
- * The kid's chores. Each kid session gets its own [ViewModelStore], cleared when the session's home
- * leaves the composition, so a finished session's [TodayViewModel] (and its token) doesn't pile up
- * in the device screen's store. A new session starts with fresh data.
+ * The kid's chores. The [TodayViewModel] lives in [store], which [DeviceViewModel] keeps for the
+ * session: it survives rotation, and the session ending clears it so a finished session's token
+ * doesn't linger. A new session starts with fresh data.
  */
 @Composable
 private fun KidHome(
     access: KidAccess,
+    store: ViewModelStoreOwner,
     todayViewModel: (KidAccess) -> TodayViewModel,
     onLock: (() -> Unit)?,
     onParent: (() -> Unit)?,
     onUnauthorized: () -> Unit,
 ) {
-    val owner = remember(access.kidId, access.token) {
-        object : ViewModelStoreOwner {
-            override val viewModelStore = ViewModelStore()
-        }
-    }
-    DisposableEffect(owner) { onDispose { owner.viewModelStore.clear() } }
-    val vm = viewModel<TodayViewModel>(viewModelStoreOwner = owner) { todayViewModel(access) }
+    val vm = viewModel<TodayViewModel>(viewModelStoreOwner = store) { todayViewModel(access) }
     KidHomeScreen(vm, access.name, onLock, onParent, onUnauthorized)
 }
 

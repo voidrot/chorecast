@@ -8,13 +8,13 @@ import dev.voidrot.chorecast.core.KidChores
 import dev.voidrot.chorecast.core.KidToday
 import dev.voidrot.chorecast.core.ServerUrl
 import dev.voidrot.chorecast.core.TodayChore
+import dev.voidrot.chorecast.core.isTodayStale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.Duration
 import java.time.Instant
 
 sealed interface TodayError {
@@ -101,8 +101,7 @@ class TodayViewModel(
      */
     fun refreshIfStale() {
         if (refreshJob?.isActive == true) return
-        val last = loadedAt
-        if (last == null || Duration.between(last, now()) > STALE_AFTER) refresh()
+        if (isTodayStale(loadedAt, now())) refresh()
     }
 
     /** Opens a chore's details, reading the chore again so the steps and evidence rules are current. */
@@ -123,8 +122,4 @@ class TodayViewModel(
     }
 
     fun close() = _state.update { it.copy(selected = null) }
-
-    companion object {
-        val STALE_AFTER: Duration = Duration.ofMinutes(1)
-    }
 }

@@ -141,6 +141,17 @@ class KidTodayTest {
     }
 
     @Test
+    fun aTodayListGoesStaleAfterAMinute() {
+        val loaded = due.toInstant()
+        assertTrue(isTodayStale(null, loaded))
+        assertFalse(isTodayStale(loaded, loaded.plusSeconds(30)))
+        assertFalse(isTodayStale(loaded, loaded.plus(TODAY_STALE_AFTER)))
+        assertTrue(isTodayStale(loaded, loaded.plus(TODAY_STALE_AFTER).plusSeconds(1)))
+        // The clock moved back: the age can't be trusted.
+        assertTrue(isTodayStale(loaded, loaded.minusSeconds(5)))
+    }
+
+    @Test
     fun emptyPlanIsEmpty() {
         assertTrue(buildTodayPlan(emptyList(), emptyMap()).isEmpty)
         assertFalse(buildTodayPlan(listOf(instance(1, planned = true)), emptyMap()).isEmpty)
