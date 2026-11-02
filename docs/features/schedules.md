@@ -112,7 +112,7 @@ group size (rounded up).
   materialized for `[today, today + 7 days]`.
 - Each instance stores `(chore_id, occurrence_date, slot)` (plus a flexible week's `seq` and the kid) with a unique
   constraint, so generation is idempotent.
-- Instances are **untouched** when `status = open`, no evidence, no swap, and not manually reassigned.
+- Instances are **untouched** when `status = open`, no evidence, no swap, not manually reassigned, and never completed (a rejected or reversed completion still counts; #25).
 - **Chore edited**: delete untouched instances from tomorrow on (today too if the due slot hasn't passed and it's untouched) and regenerate.
   A slot added or moved later today isn't created today for a kid who already has a kept instance of the chore today
   (done, or already due): the edit takes full effect tomorrow. For rotation, auto and shared chores, any kept

@@ -283,8 +283,8 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
 - **Inside `InTx`, use only `tx.Q`.** SQLite runs on a single connection, so any other query blocks until the
   transaction ends.
 - Events are typed structs with a stable `EventType()` (today `household.calendar_changed`, `points.entry_posted`,
-  `chore.changed` and `kid.changed`); subscribers decode with
-  `events.Decode[T]`.
+  `chore.changed`, `kid.changed` and the instance transitions `instance.completed|approved|rejected|unapproved|
+  excused|reassigned`); subscribers decode with `events.Decode[T]`.
 - The dispatcher (woken on commit, polling every second) turns each event into one job per subscriber (key
   `event:<id>:<subscriber>`) and marks it dispatched. Each subscriber therefore retries independently with job
   backoff, and a crash mid-dispatch can't duplicate deliveries.
