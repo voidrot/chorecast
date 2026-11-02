@@ -30,3 +30,11 @@ Commits follow [Conventional Commits](https://www.conventionalcommits.org); rele
 ```sh
 docker compose -f deploy/compose.yaml up -d
 ```
+
+Guides for running Chorecast at home:
+
+- [Install](docs/guide/install.md): Docker Compose, image variants, the data volume and environment variables.
+- [First run](docs/guide/first-run.md): the setup link, pairing kids' phones and shared tablets, installing the Android app.
+- [Single sign-on](docs/guide/sso.md): OIDC setup with Authentik or PocketID.
+- [Backups and restore](docs/guide/backups.md): scheduled backups, `chorecast backup` and `chorecast restore`.
+- [Upgrading](docs/guide/upgrading.md): image tags, migrations and the pre-1.0 schema policy.
