@@ -29,12 +29,13 @@ const (
 	MaxSide   = 12_000
 	MaxPixels = 24_000_000
 	// MaxDecodeBytes caps what decoding may allocate, estimated from the header per format
-	// (decodeCost): a progressive or CMYK JPEG, a 16-bit PNG or a lossless WebP needs several
-	// times the memory of a baseline JPEG of the same size. Scaling, thumbnail and encoding add
-	// about 90 MB on top (they work on images of at most 2×MaxLongEdge). Measured peak RSS for
-	// one upload is about 85 MB for a 24 MP baseline JPEG and at most about 220 MB for the worst
-	// accepted inputs (progressive 4:4:4 or CMYK JPEG, 16-bit PNG, lossless WebP at the limit).
-	MaxDecodeBytes = 128 << 20
+	// (decodeCost): a progressive, RGB or CMYK JPEG, a 16-bit or transparent-gray PNG, or a
+	// WebP with alpha or lossless coding needs several times the memory of a baseline JPEG of
+	// the same size. Scaling, thumbnail and encoding add about 60–90 MB on top (they work on
+	// images of at most 2×MaxLongEdge). Measured peak RSS for one upload: about 87 MB for a
+	// 24 MP baseline JPEG, and at most about 210 MB for the worst accepted inputs (lossy WebP
+	// with alpha, RGB JPEG, 16-bit PNG at the limit).
+	MaxDecodeBytes = 96 << 20
 	// webpQuality is the lossy WebP quality for photos and thumbnails.
 	webpQuality = 80
 )
@@ -129,7 +130,7 @@ func DecodePhoto(ctx context.Context, data []byte) (d *Decoded, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	src, err := decode(format, data)
+	src, err := decode(format, data, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidImage, err)
 	}
@@ -225,53 +226,110 @@ func decodeCost(f Format, data []byte, cfg image.Config) int64 {
 	case FormatPNG:
 		return pngDecodeCost(data, px)
 	default:
-		// Measured: a lossy WebP decodes to 4:2:0 YUV plus alpha and working buffers (about
-		// 4 B/px); a lossless one to NRGBA plus the decoder's 32-bit ARGB buffers (about 10 B/px).
-		if webpHasChunk(data, "VP8L") {
+		// Measured: a lossy WebP decodes to 4:2:0 YUV and working buffers (about 4 B/px), or
+		// about 8 B/px with an alpha plane (ALPH, itself often lossless-coded); a lossless one to
+		// NRGBA plus the decoder's 32-bit ARGB buffers (about 10 B/px).
+		switch {
+		case webpHasChunk(data, "VP8L"):
 			return 10 * px
+		case webpHasChunk(data, "ALPH"):
+			return 8 * px
 		}
 		return 4 * px
 	}
 }
 
-// jpegDecodeCost sums the component planes the stdlib decoder allocates (at their subsampled
-// size), the CMYK image it converts four-component files into, and for progressive files the
-// 32-bit coefficient blocks it keeps for every component.
+// jpegDecodeCost mirrors the stdlib decoder's allocations: the component planes (each rounded
+// up to whole MCUs; all at full size in its "flex" mode for non-standard sampling), the RGBA or
+// CMYK image it converts RGB and four-component files into, and for progressive files a 32-bit
+// coefficient block per 8×8 block of every component.
 func jpegDecodeCost(data []byte, cfg image.Config) int64 {
-	progressive, comps := jpegFrame(data)
-	if len(comps) == 0 {
+	info := jpegHeader(data)
+	if len(info.comps) == 0 {
 		return int64(cfg.Width) * int64(cfg.Height) * 24 // unknown layout: assume the worst
 	}
 	hmax, vmax := 1, 1
-	for _, c := range comps {
+	for _, c := range info.comps {
 		hmax, vmax = max(hmax, c.h), max(vmax, c.v)
 	}
-	var planes int64
-	for _, c := range comps {
-		// Rounded up to whole 8×8 blocks, as the decoder allocates them.
-		w := (int64(cfg.Width)*int64(c.h)/int64(hmax) + 7) &^ 7
-		h := (int64(cfg.Height)*int64(c.v)/int64(vmax) + 7) &^ 7
-		planes += w * h
+	// The image is allocated in whole MCUs of 8·hmax × 8·vmax pixels.
+	mw := (int64(cfg.Width) + int64(8*hmax) - 1) / int64(8*hmax) * int64(8*hmax)
+	mh := (int64(cfg.Height) + int64(8*vmax) - 1) / int64(8*vmax) * int64(8*vmax)
+	// The stdlib's flex mode (scan.go): Cb and Cr sampled differently, Y not at the maximum, or
+	// a ratio it has no YCbCr layout for.
+	flex := false
+	if c := info.comps; len(c) >= 3 {
+		flex = c[1].h != c[2].h || c[1].v != c[2].v || c[0].h != hmax || c[0].v != vmax ||
+			!standardRatio(hmax/c[1].h, vmax/c[1].v)
+	}
+	var planes, coeffs int64
+	for _, c := range info.comps {
+		size := mw * int64(c.h) / int64(hmax) * mh * int64(c.v) / int64(vmax)
+		coeffs += 4 * size
+		if flex && len(info.comps) == 3 {
+			size = mw * mh // expanded to full size
+		}
+		planes += size
 	}
 	cost := planes
-	if len(comps) == 4 {
-		cost += 4 * int64(cfg.Width) * int64(cfg.Height) // the converted *image.CMYK
+	px := int64(cfg.Width) * int64(cfg.Height)
+	switch {
+	case len(info.comps) == 4:
+		cost += 4 * px // the converted *image.CMYK
+	case len(info.comps) == 3 && info.rgb():
+		cost += 4 * px // the converted *image.RGBA
 	}
-	if progressive {
-		cost += 4 * planes // a [64]int32 block per 8×8 block per component
+	if info.progressive {
+		cost += coeffs
 	}
 	return cost
 }
 
-type jpegComponent struct{ h, v int }
+// standardRatio reports whether luma/chroma sampling ratios h×v are one the stdlib decodes
+// without its flex mode (4:4:4, 4:4:0, 4:2:2, 4:2:0, 4:1:1, 4:1:0).
+func standardRatio(h, v int) bool {
+	switch h<<4 | v {
+	case 0x11, 0x12, 0x21, 0x22, 0x41, 0x42:
+		return true
+	}
+	return false
+}
 
-// jpegFrame reads the start-of-frame segment: whether the file is progressive and each
-// component's sampling factors. It returns no components if there is no valid SOF.
-func jpegFrame(data []byte) (progressive bool, comps []jpegComponent) {
+type jpegComponent struct {
+	id   byte
+	h, v int
+}
+
+type jpegInfo struct {
+	progressive    bool
+	comps          []jpegComponent
+	jfif           bool
+	adobe          bool // an Adobe APP14 segment is present
+	adobeTransform byte
+}
+
+// rgb reports whether the stdlib decoder treats a three-component file as RGB (and converts it
+// to RGBA), with the same rule as its isRGB.
+func (i jpegInfo) rgb() bool {
+	if i.jfif {
+		return false
+	}
+	if i.adobe && i.adobeTransform == 0 {
+		return true
+	}
+	return len(i.comps) == 3 && i.comps[0].id == 'R' && i.comps[1].id == 'G' && i.comps[2].id == 'B'
+}
+
+// jpegHeader reads the segments before the first scan: the start of frame (progressive, each
+// component's id and sampling factors) and the JFIF and Adobe markers. It returns no components
+// if there is no valid SOF.
+func jpegHeader(data []byte) jpegInfo {
+	var info jpegInfo
+	sof := false
 	i := 2
 	for i+4 <= len(data) {
 		if data[i] != 0xFF {
-			return false, nil
+			break
 		}
 		m := data[i+1]
 		if m == 0xFF {
@@ -279,7 +337,7 @@ func jpegFrame(data []byte) (progressive bool, comps []jpegComponent) {
 			continue
 		}
 		if m == 0xD9 || m == 0xDA {
-			return false, nil
+			break
 		}
 		if m == 0x01 || (m >= 0xD0 && m <= 0xD7) {
 			i += 2
@@ -287,34 +345,41 @@ func jpegFrame(data []byte) (progressive bool, comps []jpegComponent) {
 		}
 		n := int(binary.BigEndian.Uint16(data[i+2 : i+4]))
 		if n < 2 || n > len(data)-i-2 {
-			return false, nil
+			break
 		}
-		if m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC {
-			seg := data[i+4 : i+2+n]
+		seg := data[i+4 : i+2+n]
+		switch {
+		case m == 0xE0 && bytes.HasPrefix(seg, []byte("JFIF\x00")):
+			info.jfif = true
+		case m == 0xEE && len(seg) >= 12 && bytes.HasPrefix(seg, []byte("Adobe")):
+			info.adobe, info.adobeTransform = true, seg[11]
+		case !sof && m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC:
+			sof = true
 			if len(seg) < 6 {
-				return false, nil
+				return jpegInfo{}
 			}
 			nc := int(seg[5])
 			if nc < 1 || nc > 4 || len(seg) < 6+3*nc {
-				return false, nil
+				return jpegInfo{}
 			}
 			for k := range nc {
 				s := seg[6+3*k+1]
 				h, v := int(s>>4), int(s&0x0F)
 				if h < 1 || v < 1 {
-					return false, nil
+					return jpegInfo{}
 				}
-				comps = append(comps, jpegComponent{h, v})
+				info.comps = append(info.comps, jpegComponent{seg[6+3*k], h, v})
 			}
-			return m == 0xC2 || m == 0xC6 || m == 0xCA || m == 0xCE, comps
+			info.progressive = m == 0xC2 || m == 0xC6 || m == 0xCA || m == 0xCE
 		}
 		i += 2 + n
 	}
-	return false, nil
+	return info
 }
 
-// pngDecodeCost is the decoded image's size from the IHDR bit depth and color type, doubled
-// for interlaced files (the decoder fills each pass's image before merging).
+// pngDecodeCost is the decoded image's size from the IHDR bit depth and color type (gray with
+// a tRNS chunk decodes to NRGBA), doubled for interlaced files (the decoder fills each pass's
+// image before merging).
 func pngDecodeCost(data []byte, px int64) int64 {
 	if len(data) < 29 {
 		return px * 8
@@ -324,6 +389,9 @@ func pngDecodeCost(data []byte, px int64) int64 {
 	switch colorType {
 	case 0: // gray
 		bpp = 1
+		if pngHasTRNS(data) {
+			bpp = 4
+		}
 	case 3: // paletted
 		bpp = 1
 	default: // RGB, gray + alpha, RGBA: decoded to 4 channels
@@ -337,6 +405,24 @@ func pngDecodeCost(data []byte, px int64) int64 {
 		cost *= 2
 	}
 	return cost
+}
+
+// pngHasTRNS reports whether a tRNS chunk comes before the image data.
+func pngHasTRNS(data []byte) bool {
+	for i := 8; i+8 <= len(data); {
+		n := int(binary.BigEndian.Uint32(data[i : i+4]))
+		switch string(data[i+4 : i+8]) {
+		case "tRNS":
+			return true
+		case "IDAT", "IEND":
+			return false
+		}
+		if n < 0 || n > len(data)-i-12 {
+			return false
+		}
+		i += 12 + n
+	}
+	return false
 }
 
 // webpAnimated reports whether a WebP file is an animation: an extended (VP8X) header with the
@@ -363,7 +449,7 @@ func webpHasChunk(data []byte, id string) bool {
 	return false
 }
 
-func decode(f Format, data []byte) (image.Image, error) {
+func decode(f Format, data []byte, cfg image.Config) (image.Image, error) {
 	r := bytes.NewReader(data)
 	switch f {
 	case FormatJPEG:
@@ -371,9 +457,12 @@ func decode(f Format, data []byte) (image.Image, error) {
 	case FormatPNG:
 		return png.Decode(r)
 	default:
-		// One thread, so a decoder panic happens on this goroutine and is recovered. Orientation
-		// is applied by orient, as for JPEG, so the hash is of the pixels as stored.
-		return webp.Decode(r, webp.Options{Threads: 1})
+		// One thread, so a decoder panic happens on this goroutine and is recovered. The frame
+		// may be no larger than the header checkHeader budgeted: an extended file's canvas can
+		// claim 1×1 around a 16k×16k bitstream, and vpx checks the limit in the frame header
+		// before allocating. Orientation is applied by orient, as for JPEG, so the hash is of
+		// the pixels as stored.
+		return webp.Decode(r, webp.Options{Threads: 1, FrameSizeLimit: cfg.Width * cfg.Height})
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"image/png"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -236,5 +237,32 @@ func TestProcessPhotoStopsWhenCancelled(t *testing.T) {
 	cancel()
 	if _, err := media.ProcessPhoto(ctx, mediatest.JPEG(t, mediatest.Halves(64, 48))); !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
+// An extended WebP's canvas is what the budget is computed from, so a bitstream frame larger
+// than the canvas is refused before it is allocated. testdata holds the auditor's repro: a
+// 698-byte lossless 16384×16384 frame in a 1×1 canvas (about 1 GB decoded).
+func TestWebPFrameLargerThanCanvas(t *testing.T) {
+	repro, err := os.ReadFile("testdata/vp8l-16384px-in-1px-canvas.webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"lossless 16384² in 1×1": repro,
+		"lossy 3000² in 1×1":     mediatest.WebPInCanvas(t, mediatest.WebP(t, mediatest.Halves(3000, 3000)), 1, 1),
+		"lossy 3000² in 100×100": mediatest.WebPInCanvas(t, mediatest.WebP(t, mediatest.Halves(3000, 3000)), 100, 100),
+	} {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		_, err := media.ProcessPhoto(t.Context(), data)
+		runtime.ReadMemStats(&after)
+		if !errors.Is(err, media.ErrInvalidImage) {
+			t.Errorf("%s: err = %v, want ErrInvalidImage", name, err)
+		}
+		if mb := (after.TotalAlloc - before.TotalAlloc) >> 20; mb > 8 {
+			t.Errorf("%s: allocated %d MB before refusing it", name, mb)
+		}
 	}
 }

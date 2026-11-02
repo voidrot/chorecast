@@ -119,6 +119,18 @@ func WebP(t testing.TB, m image.Image) []byte {
 // tiff in an EXIF chunk.
 func WebPWithExif(t testing.TB, simple []byte, w, h int, tiff []byte) []byte {
 	t.Helper()
+	return extendedWebP(t, simple, w, h, tiff)
+}
+
+// WebPInCanvas rewrites a simple lossy WebP as an extended one whose VP8X header claims a w×h
+// canvas, whatever the size of the frame inside.
+func WebPInCanvas(t testing.TB, simple []byte, w, h int) []byte {
+	t.Helper()
+	return extendedWebP(t, simple, w, h, nil)
+}
+
+func extendedWebP(t testing.TB, simple []byte, w, h int, tiff []byte) []byte {
+	t.Helper()
 	if len(simple) < 20 || string(simple[12:16]) != "VP8 " {
 		t.Fatalf("not a simple lossy WebP")
 	}
@@ -138,7 +150,9 @@ func WebPWithExif(t testing.TB, simple []byte, w, h int, tiff []byte) []byte {
 	put24(vp8x[7:], h-1)
 	body := append([]byte("WEBP"), chunk("VP8X", vp8x)...)
 	body = append(body, simple[12:]...) // the VP8 chunk as is
-	body = append(body, chunk("EXIF", tiff)...)
+	if tiff != nil {
+		body = append(body, chunk("EXIF", tiff)...)
+	}
 	out := append([]byte("RIFF"), 0, 0, 0, 0)
 	binary.LittleEndian.PutUint32(out[4:], uint32(len(body))) //nolint:gosec // test data
 	return append(out, body...)
