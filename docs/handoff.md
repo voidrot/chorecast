@@ -25,9 +25,7 @@ through the owner (see "Environment gotchas").
 | #29 | Auto-approve (`internal/autoapprove`) | #86 |
 | #27 | Chore evidence (`internal/evidence`) | #87 |
 | (fix) | Keyed POSTs no longer panic after their handler ran | #91 |
-
-**In review:** #28, the review queue (server only: list submitted chores, approve in bulk), PR #90. Check its
-state before you build on it.
+| #28 | Review queue API: list submitted chores, approve in bulk (`internal/reviewqueue`) | #90 |
 
 **Still open, in the order to take them:**
 
@@ -187,8 +185,8 @@ merged. Paths are under `/api/v1`.
 - **Media upload:** `POST /media/photos` (multipart `file`), then reference the returned `mediaId` in the
   completion. A kid's photo also sends `capturedAt` and `captureId`. Files are served from `/media/files/{key}`
   by signed link.
-- **Review queue:** the approve and reject transitions above work today. The list and bulk-approve endpoints are
-  PR #90 (#28).
+- **Review queue:** `GET /review-queue` (submitted chores, oldest first, filters `kidId`, `choreId`, `media`) and
+  `POST /review-queue/approvals` (bulk approve, per-id results). Reject one at a time with feedback.
 - **Points:** `GET /kids/{kid}/points` and `/points/entries`, `POST /kids/{kid}/points/adjustments` and
   `/kids/{kid}/points/entries/{entry}/reversal`.
 - **Streaks:** `GET /kids/{kid}/streaks`.
