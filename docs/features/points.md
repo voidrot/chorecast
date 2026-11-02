@@ -57,7 +57,7 @@ Rules:
   `transfer_in` with the same `transfer_id` in one transaction.
 - Un-approving a chore, un-excusing, or removing a behavior all write `reversal` entries.
 
-Built (#26, `internal/ledger`, server only; the web screen is #34). `points_entries` has the v1 kinds `chore`,
+Built (#26, `internal/ledger`, server only; the web screen is #95, below). `points_entries` has the v1 kinds `chore`,
 `chore_penalty`, `streak_bonus`, `adjustment` and `reversal`. Instead of one nullable column per source, an entry
 names its source as `source_kind` + `source_id` (e.g. `chore_instance`, id) with no foreign key, so later
 features add sources without schema changes. `created_by` is NULL for the system. Choices made in implementation:
@@ -93,6 +93,21 @@ features add sources without schema changes. `created_by` is NULL for the system
   first, each entry with `balanceAfter` and `reversedById`) need `points:read`. Kids can read only their own.
   `POST /kids/{kid}/points/adjustments` (`amount` ≠ 0, `note`) and `POST /kids/{kid}/points/entries/{entry}/reversal`
   (`note`) need `points:manage` (parents).
+
+Built (#95, web). The kid's points screen is at `/kids/:kid/points`, reached from the kid edit page. It shows the
+balance and available points, daily and per-chore streaks, an adjustment form and the ledger.
+
+- **Paging.** The ledger loads one page and appends more on "Load more". After a write it re-reads as many pages
+  as were listed, so the parent keeps their place. Entries are de-duplicated by id because a new entry shifts
+  later pages.
+- **Reversal chains.** An entry shows "Reversed" once it has `reversedById`, and a reversal shows which entry it
+  undoes. Only an entry with no `reversedById` offers a button: "Reverse", or "Undo this reversal" on a reversal,
+  which re-applies the original. Both need a note.
+- **`already_reversed`.** Someone else reversed the entry first. The modal closes with a warning and the ledger
+  and balance are re-read, so the next action starts from the current tip.
+- **Clamped tag.** An entry whose `requestedAmount` differs from its `amount` is tagged "Clamped (asked N)".
+- **Adjustments** send an `Idempotency-Key` that stays the same across retries of one submission and changes
+  after a success or when the inputs change. Notes are limited to 500 characters (not UTF-16 units).
 
 ## Chore instance lifecycle (points-relevant)
 
