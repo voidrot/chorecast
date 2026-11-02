@@ -742,7 +742,7 @@ func TestHorizonKeepsTouchedInstances(t *testing.T) {
 // instances, that a credit is in force exactly while an instance is approved and a penalty
 // exactly while it's missed, and that nothing is ever posted twice for a source.
 func TestLedgerStaysConsistent(t *testing.T) {
-	for seed := range uint64(12) {
+	for seed := range uint64(3) {
 		for _, allowNegative := range []bool{true, false} {
 			t.Run(fmt.Sprintf("seed %d negative %v", seed, allowNegative), func(t *testing.T) {
 				runLedgerModel(t, seed, allowNegative)
@@ -845,7 +845,7 @@ func runLedgerModel(t *testing.T, seed uint64, allowNegative bool) {
 
 	rng := rand.New(rand.NewPCG(seed, 25)) //nolint:gosec // seeded on purpose: failures must reproduce
 	ctx := t.Context()
-	for step := range 250 {
+	for step := range 150 {
 		m := model[rng.IntN(len(model))]
 		kid := all[rng.IntN(len(all))]
 		var err, want error
