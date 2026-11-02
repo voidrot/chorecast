@@ -97,10 +97,10 @@ export function moveKid(kidIds: number[], index: number, by: -1 | 1): number[] {
 }
 
 export type AssignmentFieldErrors = Partial<
-  Record<'mode' | 'kidIds' | 'sharedPoints' | 'sharedPenalty', string>
+  Record<'mode' | 'kidIds' | 'sharedPoints' | 'sharedPenalty', true>
 >
 
-/** Picks the server's 422 messages for the assignment controls out of the problem's field errors. */
+/** Which assignment controls the server's 422 field errors point at (the view shows its own text). */
 export function assignmentFieldErrors(
   errors: { location?: string; message?: string }[] | null | undefined,
 ): AssignmentFieldErrors {
@@ -110,7 +110,7 @@ export function assignmentFieldErrors(
       e.location ?? '',
     )
     const key = m?.[1] as keyof AssignmentFieldErrors | undefined
-    if (key && e.message && !out[key]) out[key] = e.message
+    if (key) out[key] = true
   }
   return out
 }

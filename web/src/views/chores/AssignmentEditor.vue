@@ -42,9 +42,15 @@ const kidName = (id: number) => {
   if (!k) return `#${id}`
   return k.archivedAt ? t('chores.assignment.archivedKid', { name: k.displayName }) : k.displayName
 }
-const kidsError = computed(
-  () => props.errors.kidIds ?? (props.problem ? t(props.problem) : undefined),
+const kidsError = computed(() =>
+  props.errors.kidIds
+    ? t('chores.assignment.serverErrors.kidIds')
+    : props.problem
+      ? t(props.problem)
+      : undefined,
 )
+const serverError = (f: keyof typeof props.errors) =>
+  props.errors[f] ? t(`chores.assignment.serverErrors.${f}`) : undefined
 
 function move(i: number, by: -1 | 1) {
   form.value.kidIds = moveKid(form.value.kidIds, i, by)
@@ -54,12 +60,20 @@ function move(i: number, by: -1 | 1) {
 <template>
   <div class="flex flex-col gap-4">
     <NFormItem
-      :label="t('chores.assignment.mode')"
       :show-feedback="!!errors.mode"
-      :feedback="errors.mode"
+      :feedback="serverError('mode')"
       :validation-status="errors.mode ? 'error' : undefined"
     >
-      <NRadioGroup v-model:value="form.mode" name="assignment-mode" class="flex flex-col gap-2">
+      <template #label
+        ><span id="lbl-assign-mode">{{ t('chores.assignment.mode') }}</span></template
+      >
+      <NRadioGroup
+        v-model:value="form.mode"
+        name="assignment-mode"
+        role="radiogroup"
+        aria-labelledby="lbl-assign-mode"
+        class="flex flex-col gap-2"
+      >
         <NRadio v-for="m in ASSIGNMENT_MODES" :key="m" :value="m">
           <span class="font-medium">{{ t(`chores.assignment.modes.${m}`) }}</span>
           <span class="hint block">{{ t(`chores.assignment.modeHints.${m}`) }}</span>
@@ -110,14 +124,18 @@ function move(i: number, by: -1 | 1) {
 
     <div v-if="form.mode === 'shared'" class="grid gap-4 sm:grid-cols-2">
       <NFormItem
-        :label="t('chores.assignment.sharedPoints')"
         :show-feedback="!!errors.sharedPoints"
-        :feedback="errors.sharedPoints"
+        :feedback="serverError('sharedPoints')"
         :validation-status="errors.sharedPoints ? 'error' : undefined"
       >
+        <template #label
+          ><span id="lbl-assign-points">{{ t('chores.assignment.sharedPoints') }}</span></template
+        >
         <NRadioGroup
           v-model:value="form.sharedPoints"
           name="assignment-points"
+          role="radiogroup"
+          aria-labelledby="lbl-assign-points"
           class="flex flex-col gap-2"
         >
           <NRadio value="completer_takes_all">{{
@@ -127,14 +145,18 @@ function move(i: number, by: -1 | 1) {
         </NRadioGroup>
       </NFormItem>
       <NFormItem
-        :label="t('chores.assignment.sharedPenalty')"
         :show-feedback="!!errors.sharedPenalty"
-        :feedback="errors.sharedPenalty"
+        :feedback="serverError('sharedPenalty')"
         :validation-status="errors.sharedPenalty ? 'error' : undefined"
       >
+        <template #label
+          ><span id="lbl-assign-penalty">{{ t('chores.assignment.sharedPenalty') }}</span></template
+        >
         <NRadioGroup
           v-model:value="form.sharedPenalty"
           name="assignment-penalty"
+          role="radiogroup"
+          aria-labelledby="lbl-assign-penalty"
           class="flex flex-col gap-2"
         >
           <NRadio value="all">{{ t('chores.assignment.penalty.all') }}</NRadio>

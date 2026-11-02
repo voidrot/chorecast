@@ -16,13 +16,14 @@ import {
   useDialog,
   useMessage,
 } from 'naive-ui'
-import { computed, onMounted, ref, toRaw } from 'vue'
+import { computed, onMounted, ref, toRaw, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
 import type { components } from '@/api/schema'
 import {
+  type AssignmentFieldErrors,
   type AssignmentForm,
   assignmentFieldErrors,
   assignmentProblems,
@@ -63,7 +64,13 @@ const rotationReset = computed(
   () =>
     !!originalAssignment.value && resetsRotation(originalAssignment.value, form.value.assignment),
 )
-const assignmentErrors = computed(() => assignmentFieldErrors(error.value?.fieldErrors))
+// Server 422s for the assignment controls; cleared once the assignment is edited.
+const assignmentErrors = ref<AssignmentFieldErrors>({})
+watch(
+  () => form.value.assignment,
+  () => (assignmentErrors.value = {}),
+  { deep: true },
+)
 const assignmentProblem = computed(() =>
   shown.value ? assignmentProblems(form.value.assignment)[0] : undefined,
 )
@@ -118,6 +125,7 @@ async function save() {
       : await api.PUT('/chores/{id}', { params: { path: { id: id.value } }, body })
     if (!res.data) {
       error.value = ApiError.fromProblem(res.response.status, res.error)
+      assignmentErrors.value = assignmentFieldErrors(error.value.fieldErrors)
       return
     }
     message.success(t('chores.saved', { name: res.data.name }))

@@ -462,6 +462,12 @@
       "errors": {
         "kids": "Pick at least one kid.",
         "sharedKids": "Pick at least two kids for a shared chore."
+      },
+      "serverErrors": {
+        "mode": "Pick a valid way to hand this out.",
+        "kidIds": "The server rejected the kids you picked. Check them and try again.",
+        "sharedPoints": "Pick a valid points option.",
+        "sharedPenalty": "Pick a valid penalty option."
       }
     }
   },

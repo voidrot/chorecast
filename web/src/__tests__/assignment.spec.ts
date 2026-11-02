@@ -87,7 +87,7 @@ describe('assignment form', () => {
         { location: 'body.assignment.sharedPenalty', message: 'bad' },
         { location: 'body.name', message: 'ignored' },
       ]),
-    ).toEqual({ kidIds: 'unknown kid', sharedPenalty: 'bad' })
+    ).toEqual({ kidIds: true, sharedPenalty: true })
     expect(assignmentFieldErrors(undefined)).toEqual({})
   })
 })
