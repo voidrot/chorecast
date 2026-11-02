@@ -219,8 +219,8 @@ when run through `chorecast admin`), device pairing (the parent who made the cod
 unarchive, and manual points reversals (their `points.entry_posted` looks like an un-approval's). `GET /audit`
 (`server:manage`, so owners only) pages newest first and filters by `actorKind`, `actorId`, `action` and
 household-local `from`/`to` days. The web admin's Audit log screen (owners only) shows it with those filters and
-Load more. Not recorded yet: backups and restores (#110 is still open; it should call `audit.Record` with
-`audit.CLI`, and a restore should write into the restored database after the swap), kiosk toggles, exports, chore
+Load more. Not recorded yet: backups and restores (#121: `audit.Record` with `audit.CLI`, or `audit.System` for
+scheduled backups, and a restore writes into the restored database after the swap), kiosk toggles, exports, chore
 deletion, reassignment, and parents' own password, 2FA and PIN changes.
 
 ## i18n

@@ -8,8 +8,8 @@
 //     and 2FA resets, pairing, revocation, archive, manual reversals): the service calls Record
 //     with the transaction's queries, so the row commits with the change or not at all.
 //
-// TODO(#110): backups and restores (CLI and scheduled) call Record once the backup package lands;
-// a restore writes its row into the restored database after the swap.
+// TODO(#121): backups and restores (CLI and scheduled, internal/backup) call Record; a restore
+// writes its row into the restored database after the swap.
 //
 // Details are typed (AuditDetails), so tokens, password hashes, TOTP secrets and PINs have nowhere
 // to go. Rows store no display text beyond the target's name at the time (summary); clients
