@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -15,8 +16,9 @@ type Config struct {
 	// links the server prints or shares (setup URL, invites, pairing). Optional.
 	PublicURL string
 
-	OIDC  OIDCConfig
-	Media MediaConfig
+	OIDC   OIDCConfig
+	Media  MediaConfig
+	Backup BackupConfig
 
 	// FromEnv records which CHORECAST_* variables were set, so the admin can show those settings
 	// as "set by environment".
@@ -49,12 +51,25 @@ func (m MediaConfig) MaxPhotoBytes() int64 {
 	return int64(min(mb, 1<<30)) << 20 // the cap only keeps absurd values from overflowing
 }
 
+// BackupConfig schedules the backups the server writes to <DataDir>/backups
+// (docs/features/household.md, Backups & export).
+type BackupConfig struct {
+	Keep        int           // scheduled backups kept; older ones are deleted
+	AfterDayEnd time.Duration // delay after the household day end, in [0, 24h)
+}
+
+// Defaults for CHORECAST_BACKUP_KEEP and CHORECAST_BACKUP_AFTER_DAY_END, used when unset or invalid.
+const (
+	DefaultBackupKeep        = 7
+	DefaultBackupAfterDayEnd = time.Hour
+)
+
 func Load() Config {
 	fromEnv := map[string]bool{}
 	for _, k := range []string{
 		"CHORECAST_ADDR", "CHORECAST_DATA_DIR", "CHORECAST_DEV", "CHORECAST_PUBLIC_URL",
 		"CHORECAST_OIDC_ISSUER", "CHORECAST_OIDC_CLIENT_ID", "CHORECAST_OIDC_CLIENT_SECRET",
-		"CHORECAST_MEDIA_MAX_PHOTO_MB",
+		"CHORECAST_MEDIA_MAX_PHOTO_MB", "CHORECAST_BACKUP_KEEP", "CHORECAST_BACKUP_AFTER_DAY_END",
 	} {
 		if v, ok := os.LookupEnv(k); ok && v != "" {
 			fromEnv[k] = true
@@ -72,6 +87,10 @@ func Load() Config {
 			ClientSecret: os.Getenv("CHORECAST_OIDC_CLIENT_SECRET"),
 		},
 		Media: MediaConfig{MaxPhotoMB: envPositiveInt("CHORECAST_MEDIA_MAX_PHOTO_MB", DefaultMaxPhotoMB)},
+		Backup: BackupConfig{
+			Keep:        envPositiveInt("CHORECAST_BACKUP_KEEP", DefaultBackupKeep),
+			AfterDayEnd: envDayOffset("CHORECAST_BACKUP_AFTER_DAY_END", DefaultBackupAfterDayEnd),
+		},
 	}
 }
 
@@ -89,6 +108,16 @@ func envPositiveInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+// envDayOffset reads a Go duration such as "1h" or "90m" in [0, 24h), falling back to def when
+// unset or invalid.
+func envDayOffset(key string, def time.Duration) time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(os.Getenv(key)))
+	if err != nil || d < 0 || d >= 24*time.Hour {
+		return def
+	}
+	return d
 }
 
 func envBool(key string) bool {

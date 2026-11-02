@@ -35,6 +35,8 @@ const usage = `usage: chorecast <command>
 commands:
   serve     run the server (default)
   admin     account recovery: reset-password, disable-2fa (run "chorecast admin" for help)
+  backup    write a backup of the database and media ([--out PATH])
+  restore   restore a backup into the data dir, with the server stopped ([--force] <file>)
   openapi   print the OpenAPI spec as JSON (-3.0 for an OpenAPI 3.0 copy, for client generators)
   version   print the version`
 
@@ -49,6 +51,15 @@ func main() {
 		err = serve()
 	case "admin":
 		err = admin(context.Background(), os.Args[2:], os.Stdout)
+	case "backup", "restore":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		dataDir := config.Load().DataDir
+		if cmd == "backup" {
+			err = backupCmd(ctx, os.Args[2:], dataDir, clock.Real{}, os.Stdout)
+		} else {
+			err = restoreCmd(ctx, os.Args[2:], dataDir, os.Stdout)
+		}
+		stop()
 	case "openapi":
 		err = printOpenAPI(len(os.Args) > 2 && os.Args[2] == "-3.0")
 	case "version":
@@ -68,6 +79,13 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Held until exit, so a restore can't replace the database under a running server (and two
+	// servers can't share a data dir). Taken before Open, which migrates.
+	lock, err := db.LockDataDir(cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cfg.DataDir, err)
+	}
+	defer func() { _ = lock.Unlock() }()
 	store, err := db.Open(ctx, cfg.DataDir)
 	if err != nil {
 		return err
@@ -76,7 +94,7 @@ func serve() error {
 
 	clk := clock.Real{}
 	// Retention only deletes files, so this storage needs no URL signer.
-	runner, sched, bus := newBackground(store, clk, media.NewLocal(cfg.DataDir, "", nil), slog.Default())
+	runner, sched, bus := newBackground(store, clk, media.NewLocal(cfg.DataDir, "", nil), cfg.DataDir, cfg.Backup, slog.Default())
 	if err := runner.Recover(ctx); err != nil {
 		return err
 	}
