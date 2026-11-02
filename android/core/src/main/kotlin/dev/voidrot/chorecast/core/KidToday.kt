@@ -12,8 +12,9 @@ import java.time.format.DateTimeParseException
 /**
  * How an instance is shown to a kid. The API's `status` has no "rejected": a rejection sends the
  * instance back to `open` with `lastRejection` set, which the kid should see as "do it again".
+ * [UNKNOWN] is a status this app version predates; it is shown read-only and can't be completed.
  */
-enum class ChoreStatusView { OPEN, REDO, SUBMITTED, APPROVED, MISSED, EXCUSED }
+enum class ChoreStatusView { OPEN, REDO, SUBMITTED, APPROVED, MISSED, EXCUSED, UNKNOWN }
 
 /**
  * True when the latest rejection is why the chore is open again. `lastRejection` is kept after a
@@ -31,6 +32,7 @@ fun ChoreInstance.statusView(): ChoreStatusView = when (status) {
     ChoreInstance.Status.APPROVED -> ChoreStatusView.APPROVED
     ChoreInstance.Status.MISSED -> ChoreStatusView.MISSED
     ChoreInstance.Status.EXCUSED -> ChoreStatusView.EXCUSED
+    ChoreInstance.Status.UNKNOWN_DEFAULT_OPEN_API -> ChoreStatusView.UNKNOWN
 }
 
 /** One row of the today list. [points] is null when the chore's details couldn't be read. */

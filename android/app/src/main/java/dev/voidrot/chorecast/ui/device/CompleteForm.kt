@@ -108,7 +108,7 @@ fun CompleteForm(
 private fun photoLabel(index: Int, role: EvidencePhotoInput.Role?): String = when (role) {
     EvidencePhotoInput.Role.BEFORE -> stringResource(R.string.complete_photo_before)
     EvidencePhotoInput.Role.AFTER -> stringResource(R.string.complete_photo_after)
-    null -> stringResource(R.string.complete_photo_n, index + 1)
+    EvidencePhotoInput.Role.UNKNOWN_DEFAULT_OPEN_API, null -> stringResource(R.string.complete_photo_n, index + 1)
 }
 
 @Composable

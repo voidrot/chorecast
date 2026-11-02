@@ -227,6 +227,7 @@ private fun statusLabel(status: ChoreStatusView): String = stringResource(
         ChoreStatusView.APPROVED -> R.string.kid_status_approved
         ChoreStatusView.MISSED -> R.string.kid_status_missed
         ChoreStatusView.EXCUSED -> R.string.kid_status_excused
+        ChoreStatusView.UNKNOWN -> R.string.kid_status_unknown
     },
 )
 
