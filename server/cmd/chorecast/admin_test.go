@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"database/sql"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/media"
 	"github.com/voidrot/chorecast/server/internal/parents"
 )
 
@@ -64,5 +67,28 @@ func TestAdminRecovery(t *testing.T) {
 	}
 	if err := runAdmin(t.Context(), svc, "explode", "mom", &out); err == nil || !strings.Contains(err.Error(), "usage") {
 		t.Errorf("unknown command: %v", err)
+	}
+}
+
+func TestAdminRotateMediaKey(t *testing.T) {
+	store, err := db.Open(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	signer := media.NewSigner(store.Queries, clock.Real{})
+	key, _ := media.NewKey()
+	exp := clock.Real{}.Now().Add(time.Minute)
+	sig, _ := signer.Sign(t.Context(), key, exp)
+
+	var out bytes.Buffer
+	if err := rotateMediaKey(t.Context(), store, clock.Real{}, &out); err != nil || !strings.Contains(out.String(), "Restart the server") {
+		t.Fatalf("rotate-media-key: %v %q", err, out.String())
+	}
+	if ok, _ := media.NewSigner(store.Queries, clock.Real{}).Verify(t.Context(), key, strconv.FormatInt(exp.Unix(), 10), sig); ok {
+		t.Error("a link signed before rotation still verifies with the stored secret")
+	}
+	if err := admin(t.Context(), []string{"rotate-media-key", "extra"}, &out); err == nil || !strings.Contains(err.Error(), "usage") {
+		t.Errorf("extra argument: %v", err)
 	}
 }

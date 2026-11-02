@@ -83,7 +83,7 @@ upload → quarantine/tmp → validate (magic bytes, size, duration)
 - Background job queue in-process (SQLite-backed `jobs` table) with **concurrency 1 for transcoding** so a Pi
   stays responsive; images are processed inline.
 - `media(id, owner_kind, owner_id, storage_key, kind, mime, bytes, width, height, duration_ms, status,
-  keep, created_at, expires_at)`. Also used for chore reference photos and equipment photos (these never expire).
+  keep, created_at, expires_at)`. `duration_ms` is added with video; the photo-only table (#75) omits it. Also used for chore reference photos and equipment photos (these never expire).
 - Storage interface: `Put/Get/Delete/SignedURL`. Local implementation stores under `$DATA_DIR/media/aa/bb/<id>`.
   The S3 implementation uses the minio-go client and works with any S3-compatible service.
 - **Retention job** (daily): delete media where `expires_at < now AND keep = false`; the evidence row remains
@@ -94,23 +94,33 @@ upload → quarantine/tmp → validate (magic bytes, size, duration)
 Built (#75, `internal/media`): the photo half of the pipeline, local storage only.
 - `POST /media/photos` (multipart `file`; kids and parents, scope `chores:complete`). The format comes from the
   magic bytes (JPEG, PNG, WebP; HEIC/AVIF and anything else is 415), the size cap from
-  `CHORECAST_MEDIA_MAX_PHOTO_MB` (413 `payload_too_large`), and images over 40 MP are refused from their header
-  before decoding (413 `image_too_large`). The photo is turned upright from its EXIF orientation, scaled to
-  ≤1600 px plus a ≤320 px thumbnail, and both are re-encoded as lossy WebP holding pixels only (no EXIF, GPS, XMP or
-  ICC). WebP encoding is pure Go (`github.com/gen2brain/vpx`), so the `CGO_ENABLED=0` build keeps working.
+  `CHORECAST_MEDIA_MAX_PHOTO_MB` (413 `payload_too_large`). Before decoding, the header must show at most 24 MP and
+  12,000 px a side (413 `image_too_large`), and the memory decoding needs, estimated per format (progressive and
+  CMYK JPEG, 16-bit and interlaced PNG, lossless WebP cost more), must fit 128 MB (413 `image_too_complex`).
+  Animated WebP is 415. The photo is scaled to ≤1600 px (box averaging, so no large working buffers), turned
+  upright from its EXIF orientation, and a ≤320 px thumbnail is made; both are re-encoded as lossy WebP holding
+  pixels only (no EXIF, GPS, XMP or ICC). WebP encoding is pure Go (`github.com/gen2brain/vpx`, single-threaded,
+  with decoder panics turned into 422 `invalid_image`), so the `CGO_ENABLED=0` build keeps working. One upload
+  peaks at about 220 MB in the worst accepted case (85 MB for a 24 MP JPEG); `deploy/compose.yaml` suggests a
+  `GOMEMLIMIT`.
 - SHA-256 is of the decoded pixels (dimensions, then RGBA rows), so re-saving a photo with other metadata doesn't
   change it; dHash is stored for later near-duplicate flagging. A kid's upload that matches `media_hashes` is 409
-  `duplicate_media`; kid uploads are recorded there, which outlives the `media` row. Parents' uploads are neither
-  checked nor recorded.
+  `duplicate_media`, answered after decoding but before encoding; kid uploads are recorded there, which outlives
+  the `media` row. Parents' uploads are neither checked nor recorded.
 - New media is `owner_kind = 'pending'` (no owner id) until #27 attaches it. `GET /media/{id}` returns it with fresh
   signed links to the photo and thumbnail: parents see all media, a kid only pending media they uploaded, anyone
   else gets 404 `media_not_found`.
-- Signed links (`GET /media/files/{key}?exp&sig`, public: the signature is the credential) last 10 minutes. The
-  HMAC-SHA256 key is derived from a random server secret created on first use in the `server_keys` table. A wrong
+- Signed links (`GET /media/files/{key}?exp&sig`, public: the signature is the credential) last 10 minutes; a link
+  claiming a later expiry is refused even if signed. The HMAC-SHA256 key is derived from a random secret created on
+  first use in the `server_keys` table (row `media_url`), so **database backups contain it**: anyone holding a
+  backup can mint links (they can also read the media files in the same data dir). Rotate it with
+  `chorecast admin rotate-media-key` and restart the server; links handed out before stop working. A wrong
   or expired signature is 403 `invalid_media_url`; media whose row is gone, whose status is `expired`, or whose file
   is missing is 410 `media_expired`. Files are served with `Cache-Control: private` and `nosniff`.
 - Files live under `$CHORECAST_DATA_DIR/media/aa/bb/<key>` (`<key>_t` for the thumbnail), keyed by a random
-  128-bit hex key and written to a temp file, then renamed. Photo processing runs one at a time.
+  128-bit hex key and written to a temp file, then renamed. Photo processing runs one at a time; up to 4 uploads
+  wait for it without reading their bodies into memory, and more get 503 `media_busy` with `Retry-After`.
+  (`net/http` spools multipart bodies over 8 KB to the temp dir first, so the server needs a writable `/tmp`.)
 
 ## Review queue (parent)
 

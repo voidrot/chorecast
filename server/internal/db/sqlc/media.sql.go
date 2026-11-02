@@ -202,3 +202,19 @@ func (q *Queries) RecordMediaHash(ctx context.Context, arg RecordMediaHashParams
 	err := row.Scan(&sha256)
 	return sha256, err
 }
+
+const replaceServerKey = `-- name: ReplaceServerKey :exec
+INSERT INTO server_keys (name, key, created_at) VALUES (?, ?, ?)
+ON CONFLICT (name) DO UPDATE SET key = excluded.key, created_at = excluded.created_at
+`
+
+type ReplaceServerKeyParams struct {
+	Name      string `json:"name"`
+	Key       []byte `json:"key"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (q *Queries) ReplaceServerKey(ctx context.Context, arg ReplaceServerKeyParams) error {
+	_, err := q.db.ExecContext(ctx, replaceServerKey, arg.Name, arg.Key, arg.CreatedAt)
+	return err
+}

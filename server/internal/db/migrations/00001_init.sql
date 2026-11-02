@@ -293,8 +293,9 @@ CREATE TABLE chore_instance_members (
 CREATE INDEX chore_instance_members_by_kid ON chore_instance_members (kid_id);
 
 -- ==== Media pipeline (#75) ====
--- Server-generated secrets, created on first use. "server" is a random 32-byte master key; features
--- derive their own keys from it (internal/media derives the media URL signing key).
+-- Server-generated secrets, one row per purpose, created on first use (32 random bytes).
+-- "media_url": internal/media derives the media URL signing key from it; rotate it with
+-- `chorecast admin rotate-media-key`. Database backups contain these secrets.
 CREATE TABLE server_keys (
     name       TEXT PRIMARY KEY,
     key        BLOB NOT NULL,

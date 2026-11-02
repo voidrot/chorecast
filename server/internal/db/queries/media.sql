@@ -2,6 +2,10 @@
 INSERT INTO server_keys (name, key, created_at) VALUES (?, ?, ?)
 ON CONFLICT (name) DO NOTHING;
 
+-- name: ReplaceServerKey :exec
+INSERT INTO server_keys (name, key, created_at) VALUES (?, ?, ?)
+ON CONFLICT (name) DO UPDATE SET key = excluded.key, created_at = excluded.created_at;
+
 -- name: GetServerKey :one
 SELECT key FROM server_keys WHERE name = ?;
 

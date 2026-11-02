@@ -143,3 +143,41 @@ func TestSignerKeyPersists(t *testing.T) {
 		t.Errorf("verify after restart = %v, %v", ok, err)
 	}
 }
+
+func TestSignerRejectsLongLivedLinks(t *testing.T) {
+	signer, clk, _ := newSigner(t)
+	key, _ := media.NewKey()
+	for exp, want := range map[time.Duration]bool{media.URLTTL: true, media.URLTTL + time.Second: false, 24 * time.Hour: false} {
+		e := clk.Now().Add(exp)
+		sig, err := signer.Sign(t.Context(), key, e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok, _ := signer.Verify(t.Context(), key, strconv.FormatInt(e.Unix(), 10), sig); ok != want {
+			t.Errorf("validly signed link expiring in %v: verified = %v, want %v", exp, ok, want)
+		}
+	}
+}
+
+func TestRotateURLSecret(t *testing.T) {
+	signer, clk, store := newSigner(t)
+	key, _ := media.NewKey()
+	exp := clk.Now().Add(time.Minute)
+	sig, _ := signer.Sign(t.Context(), key, exp)
+	if err := media.RotateURLSecret(t.Context(), store.Queries, clk); err != nil {
+		t.Fatal(err)
+	}
+	e := strconv.FormatInt(exp.Unix(), 10)
+	// The running signer keeps its key until restart; a restarted one uses the new secret.
+	if ok, _ := signer.Verify(t.Context(), key, e, sig); !ok {
+		t.Error("the running signer should keep its loaded key")
+	}
+	restarted := media.NewSigner(store.Queries, clk)
+	if ok, _ := restarted.Verify(t.Context(), key, e, sig); ok {
+		t.Error("a link signed before rotation verified after a restart")
+	}
+	fresh, _ := restarted.Sign(t.Context(), key, exp)
+	if ok, _ := restarted.Verify(t.Context(), key, e, fresh); !ok {
+		t.Error("a link signed after rotation should verify")
+	}
+}

@@ -16,15 +16,17 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 )
 
-// serverKeyName is the server_keys row holding the server's master secret.
-const serverKeyName = "server"
+// urlSecretName is the server_keys row holding the secret media URLs are signed with.
+const urlSecretName = "media_url"
 
-// urlKeyPurpose labels the key derived from the master secret for media URLs, so the secret can
-// back other keys without them being interchangeable.
+// urlKeyPurpose labels the HMAC key derived from the stored secret, so the raw secret is never
+// the signing key itself.
 const urlKeyPurpose = "chorecast media url v1"
 
-// Signer signs and verifies media URLs with HMAC-SHA256. The key is derived from the server's
-// master secret, which is generated (32 random bytes) and stored in the database on first use.
+// Signer signs and verifies media URLs with HMAC-SHA256. The key is derived from a secret that
+// is generated (32 random bytes) and stored in the database on first use, so database backups
+// contain it. RotateURLSecret replaces it; a running server keeps the key it loaded until it
+// restarts.
 type Signer struct {
 	q     *sqlc.Queries
 	clock clock.Clock
@@ -42,17 +44,17 @@ func (s *Signer) loadKey(ctx context.Context) ([]byte, error) {
 	if s.key != nil {
 		return s.key, nil
 	}
-	secret := make([]byte, 32)
-	if _, err := rand.Read(secret); err != nil {
+	secret, err := newSecret()
+	if err != nil {
 		return nil, err
 	}
 	// Insert-if-absent, then read back: concurrent first uses (or several processes) agree.
 	if err := s.q.InsertServerKey(ctx, sqlc.InsertServerKeyParams{
-		Name: serverKeyName, Key: secret, CreatedAt: db.Timestamp(s.clock.Now()),
+		Name: urlSecretName, Key: secret, CreatedAt: db.Timestamp(s.clock.Now()),
 	}); err != nil {
 		return nil, fmt.Errorf("media: store server key: %w", err)
 	}
-	master, err := s.q.GetServerKey(ctx, serverKeyName)
+	master, err := s.q.GetServerKey(ctx, urlSecretName)
 	if err != nil {
 		return nil, fmt.Errorf("media: load server key: %w", err)
 	}
@@ -79,8 +81,9 @@ func (s *Signer) Sign(ctx context.Context, storageKey string, expires time.Time)
 	return base64.RawURLEncoding.EncodeToString(mac(key, storageKey, expires.Unix())), nil
 }
 
-// Verify reports whether sig is a valid signature for storageKey and exp (Unix seconds) and exp
-// hasn't passed. The comparison is constant-time.
+// Verify reports whether sig is a valid signature for storageKey and exp (Unix seconds), exp
+// hasn't passed and isn't further ahead than URLTTL (so a link signed with a longer lifetime,
+// e.g. by an older release, isn't honoured). The comparison is constant-time.
 func (s *Signer) Verify(ctx context.Context, storageKey, exp, sig string) (bool, error) {
 	key, err := s.loadKey(ctx)
 	if err != nil {
@@ -97,5 +100,24 @@ func (s *Signer) Verify(ctx context.Context, storageKey, exp, sig string) (bool,
 	if !hmac.Equal(got, mac(key, storageKey, e)) {
 		return false, nil
 	}
-	return s.clock.Now().Unix() < e, nil
+	now := s.clock.Now().Unix()
+	return now < e && e-now <= int64(URLTTL/time.Second), nil
+}
+
+func newSecret() ([]byte, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// RotateURLSecret replaces the media URL signing secret with a new random one. Links signed
+// before stop working once the server restarts (it caches the key until then).
+func RotateURLSecret(ctx context.Context, q *sqlc.Queries, c clock.Clock) error {
+	secret, err := newSecret()
+	if err != nil {
+		return err
+	}
+	return q.ReplaceServerKey(ctx, sqlc.ReplaceServerKeyParams{Name: urlSecretName, Key: secret, CreatedAt: db.Timestamp(c.Now())})
 }
