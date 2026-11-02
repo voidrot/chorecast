@@ -151,10 +151,14 @@ class TodayViewModel(
         if (isTodayStale(loadedAt, now())) refresh()
     }
 
-    /** Opens a chore's details. The instance already carries its steps and evidence rules. */
-    fun open(instanceId: Long) {
-        if (_state.value.today?.plan?.find(instanceId) == null) return
+    /**
+     * Opens a chore's details. The instance already carries its steps and evidence rules.
+     * Returns false, and opens nothing, when the instance isn't on the loaded list.
+     */
+    fun open(instanceId: Long): Boolean {
+        if (_state.value.today?.plan?.find(instanceId) == null) return false
         _state.update { it.copy(selected = instanceId, completing = false, cameraOpen = false, completeError = null) }
+        return true
     }
 
     fun close() = _state.update { it.copy(selected = null, completing = false, cameraOpen = false, completeError = null) }
@@ -201,6 +205,7 @@ class TodayViewModel(
                 )
             }
         }
+        return true
     }
 
     /** Opens a past chore and reads its evidence again, since the photo links expire. */

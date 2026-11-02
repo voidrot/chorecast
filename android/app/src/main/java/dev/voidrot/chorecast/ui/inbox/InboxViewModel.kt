@@ -31,32 +31,47 @@ data class InboxState(
 
 /**
  * The caller's inbox: first page, pull to refresh, load more, mark read. [token] returns the
- * current bearer token, a parent's session or the kid's device or session token.
+ * current bearer token, a parent's session or the kid's device or session token. [onUnauthorized]
+ * runs when the server refuses it (a parent clears the stored token; a kid's device decides itself).
+ * [pageSize] is the server default unless only the unread count is wanted.
  */
 class InboxViewModel(
     private val url: ServerUrl,
     private val client: InboxClient,
     private val token: () -> String?,
+    private val onUnauthorized: () -> Unit = {},
+    private val pageSize: Long? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(InboxState())
     val state: StateFlow<InboxState> = _state.asStateFlow()
     private var job: Job? = null
 
+    /** Bumped by every local read change, so a response that started earlier can't overwrite it. */
+    private var version = 0
+
     init {
         refresh()
     }
 
-    /** First load, pull-to-refresh, retry, and the unread badge when its screen comes back. Replaces the loaded pages. */
+    /** Back on screen: reload, unless the first load is still running. */
+    fun onResume() {
+        if (job?.isActive != true) refresh()
+    }
+
+    /** First load, pull-to-refresh, retry and the unread badge. Replaces the loaded pages. */
     fun refresh() {
-        val tok = token() ?: return _state.update { it.copy(signedOut = true, loading = false) }
+        val tok = token() ?: return refused()
         job?.cancel()
+        val started = version
         _state.update { it.copy(loading = it.feed == null, refreshing = it.feed != null, loadingMore = false) }
         job = viewModelScope.launch {
-            val result = client.list(url, tok)
+            val result = client.list(url, tok, limit = pageSize)
             _state.update {
                 val idle = it.copy(loading = false, refreshing = false)
-                when (result) {
-                    is Fetch.Ok -> idle.copy(feed = result.value, error = null)
+                when {
+                    result is Fetch.Ok && started == version -> idle.copy(feed = result.value, error = null)
+                    // Read state changed while this was in flight: keep the local state, and the next refresh catches up.
+                    result is Fetch.Ok -> idle
                     else -> idle.failed(result)
                 }
             }
@@ -67,42 +82,70 @@ class InboxViewModel(
         val current = _state.value
         val cursor = current.feed?.nextCursor ?: return
         if (current.loadingMore || current.refreshing || current.loading) return
-        val tok = token() ?: return _state.update { it.copy(signedOut = true) }
+        val tok = token() ?: return refused()
+        val started = version
         _state.update { it.copy(loadingMore = true) }
         job = viewModelScope.launch {
-            val result = client.list(url, tok, cursor)
+            val result = client.list(url, tok, cursor, pageSize)
             _state.update {
                 val idle = it.copy(loadingMore = false)
-                when (result) {
-                    is Fetch.Ok -> idle.copy(feed = it.feed?.append(result.value) ?: result.value, error = null)
+                val feed = it.feed
+                when {
+                    result is Fetch.Ok && feed != null -> {
+                        val merged = feed.append(result.value)
+                        // A read marked meanwhile has already lowered the count the page was counted before.
+                        idle.copy(feed = if (started == version) merged else merged.copy(unread = feed.unread), error = null)
+                    }
+                    result is Fetch.Ok -> idle.copy(feed = result.value, error = null)
                     else -> idle.failed(result)
                 }
             }
         }
     }
 
-    /** Marks [entry] read right away; the server call is best effort, and a refresh restores the truth if it failed. */
+    /** Marks [entry] read right away. If the server doesn't confirm, the list is reloaded to show the truth. */
     fun markRead(entry: InboxEntry) {
         if (entry.read) return
-        val tok = token() ?: return _state.update { it.copy(signedOut = true) }
+        val tok = token() ?: return refused()
+        version++
         _state.update { s -> s.copy(feed = s.feed?.markRead(entry.id)) }
         viewModelScope.launch {
-            if (client.markRead(url, tok, entry.id) == Fetch.Unauthorized) _state.update { it.copy(signedOut = true) }
+            when (val result = client.markRead(url, tok, entry.id)) {
+                is Fetch.Ok, Fetch.NotFound -> Unit // gone from the server (purged): nothing to restore
+                else -> {
+                    _state.update { it.failed(result) }
+                    if (result != Fetch.Unauthorized) {
+                        version++
+                        refresh()
+                    }
+                }
+            }
         }
     }
 
     fun markAllRead() {
-        val tok = token() ?: return _state.update { it.copy(signedOut = true) }
+        val tok = token() ?: return refused()
         viewModelScope.launch {
             when (val result = client.markAllRead(url, tok)) {
-                is Fetch.Ok -> _state.update { s -> s.copy(feed = s.feed?.markAllRead(), error = null) }
+                is Fetch.Ok -> {
+                    version++
+                    _state.update { s -> s.copy(feed = s.feed?.markAllRead(), error = null) }
+                }
                 else -> _state.update { it.failed(result) }
             }
         }
     }
 
+    private fun refused() {
+        onUnauthorized()
+        _state.update { it.copy(signedOut = true, loading = false) }
+    }
+
     private fun InboxState.failed(result: Fetch<*>): InboxState = when (result) {
-        Fetch.Unauthorized -> copy(signedOut = true)
+        Fetch.Unauthorized -> {
+            onUnauthorized()
+            copy(signedOut = true)
+        }
         is Fetch.Unreachable -> copy(error = result.reason)
         is Fetch.Failed -> copy(error = result.code)
         else -> copy(error = "http_404")

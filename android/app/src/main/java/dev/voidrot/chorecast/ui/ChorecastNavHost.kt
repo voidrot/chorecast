@@ -131,7 +131,10 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 overviewViewModel = viewModel {
                     OverviewViewModel(currentUrl(), container.parentReview, container.tokenStore)
                 },
-                inboxViewModel = viewModel { InboxViewModel(currentUrl(), container.inboxClient, container.tokenStore::read) },
+                // Only the unread count is shown on the home, so one item is enough.
+                inboxViewModel = viewModel {
+                    InboxViewModel(currentUrl(), container.inboxClient, container.tokenStore::read, container.tokenStore::clear, pageSize = 1)
+                },
                 serverUrl = route.serverUrl,
                 recoveryCodesLeft = route.recoveryCodesLeft,
                 onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
@@ -155,14 +158,13 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
         composable<InboxRoute> { entry ->
             val route = entry.toRoute<InboxRoute>()
             InboxScreen(
-                viewModel = viewModel { InboxViewModel(currentUrl(), container.inboxClient, container.tokenStore::read) },
+                viewModel = viewModel {
+                    InboxViewModel(currentUrl(), container.inboxClient, container.tokenStore::read, container.tokenStore::clear)
+                },
                 onBack = { nav.popBackStack() },
                 // A parent's items are new submissions, so any chore item opens the review queue.
                 onOpen = { if (it.instanceId != null) nav.navigate(ReviewRoute(route.serverUrl)) },
-                onSignedOut = {
-                    container.tokenStore.clear()
-                    nav.reset(LoginRoute(route.serverUrl))
-                },
+                onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
             )
         }
         composable<ReviewRoute> { entry ->

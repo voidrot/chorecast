@@ -104,8 +104,8 @@ class InboxClient(private val engine: HttpClientEngine? = null) {
             .apply { setBearerToken(token) }
 
     /** One page, newest first; pass the previous page's cursor for the next. */
-    suspend fun list(url: ServerUrl, token: String, cursor: String? = null): Fetch<InboxFeed> = guard {
-        val resp = api(url, token).listInbox(cursor = cursor)
+    suspend fun list(url: ServerUrl, token: String, cursor: String? = null, limit: Long? = null): Fetch<InboxFeed> = guard {
+        val resp = if (limit == null) api(url, token).listInbox(cursor = cursor) else api(url, token).listInbox(cursor = cursor, limit = limit)
         if (resp.success) Fetch.Ok(resp.body().toFeed()) else resp.failure()
     }
 

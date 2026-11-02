@@ -91,6 +91,18 @@ class InboxTest {
     }
 
     @Test
+    fun listSendsTheLimitWhenAsked() = runTest {
+        var query = ""
+        val engine = MockEngine { req ->
+            query = req.url.encodedQuery
+            respond(page(unread = 3), HttpStatusCode.OK, json)
+        }
+        val feed = (InboxClient(engine).list(url, "tok", limit = 1) as Fetch.Ok).value
+        assertTrue("limit=1" in query)
+        assertEquals(3L, feed.unread)
+    }
+
+    @Test
     fun appendSkipsOverlapAndTakesNewCursorAndCount() {
         val merged = InboxFeed(listOf(entry(5), entry(4)), "c1", 4).append(InboxFeed(listOf(entry(4), entry(3)), null, 3))
         assertEquals(listOf(5L, 4L, 3L), merged.entries.map { it.id })

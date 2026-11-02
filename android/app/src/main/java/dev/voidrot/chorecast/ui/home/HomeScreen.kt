@@ -56,7 +56,7 @@ fun HomeScreen(
     val inbox by inboxViewModel.state.collectAsStateWithLifecycle()
     LifecycleResumeEffect(overviewViewModel) {
         overviewViewModel.onResume()
-        inboxViewModel.refresh()
+        inboxViewModel.onResume()
         onPauseOrDispose {}
     }
 

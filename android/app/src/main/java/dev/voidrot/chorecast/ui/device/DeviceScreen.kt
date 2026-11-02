@@ -188,7 +188,7 @@ private fun KidHome(
     val inboxState by inbox.state.collectAsStateWithLifecycle()
     var inboxOpen by rememberSaveable { mutableStateOf(false) }
     LifecycleResumeEffect(inbox) {
-        inbox.refresh()
+        inbox.onResume()
         onPauseOrDispose {}
     }
     if (inboxOpen) {
@@ -196,12 +196,9 @@ private fun KidHome(
             viewModel = inbox,
             onBack = { inboxOpen = false },
             onOpen = { entry ->
-                // Only a chore on today's list opens; anything else just stays marked read.
+                // Only a chore on today's list opens; for anything else the inbox stays and the item is marked read.
                 val id = entry.instanceId
-                if (id != null) {
-                    inboxOpen = false
-                    vm.open(id)
-                }
+                if (id != null && vm.open(id)) inboxOpen = false
             },
             onSignedOut = onUnauthorized,
         )
