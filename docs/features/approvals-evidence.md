@@ -265,14 +265,16 @@ minutes. The nav "Review" link carries a badge with the first page's count (up t
 
 ## Configuration (env)
 
+Rows marked planned are not read by the server yet (Phase 3).
+
 | Variable | Default |
 |---|---|
-| `CHORECAST_STORAGE` | `local` (`s3`) |
-| `CHORECAST_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_ACCESS_KEY`, `_SECRET_KEY`, `_PATH_STYLE` | — |
+| `CHORECAST_STORAGE` | `local` (`s3`, planned, Phase 3) |
+| `CHORECAST_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_ACCESS_KEY`, `_SECRET_KEY`, `_PATH_STYLE` | — (planned, Phase 3) |
 | `CHORECAST_MEDIA_MAX_PHOTO_MB` | 15 |
-| `CHORECAST_MEDIA_MAX_VIDEO_MB` | 100 |
-| `CHORECAST_MEDIA_MAX_VIDEO_SECONDS` | 60 |
-| `CHORECAST_FFMPEG_PATH` | auto-detect on `PATH` |
+| `CHORECAST_MEDIA_MAX_VIDEO_MB` | 100 (planned, Phase 3) |
+| `CHORECAST_MEDIA_MAX_VIDEO_SECONDS` | 60 (planned, Phase 3) |
+| `CHORECAST_FFMPEG_PATH` | auto-detect on `PATH` (planned, Phase 3) |
 
 A submission holds at most 5 photos. The limit is fixed, not configurable (`evidence.MaxPhotos`, matching the API schema).
 

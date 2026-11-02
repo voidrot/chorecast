@@ -95,6 +95,8 @@ POST /api/v1/kids/{kid}/entitlements/{type}/end
 
 ## MQTT
 
+Planned, Phase 5: the server doesn't read the variables below yet.
+
 - Optional, configured by env: `CHORECAST_MQTT_URL` (`mqtt://` or `mqtts://`), `_USERNAME`, `_PASSWORD`,
   `_TOPIC_PREFIX` (default `chorecast`).
 - **Publish-only** (commands go through REST): retained JSON state topics, updated on change.
@@ -108,6 +110,8 @@ POST /api/v1/kids/{kid}/entitlements/{type}/end
 - Only kid slugs and counts are published, no photos or notes. The admin UI notes that the broker receives this data.
 
 ## CLI client
+
+Planned, Phase 5: `chorecast api` doesn't exist yet, and the server doesn't read `CHORECAST_API_URL` or `CHORECAST_API_KEY`.
 
 `chorecast api` subcommands in the same binary, configured by `CHORECAST_API_URL` and `CHORECAST_API_KEY`:
 
