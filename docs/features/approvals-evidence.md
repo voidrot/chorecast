@@ -272,8 +272,9 @@ minutes. The nav "Review" link carries a badge with the first page's count (up t
 | `CHORECAST_MEDIA_MAX_PHOTO_MB` | 15 |
 | `CHORECAST_MEDIA_MAX_VIDEO_MB` | 100 |
 | `CHORECAST_MEDIA_MAX_VIDEO_SECONDS` | 60 |
-| `CHORECAST_MEDIA_MAX_FILES` | 5 |
 | `CHORECAST_FFMPEG_PATH` | auto-detect on `PATH` |
+
+A submission holds at most 5 photos. The limit is fixed, not configurable (`evidence.MaxPhotos`, matching the API schema).
 
 Household settings (in the admin UI, not env): retention days, auto-approve timeout, offline grace margin.
 
