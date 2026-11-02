@@ -1,5 +1,5 @@
 -- name: InsertAuditEntry :execrows
--- Re-running for the same event writes nothing (audit_log_once); rows without an event never conflict.
+-- One row per event: re-running for the same event writes nothing (audit_log_once); rows without an event never conflict.
 INSERT INTO audit_log (actor_kind, actor_id, action, target_kind, target_id, summary, data, event_id, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT DO NOTHING;

@@ -41,10 +41,14 @@ func New(d *db.DB) *Recorder {
 	return r
 }
 
+// attempts is how often a delivery is tried: about 13 hours of retries with the runner's backoff
+// (30 s doubling, capped at 1 h). A row given up on can't be rebuilt once the event is purged.
+const attempts = 20
+
 // Register subscribes the recorder to the events it records.
 func (r *Recorder) Register(bus *events.Bus) {
 	for typ, h := range r.handlers {
-		bus.Subscribe(typ, "audit."+typ, h, jobs.KindOptions{})
+		bus.Subscribe(typ, "audit."+typ, h, jobs.KindOptions{MaxAttempts: attempts})
 	}
 }
 

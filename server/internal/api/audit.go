@@ -96,6 +96,8 @@ func (h *handlers) listAudit(ctx context.Context, in *ListAuditInput) (*AuditLog
 
 // caller is the signed-in parent acting, for the audit log. Every audited operation requires a
 // parent scope, so the principal is a parent (on the web, in the app, or elevated on a device).
+// API keys hold no scopes yet; when they get some, they need their own actor kind (and an
+// audit_log CHECK update) here, because a parent actor without a user id fails the insert.
 func caller(ctx context.Context) audit.Actor {
 	p, _ := auth.PrincipalFrom(ctx) // guaranteed by the operation's security policy
 	return audit.Parent(p.UserID)

@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -29,7 +28,9 @@ import (
 // Weekdays are the API names of time.Weekday values, Sunday first.
 var Weekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
 
-// HouseholdSettings are the household's settings as the API reads and writes them.
+// HouseholdSettings are the household's settings as the API reads and writes them. Changes to the
+// fields listed in auditedFields go into the audit log with their values; a new field is
+// recorded only once it is added there.
 type HouseholdSettings struct {
 	Name                 string `json:"name" minLength:"1" maxLength:"60"`
 	Timezone             string `json:"timezone" minLength:"1" maxLength:"64" doc:"IANA timezone"`
@@ -224,7 +225,14 @@ func (s *Service) audit(ctx context.Context, q *sqlc.Queries, by audit.Actor, be
 	})
 }
 
-// diff lists the settings that differ, by API field name (sorted), with their values as text.
+// auditedFields are the settings (API field names, sorted) whose changes the audit log records
+// with their values. Only add a field whose value is safe to show the owner: never a secret.
+var auditedFields = []string{
+	"allowNegativeBalance", "autoApproveHours", "dayEnd", "defaultChoreMinutes", "mediaRetentionDays", "name",
+	"offlineGraceMinutes", "siblingVisibility", "streakMilestones", "timezone", "weekStart",
+}
+
+// diff lists the audited settings that differ, in auditedFields order, with their values as text.
 func diff(before, after HouseholdSettings) ([]audit.AuditChange, error) {
 	from, err := fields(before)
 	if err != nil {
@@ -234,15 +242,8 @@ func diff(before, after HouseholdSettings) ([]audit.AuditChange, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := slices.Collect(maps.Keys(from))
-	for k := range to {
-		if _, ok := from[k]; !ok {
-			names = append(names, k)
-		}
-	}
-	slices.Sort(names)
 	var out []audit.AuditChange
-	for _, k := range names {
+	for _, k := range auditedFields {
 		if a, b := text(from[k]), text(to[k]); a != b {
 			out = append(out, audit.AuditChange{Field: k, From: a, To: b})
 		}

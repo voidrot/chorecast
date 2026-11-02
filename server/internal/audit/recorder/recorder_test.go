@@ -298,3 +298,24 @@ func TestEventTimeAndPurge(t *testing.T) {
 		t.Errorf("kept %+v", rs[0])
 	}
 }
+
+// An event (its id and time) has one row, whatever is recorded for it again, even without a
+// target; an id the events table reused later is another event.
+func TestOneRowPerEvent(t *testing.T) {
+	f := newFixture(t)
+	record := func(env events.Envelope, e audit.Entry) {
+		t.Helper()
+		if err := audit.RecordEvent(t.Context(), f.db.Queries, env, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := events.Envelope{ID: 7, OccurredAt: saturday}
+	record(env, audit.Entry{Actor: audit.System, Action: audit.ActionSettingsUpdated, TargetKind: audit.TargetHousehold})
+	record(env, audit.Entry{Actor: audit.System, Action: audit.ActionSettingsUpdated, TargetKind: audit.TargetHousehold})
+	record(env, audit.Entry{Actor: audit.System, Action: audit.ActionChoreApproved, TargetKind: audit.TargetInstance, TargetID: 3})
+	f.want(audit.ActionSettingsUpdated)
+
+	env.OccurredAt = saturday.Add(30 * 24 * time.Hour)
+	record(env, audit.Entry{Actor: audit.System, Action: audit.ActionChoreApproved, TargetKind: audit.TargetInstance, TargetID: 3})
+	f.want(audit.ActionSettingsUpdated, audit.ActionChoreApproved)
+}

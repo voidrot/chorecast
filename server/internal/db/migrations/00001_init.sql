@@ -456,10 +456,11 @@ CREATE INDEX notifications_by_age ON notifications (created_at);
 -- ==== Audit log (#37) ====
 -- Who did what (internal/audit), owner-visible and purged after 365 days. Rows come from domain events
 -- (approvals, rejections, adjustments; event_id set) or are written in the same transaction as the
--- action (settings, parents, invites, devices, archive; event_id NULL). A redelivered event hits the
--- unique index and writes nothing; created_at (the event's time) is in it because event ids restart if
--- maintenance ever empties the events table. data holds typed details (JSON), never secrets; summary is
--- the target's name when it happened.
+-- action (settings, parents, invites, devices, archive; event_id NULL). An event writes at most one row,
+-- so (event_id, created_at) identifies it and a redelivered event hits the unique index and writes
+-- nothing; created_at (the event's time) is in the key because event ids restart if maintenance ever
+-- empties the events table. data holds typed details (JSON), never secrets; summary is the target's
+-- name when it happened.
 CREATE TABLE audit_log (
     id          INTEGER PRIMARY KEY,
     actor_kind  TEXT    NOT NULL CHECK (actor_kind IN ('parent', 'system', 'cli')),
@@ -473,7 +474,7 @@ CREATE TABLE audit_log (
     created_at  TEXT    NOT NULL,
     CHECK ((actor_kind = 'parent') = (actor_id IS NOT NULL))
 );
-CREATE UNIQUE INDEX audit_log_once ON audit_log (event_id, created_at, action, target_id) WHERE event_id IS NOT NULL;
+CREATE UNIQUE INDEX audit_log_once ON audit_log (event_id, created_at) WHERE event_id IS NOT NULL;
 CREATE INDEX audit_log_by_age ON audit_log (created_at);
 
 -- +goose Down

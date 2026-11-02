@@ -143,8 +143,8 @@ func Record(ctx context.Context, q *sqlc.Queries, at time.Time, e Entry) error {
 	return insert(ctx, q, at, 0, e)
 }
 
-// RecordEvent writes e for a delivered event, dated when the event happened. Recording the same
-// event again writes nothing.
+// RecordEvent writes e for a delivered event, dated when the event happened. An event has at most
+// one row: recording the same event again, even with another entry, writes nothing.
 func RecordEvent(ctx context.Context, q *sqlc.Queries, env events.Envelope, e Entry) error {
 	return insert(ctx, q, env.OccurredAt, env.ID, e)
 }

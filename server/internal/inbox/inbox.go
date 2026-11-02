@@ -107,10 +107,14 @@ func New(d *db.DB, c clock.Clock) *Service {
 	return s
 }
 
+// attempts is how often a delivery is tried: about 13 hours of retries with the runner's backoff
+// (30 s doubling, capped at 1 h), so a notification outlasts a long database hiccup.
+const attempts = 20
+
 // Register subscribes the service to the events that notify.
 func (s *Service) Register(bus *events.Bus) {
 	for typ, h := range s.handlers {
-		bus.Subscribe(typ, "inbox."+typ, h, jobs.KindOptions{})
+		bus.Subscribe(typ, "inbox."+typ, h, jobs.KindOptions{MaxAttempts: attempts})
 	}
 }
 
