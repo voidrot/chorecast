@@ -44,7 +44,7 @@ Run from the repo root with mise, or from `server/` with plain Go.
 ## Packages
 
 - `internal/db`: `Open` sets WAL and foreign keys, pins the pool to one connection, and runs embedded goose migrations. `migrations/` holds the schema, `queries/` holds sqlc input, `sqlc/` holds generated code.
-- Domain: `chores` (definitions), `schedule` (rules), `assign` (who gets each occurrence; pure and deterministic), `horizon` (materializes chore instances for [today, today+7]), `kids` (profiles and slugs), `ledger` (points entries and balances), `household`, `parents`, `account`, `sso`, `devices`, `setup`, `media` (photo upload and processing, storage, signed URLs).
+- Domain: `chores` (definitions), `schedule` (rules), `assign` (who gets each occurrence; pure and deterministic), `horizon` (materializes chore instances for [today, today+7]), `dayclose` (day and week close jobs: open instances become missed, with their penalty), `kids` (profiles and slugs), `ledger` (points entries and balances), `household`, `parents`, `account`, `sso`, `devices`, `setup`, `media` (photo upload and processing, storage, signed URLs).
 - Cross-cutting: `apierr`, `paging`, `idempotency`, `auth`, `clock`, `caltime`, `events`, `jobs`, `webui`.
 - Services take `(*db.DB, clock.Clock)`. `chores.New` and `kids.NewService` also take the bus; `household.New` takes the bus instead of the clock, and `ledger.New` takes `(*db.DB, *events.Bus, clock.Clock)`.
 
@@ -83,7 +83,7 @@ No extra step is needed for idempotency. `idempotency.AddHeaderParam` documents 
 - Recurring work is a `jobs.Provider` added with `sched.Add`: `Every`, `KidDayCloses`, `KidWeekCloses` or `HouseholdDayCloses`.
 - Handlers must be idempotent. Delivery is at-least-once.
 - Events are typed structs with `EventType()`. They are emitted inside `bus.InTx` with `tx.Emit`. Subscribers are registered with `bus.Subscribe(eventType, name, handler, opts)` in `background.go`, and decode with `events.Decode[T]`.
-- Events today: `household.calendar_changed`, `points.entry_posted`, `chore.changed` and `kid.changed`. The horizon generator subscribes to the calendar, chore and kid events (one "regenerate everything" handler); `chores.New` and `kids.NewService` take the bus (nil = no events), like `household.New`.
+- Events today: `household.calendar_changed`, `points.entry_posted`, `chore.changed`, `kid.changed` and `instance.missed`. The horizon generator subscribes to the calendar, chore and kid events (one "regenerate everything" handler); `chores.New` and `kids.NewService` take the bus (nil = no events), like `household.New`.
 
 ## Web admin embed
 

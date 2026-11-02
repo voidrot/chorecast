@@ -339,6 +339,10 @@ CREATE TABLE media_hashes (
     created_at TEXT    NOT NULL
 );
 
+-- ==== Day and week close (#24) ====
+-- Closes look up the open instances already due (internal/dayclose).
+CREATE INDEX chore_instances_open_due ON chore_instances (due_at) WHERE status = 'open';
+
 -- +goose Down
 DROP TABLE chore_instance_members;
 DROP TABLE chore_instances;

@@ -27,7 +27,7 @@ type Occurrence struct {
 
 // Recurring is a schedule that enqueues Kind at each occurrence.
 type Recurring struct {
-	Name string // unique and stable, e.g. "day_close:kid:42"; also the cursor key
+	Name string // unique and stable, e.g. "day_close:dayclose.kid_day:kid:42"; also the cursor key
 	Kind string
 	// Next returns the first occurrence strictly after t.
 	Next func(t time.Time) Occurrence
@@ -197,11 +197,13 @@ func kidSchedules(prefix, kindName string,
 			}
 			kidID := k.ID
 			out = append(out, Recurring{
-				Name: fmt.Sprintf("%s:kid:%d", prefix, kidID),
+				// The kind is in the name, so two features scheduling the same kid's closes keep
+				// their own cursors and job keys.
+				Name: fmt.Sprintf("%s:%s:kid:%d", prefix, kindName, kidID),
 				Kind: kindName,
 				Next: func(t time.Time) Occurrence {
 					d, at := next(h, dayEnd, t)
-					return Occurrence{At: at, Key: d.String(), Payload: KidDayPayload{KidID: kidID, Date: d}}
+					return Occurrence{At: at, Key: closeKey(d, at), Payload: KidDayPayload{KidID: kidID, Date: d}}
 				},
 			})
 		}
@@ -224,7 +226,11 @@ func HouseholdDayCloses(name, kindName string, household func(context.Context) (
 		}
 		return []Recurring{{Name: name, Kind: kindName, Next: func(t time.Time) Occurrence {
 			d, at := h.NextDayClose(t, h.DayEnd)
-			return Occurrence{At: at, Key: d.String(), Payload: HouseholdDayPayload{Date: d}}
+			return Occurrence{At: at, Key: closeKey(d, at), Payload: HouseholdDayPayload{Date: d}}
 		}}}, nil
 	}
 }
+
+// closeKey identifies a close by its day and instant: a day end moved later after the day's
+// close already fired gives a new occurrence on the same date, which must still run.
+func closeKey(d caltime.Date, at time.Time) string { return d.String() + "@" + db.Timestamp(at) }

@@ -265,7 +265,9 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
 - **Recurring work**: `Scheduler` providers return `Recurring` schedules (`KidDayCloses`, `KidWeekCloses`,
   `HouseholdDayCloses`, `Every`). A cursor per schedule records the last occurrence enqueued; each tick enqueues
   every due occurrence after it with key `<schedule>:<occurrence>`, so runs missed while the server was down are
-  caught up and duplicates are impossible. New schedules start from now (no backfill).
+  caught up and duplicates are impossible. New schedules start from now (no backfill). Close schedules name the
+  kind (`day_close:<kind>:kid:<id>`), and their occurrence key is `<date>@<close instant>`, so a day end moved
+  later on the same date still fires.
 - Kinds and schedules are wired in `cmd/chorecast/background.go` (`newBackground`). Today: `maintenance.daily` (purges
   finished jobs, expired tokens and idempotency keys, dispatched events, invites and pairing codes).
 - Tests drive time with `clock.Fake` and call `Scheduler.Tick` / `Runner.RunDue` directly.
