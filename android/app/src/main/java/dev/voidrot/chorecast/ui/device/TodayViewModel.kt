@@ -205,7 +205,6 @@ class TodayViewModel(
                 )
             }
         }
-        return true
     }
 
     /** Opens a past chore and reads its evidence again, since the photo links expire. */
