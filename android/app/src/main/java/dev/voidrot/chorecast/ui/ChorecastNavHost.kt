@@ -24,6 +24,8 @@ import dev.voidrot.chorecast.ui.connect.ConnectViewModel
 import dev.voidrot.chorecast.ui.home.HomeScreen
 import dev.voidrot.chorecast.ui.home.HomeViewModel
 import dev.voidrot.chorecast.ui.home.OverviewViewModel
+import dev.voidrot.chorecast.ui.kid.KidScreen
+import dev.voidrot.chorecast.ui.kid.KidViewModel
 import dev.voidrot.chorecast.ui.review.ReviewScreen
 import dev.voidrot.chorecast.ui.review.ReviewViewModel
 import dev.voidrot.chorecast.ui.login.LoginScreen
@@ -117,6 +119,17 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 onChangeServer = { nav.navigate(ConnectRoute) },
                 onDevices = { nav.navigate(DevicesRoute(route.serverUrl)) },
                 onReview = { nav.navigate(ReviewRoute(route.serverUrl)) },
+                onKid = { nav.navigate(KidRoute(route.serverUrl, it)) },
+            )
+        }
+        composable<KidRoute> { entry ->
+            val route = entry.toRoute<KidRoute>()
+            KidScreen(
+                viewModel = viewModel {
+                    KidViewModel(currentUrl(), route.kidId, container.parentReview, container.householdInfo, container.tokenStore)
+                },
+                onBack = { nav.popBackStack() },
+                onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
             )
         }
         composable<ReviewRoute> { entry ->

@@ -40,3 +40,7 @@ data class ReviewRoute(val serverUrl: String)
 /** The parent's paired-devices list. */
 @Serializable
 data class DevicesRoute(val serverUrl: String)
+
+/** One kid for the parent: recent chores with their actions, and a manual points adjustment. */
+@Serializable
+data class KidRoute(val serverUrl: String, val kidId: Long)

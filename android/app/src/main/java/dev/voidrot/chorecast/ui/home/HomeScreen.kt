@@ -1,5 +1,6 @@
 package dev.voidrot.chorecast.ui.home
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +42,7 @@ fun HomeScreen(
     onChangeServer: () -> Unit,
     onDevices: () -> Unit,
     onReview: () -> Unit,
+    onKid: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -103,7 +105,7 @@ fun HomeScreen(
             if (overview.overview != null && kids.isEmpty()) {
                 item { Text(stringResource(R.string.home_no_kids)) }
             }
-            items(kids, key = { it.kid.id }) { KidCard(it) }
+            items(kids, key = { it.kid.id }) { KidCard(it, onClick = { onKid(it.kid.id) }) }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDevices) { Text(stringResource(R.string.devices_title)) }
@@ -118,8 +120,8 @@ fun HomeScreen(
 }
 
 @Composable
-private fun KidCard(row: KidOverview) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
+private fun KidCard(row: KidOverview, onClick: () -> Unit) {
+    ElevatedCard(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(row.kid.displayName, style = MaterialTheme.typography.titleMedium)
             if (row.total == 0) {

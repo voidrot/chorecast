@@ -253,4 +253,35 @@
         <item quantity="one">You have %d recovery code left. Create new ones in the web admin.</item>
         <item quantity="other">You have %d recovery codes left. Create new ones in the web admin.</item>
     </plurals>
+    <string name="kid_load_failed">Couldn\'t load this kid (%1$s).</string>
+    <string name="kid_nothing_recent">No chores in the last week.</string>
+    <string name="kid_section_attention">Needs you</string>
+    <string name="kid_section_today">Today</string>
+    <string name="kid_section_earlier">Earlier this week</string>
+    <string name="kid_chore_status">%1$s · %2$s</string>
+    <string name="kid_adjust">Adjust points</string>
+    <string name="kid_adjust_add">Add points</string>
+    <string name="kid_adjust_subtract">Subtract points</string>
+    <string name="kid_adjust_amount">Points</string>
+    <string name="kid_adjust_amount_invalid">Enter a whole number from 1 to 1,000,000.</string>
+    <string name="kid_adjust_note">Why (the kid sees this)</string>
+    <string name="kid_adjust_note_required">Add a note.</string>
+    <string name="kid_adjust_save">Save</string>
+    <string name="kid_note_counter">%1$d/%2$d</string>
+    <string name="kid_optional_note">Note (optional)</string>
+    <string name="kid_excuse">Excuse</string>
+    <string name="kid_excuse_title">Excuse %1$s</string>
+    <string name="kid_reverse">Reverse approval</string>
+    <string name="kid_reverse_title">Reverse approval of %1$s</string>
+    <string name="kid_reassign">Reassign</string>
+    <string name="kid_reassign_title">Give %1$s to</string>
+    <string name="kid_notice_adjusted">Points adjusted.</string>
+    <string name="kid_notice_excused">Excused.</string>
+    <string name="kid_notice_reversed">Approval reversed.</string>
+    <string name="kid_notice_reassigned">Reassigned.</string>
+    <string name="kid_stale_closed">That chore\'s day has closed, so it can\'t be moved. Showing the latest.</string>
+    <string name="kid_stale_taken">That kid already has this chore. Showing the latest.</string>
+    <string name="kid_stale_shared">A shared chore can\'t be reassigned. Showing the latest.</string>
+    <string name="kid_stale_changed">That chore changed in the meantime. Showing the latest.</string>
+    <string name="kid_notice_failed">Something went wrong (%1$s).</string>
 </resources>
