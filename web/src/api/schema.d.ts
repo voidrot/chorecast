@@ -745,7 +745,7 @@ export interface paths {
         put?: never;
         /**
          * Give an open chore to another kid
-         * @description Marks it manually reassigned, so regenerating the horizon keeps it. Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already has the same occurrence (409 `instance_taken`). Returns the updated instance.
+         * @description Marks it manually reassigned, so regenerating the horizon keeps it (as the original kid's occurrence). Without a slot, it becomes due at the new kid's day (or week) close. Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already has the same occurrence (409 `instance_taken`). Returns the updated instance.
          */
         post: operations["reassignChoreInstance"];
         delete?: never;

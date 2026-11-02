@@ -58,7 +58,8 @@ func registerInstances(hapi huma.API, h *handlers) {
 		"Marks a missed instance `excused` and reverses its penalty (every member's, for a shared chore).",
 		review, http.StatusUnprocessableEntity), h.excuseInstance)
 	huma.Register(hapi, transition("reassignChoreInstance", "reassignment", "Give an open chore to another kid",
-		"Marks it manually reassigned, so regenerating the horizon keeps it. Shared instances can't be "+
+		"Marks it manually reassigned, so regenerating the horizon keeps it (as the original kid's occurrence). "+
+			"Without a slot, it becomes due at the new kid's day (or week) close. Shared instances can't be "+
 			"reassigned (409 `instance_shared`), nor moved to a kid who already has the same occurrence "+
 			"(409 `instance_taken`).", auth.Require(auth.ScopeChoresManage), http.StatusUnprocessableEntity), h.reassignInstance)
 }

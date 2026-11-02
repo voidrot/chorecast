@@ -184,8 +184,11 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
   `instance_closed`, nothing written): day close takes it as missed. Accepting an offline completion made before
   the close, within a grace margin, is #35's job. Evidence (#27) hooks into `Complete` (`checkEvidence`).
 - **Reassign** moves an open single-kid instance to another active kid and sets `manually_reassigned` (clearing
-  `auto_assigned`). Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already
-  has the same occurrence (409 `instance_taken`).
+  `auto_assigned`). It records the kid it was planned for in `reassigned_from` (the first, across several
+  reassignments), and the horizon counts the instance as that kid's occurrence, so a fixed or everyone chore
+  isn't planned for them again. An instance without a slot becomes due at the new kid's own day (or week) close.
+  Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already has the same
+  occurrence (409 `instance_taken`).
 - **API** (each returns the updated `ChoreInstance`): `POST /instances/{id}/completion` (`chores:complete`, body
   `{kidId?}`), `…/approval`, `…/rejection` (`{reason?, text?}`), `…/approval/reversal` and `…/excusal` (`{note?}`
   for the reversal entries) with `chores:review`, and `…/reassignment` (`{kidId}`) with `chores:manage`.
