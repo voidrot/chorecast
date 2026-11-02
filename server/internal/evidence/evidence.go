@@ -44,6 +44,10 @@ const (
 	MaxCaptureIDLength = 64
 )
 
+// MaxCaptureSkew is how far past the server's clock a photo's capturedAt may be, for a device
+// clock running a little fast. Offline clock-skew handling (#35) may widen it.
+const MaxCaptureSkew = 10 * time.Minute
+
 // ErrVideoUnsupported refuses completing a chore that asks for a video. Video evidence is Phase 3,
 // so such a chore can't be completed yet; a parent can excuse it when it's missed.
 var ErrVideoUnsupported = apierr.New(http.StatusUnprocessableEntity, apierr.CodeVideoUnsupported,
@@ -87,7 +91,7 @@ func Attach(ctx context.Context, q *sqlc.Queries, clk clock.Clock, chore sqlc.Ch
 		return ErrVideoUnsupported
 	}
 	sub.Note = strings.TrimSpace(sub.Note)
-	checklist := slices.Clone(sub.Checklist)
+	checklist := append([]int{}, sub.Checklist...) // never nil: stored as [], not null
 	slices.Sort(checklist)
 	checklist = slices.Compact(checklist)
 	now := clk.Now()
@@ -240,6 +244,10 @@ func checkPhoto(ctx context.Context, q *sqlc.Queries, now time.Time, t Target, p
 		return photoMsg{"mediaId", "this photo was already used as evidence; take a new one", p.MediaID}, nil
 	case !media.Attachable(m, now):
 		return photoMsg{"mediaId", "this photo has expired; upload it again", p.MediaID}, nil
+	case !p.CapturedAt.IsZero() && !storable(p.CapturedAt):
+		return photoMsg{"capturedAt", "not a valid time", p.CapturedAt}, nil
+	case p.CapturedAt.After(now.Add(MaxCaptureSkew)): // a parent's photo too: nothing later than now is stored
+		return photoMsg{"capturedAt", "this is later than now; check the device's clock", p.CapturedAt}, nil
 	case byParent:
 		return photoMsg{}, nil // parents' photos are exempt from the capture rules
 	case p.CapturedAt.IsZero():
@@ -250,6 +258,13 @@ func checkPhoto(ctx context.Context, q *sqlc.Queries, now time.Time, t Target, p
 		return photoMsg{"capturedAt", "this photo was taken before the chore started; take a new one", p.CapturedAt}, nil
 	}
 	return photoMsg{}, nil
+}
+
+// storable reports whether t survives a round trip through a stored timestamp (years 0 to 9999
+// in UTC; JSON accepts offsets that push 9999-12-31 into year 10000).
+func storable(t time.Time) bool {
+	_, err := db.ParseTimestamp(db.Timestamp(t))
+	return err == nil
 }
 
 // Resolve starts the retention clock of an instance's evidence media when the instance resolves
@@ -305,25 +320,56 @@ type EvidencePhoto struct {
 // Signer makes the signed links to a media item (media.Service.URLs; the API makes them absolute).
 type Signer func(ctx context.Context, m sqlc.Medium) (media.SignedURLs, error)
 
-// CanRead reports whether p may read inst's evidence: parents, and the instance's kids (its
-// assignee, or a shared instance's members). Callers check this before List.
-func CanRead(p *auth.Principal, inst horizon.ChoreInstance) bool {
-	switch p.Kind {
-	case auth.KindParent:
-		return true
-	case auth.KindKid:
-		return inst.KidID == p.UserID || slices.Contains(inst.GroupKidIDs, p.UserID)
-	default:
-		return false
+// ErrNoAccess is the answer to a caller who may not read an instance's evidence.
+var ErrNoAccess = apierr.New(http.StatusForbidden, apierr.CodeForbidden, "you can't see this chore's evidence")
+
+// ReadFor returns the submissions of inst that p may read, oldest first (see List):
+//   - parents read every submission;
+//   - a member of a shared instance reads the group's submissions;
+//   - any other kid reads only the submissions they made, so a kid an instance was reassigned to
+//     doesn't see the earlier kid's, and the earlier kid keeps theirs.
+//
+// A kid with no submission of their own who isn't the instance's assignee, and every other
+// principal (displays, devices), gets ErrNoAccess.
+func ReadFor(ctx context.Context, q *sqlc.Queries, p *auth.Principal, inst horizon.ChoreInstance, sign Signer) ([]InstanceEvidence, error) {
+	switch {
+	case p.Kind == auth.KindParent:
+		return list(ctx, q, inst.ID, 0, sign)
+	case p.Kind != auth.KindKid:
+		return nil, ErrNoAccess
+	case inst.KidID == 0 && slices.Contains(inst.GroupKidIDs, p.UserID):
+		return list(ctx, q, inst.ID, 0, sign)
 	}
+	own, err := list(ctx, q, inst.ID, p.UserID, sign)
+	if err != nil {
+		return nil, err
+	}
+	if len(own) == 0 && inst.KidID != p.UserID {
+		return nil, ErrNoAccess
+	}
+	return own, nil
 }
 
 // List returns every submission's evidence for the instance, oldest first, with fresh links
-// from sign. Photos whose files retention deleted are marked Expired and have no links.
+// from sign. Photos whose files retention deleted (or is deleting) are marked Expired and have no
+// links. It doesn't check access: parents' views (the review queue) call it directly; anything
+// else goes through ReadFor.
 func List(ctx context.Context, q *sqlc.Queries, instanceID int64, sign Signer) ([]InstanceEvidence, error) {
+	return list(ctx, q, instanceID, 0, sign)
+}
+
+// list is List limited to kid's submissions when kid isn't 0.
+func list(ctx context.Context, q *sqlc.Queries, instanceID, kid int64, sign Signer) ([]InstanceEvidence, error) {
 	rows, err := q.ListChoreInstanceEvidence(ctx, instanceID)
 	if err != nil {
 		return nil, fmt.Errorf("list evidence: %w", err)
+	}
+	if kid != 0 {
+		rows = slices.DeleteFunc(rows, func(r sqlc.ChoreInstanceEvidence) bool { return r.KidID.Int64 != kid })
+	}
+	shown := map[int64]bool{}
+	for _, r := range rows {
+		shown[r.ID] = true
 	}
 	photoRows, err := q.ListChoreInstanceEvidencePhotos(ctx, instanceID)
 	if err != nil {
@@ -331,11 +377,15 @@ func List(ctx context.Context, q *sqlc.Queries, instanceID int64, sign Signer) (
 	}
 	photos := map[int64][]EvidencePhoto{}
 	for _, r := range photoRows {
+		ev := r.ChoreInstanceEvidencePhoto.EvidenceID
+		if !shown[ev] {
+			continue
+		}
 		p, err := toPhoto(ctx, r, sign)
 		if err != nil {
 			return nil, err
 		}
-		photos[r.ChoreInstanceEvidencePhoto.EvidenceID] = append(photos[r.ChoreInstanceEvidencePhoto.EvidenceID], p)
+		photos[ev] = append(photos[ev], p)
 	}
 	out := make([]InstanceEvidence, 0, len(rows))
 	for _, r := range rows {
@@ -345,10 +395,13 @@ func List(ctx context.Context, q *sqlc.Queries, instanceID int64, sign Signer) (
 		}
 		ev := InstanceEvidence{
 			Attempt: r.Attempt, KidID: r.KidID.Int64, SubmittedBy: r.SubmittedBy.Int64, SubmittedAt: at,
-			Note: r.Note, Checklist: []int{}, Photos: photos[r.ID],
+			Note: r.Note, Photos: photos[r.ID],
 		}
 		if err := json.Unmarshal([]byte(r.Checklist), &ev.Checklist); err != nil {
 			return nil, fmt.Errorf("evidence %d checklist: %w", r.ID, err)
+		}
+		if ev.Checklist == nil { // a stored null
+			ev.Checklist = []int{}
 		}
 		if ev.Photos == nil {
 			ev.Photos = []EvidencePhoto{}
@@ -358,15 +411,15 @@ func List(ctx context.Context, q *sqlc.Queries, instanceID int64, sign Signer) (
 	return out, nil
 }
 
+// toPhoto builds a photo's view. A stored capture time that doesn't parse is left out rather
+// than failing the whole read.
 func toPhoto(ctx context.Context, r sqlc.ListChoreInstanceEvidencePhotosRow, sign Signer) (EvidencePhoto, error) {
 	ph, m := r.ChoreInstanceEvidencePhoto, r.Medium
 	out := EvidencePhoto{MediaID: m.ID, Role: ph.Role, CaptureID: ph.CaptureID}
 	if ph.CapturedAt.Valid {
-		at, err := db.ParseTimestamp(ph.CapturedAt.String)
-		if err != nil {
-			return EvidencePhoto{}, err
+		if at, err := db.ParseTimestamp(ph.CapturedAt.String); err == nil {
+			out.CapturedAt = at
 		}
-		out.CapturedAt = at
 	}
 	if m.Status != media.StatusReady {
 		out.Expired = true

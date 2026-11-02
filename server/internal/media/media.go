@@ -39,10 +39,12 @@ const (
 	MimeWebP      = "image/webp"
 )
 
-// Media statuses (media.status). Retention deletes an expired item's files; its row stays.
+// Media statuses (media.status). Retention claims an item (deleting), deletes its files and
+// marks it expired; its row stays. Anything but ready reads as expired.
 const (
-	StatusReady   = "ready"
-	StatusExpired = "expired"
+	StatusReady    = "ready"
+	StatusDeleting = "deleting"
+	StatusExpired  = "expired"
 )
 
 // PendingTTL is how long an upload stays pending: media not attached by then is abandoned, and
@@ -234,10 +236,14 @@ func (s *Service) process(ctx context.Context, p *auth.Principal, r io.Reader, l
 	if p.Kind == auth.KindKid {
 		// Answer before paying for the encode; insert repeats both checks in its transaction,
 		// which is what guarantees them. A retry is recognized first, so the cap doesn't refuse it.
-		if prior, err := s.repeated(ctx, s.db.Queries, p.UserID, d.SHA256[:]); err != nil || prior != nil {
+		if prior, _, err := s.repeated(ctx, s.db.Queries, p.UserID, d.SHA256[:]); err != nil || prior != nil {
 			return nil, prior, err
 		}
 		if err := s.checkPendingCap(ctx, s.db.Queries, p.UserID); err != nil {
+			// The first upload of a retry may have committed since the lookup, filling the cap.
+			if prior, _, rerr := s.repeated(ctx, s.db.Queries, p.UserID, d.SHA256[:]); rerr == nil && prior != nil {
+				return nil, prior, nil
+			}
 			return nil, nil, err
 		}
 	}
@@ -248,30 +254,37 @@ func (s *Service) process(ctx context.Context, p *auth.Principal, r io.Reader, l
 	return photo, nil, nil
 }
 
-// repeated looks up a kid photo's hash. A photo seen before is 409 duplicate_media, unless it is
-// the kid's own upload and still attachable: then that media is returned for the retry to reuse.
-func (s *Service) repeated(ctx context.Context, q *sqlc.Queries, kid int64, sha []byte) (*sqlc.Medium, error) {
+// repeated looks up a kid photo's hash. A photo seen before is 409 duplicate_media, with two
+// exceptions for the kid's own pending upload: while it is attachable it is returned as prior,
+// for the retry to reuse; once past its PendingTTL (abandoned, not swept yet) it is returned as
+// stale, for the new upload to replace (see insert).
+func (s *Service) repeated(ctx context.Context, q *sqlc.Queries, kid int64, sha []byte) (prior, stale *sqlc.Medium, err error) {
 	h, err := q.GetMediaHash(ctx, sha)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("look up media hash: %w", err)
+		return nil, nil, fmt.Errorf("look up media hash: %w", err)
 	}
 	if !h.KidID.Valid || h.KidID.Int64 != kid || !h.MediaID.Valid {
-		return nil, errDuplicate
+		return nil, nil, errDuplicate
 	}
 	m, err := q.GetMedia(ctx, h.MediaID.Int64)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errDuplicate
+		return nil, nil, errDuplicate
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load media %d: %w", h.MediaID.Int64, err)
+		return nil, nil, fmt.Errorf("load media %d: %w", h.MediaID.Int64, err)
 	}
-	if !Attachable(m, s.clock.Now()) || !m.UploadedBy.Valid || m.UploadedBy.Int64 != kid {
-		return nil, errDuplicate
+	now := s.clock.Now()
+	switch {
+	case m.OwnerKind != OwnerPending || m.Status != StatusReady || !m.UploadedBy.Valid || m.UploadedBy.Int64 != kid:
+		return nil, nil, errDuplicate
+	case Attachable(m, now):
+		return &m, nil, nil
+	default: // pending and ready, but past its PendingTTL
+		return nil, &m, nil
 	}
-	return &m, nil
 }
 
 // checkPendingCap refuses a new upload by kid once they hold MaxPendingUploads.
@@ -315,7 +328,9 @@ func photoError(err error) error {
 }
 
 // insert records the stored photo. For a kid it repeats the duplicate and cap checks in the
-// transaction; a retry that raced its first upload gets that upload back (retried true).
+// transaction, the retry check first: a retry that raced its first upload gets that upload back
+// (retried true), and never 429. The kid's own abandoned pending upload of the same picture is
+// claimed for retention (its hash dropped) and replaced by this one.
 func (s *Service) insert(ctx context.Context, p *auth.Principal, kid bool, key, thumbKey string, photo *Photo) (sqlc.Medium, bool, error) {
 	at := s.clock.Now()
 	now := db.Timestamp(at)
@@ -326,12 +341,19 @@ func (s *Service) insert(ctx context.Context, p *auth.Principal, kid bool, key, 
 	defer func() { _ = tx.Rollback() }()
 	q := s.db.WithTx(tx)
 	if kid {
-		prior, err := s.repeated(ctx, q, p.UserID, photo.SHA256[:])
+		prior, stale, err := s.repeated(ctx, q, p.UserID, photo.SHA256[:])
 		if err != nil {
 			return sqlc.Medium{}, false, err
 		}
 		if prior != nil {
 			return *prior, true, nil
+		}
+		if stale != nil {
+			if claimed, err := claim(ctx, q, *stale, at); err != nil {
+				return sqlc.Medium{}, false, err
+			} else if !claimed {
+				return sqlc.Medium{}, false, errDuplicate
+			}
 		}
 		if err := s.checkPendingCap(ctx, q, p.UserID); err != nil {
 			return sqlc.Medium{}, false, err

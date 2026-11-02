@@ -331,7 +331,7 @@ CREATE TABLE media (
     thumb_height INTEGER,
     sha256       BLOB    NOT NULL,             -- of the decoded pixels before orientation and resizing (media.Photo.SHA256)
     dhash        INTEGER NOT NULL,             -- 64-bit difference hash (uint64 stored as int64)
-    status       TEXT    NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'expired')),
+    status       TEXT    NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'deleting', 'expired')), -- deleting: retention claimed it, files not yet gone
     keep         INTEGER NOT NULL DEFAULT 0 CHECK (keep IN (0, 1)),
     created_at   TEXT    NOT NULL,
     expires_at   TEXT,                         -- NULL = never; pending: upload + media.PendingTTL; evidence: set when the instance resolves
@@ -427,6 +427,7 @@ CREATE INDEX chore_instance_evidence_photos_by_evidence ON chore_instance_eviden
 
 -- Retention (media.Expire) and the per-kid pending upload cap.
 CREATE INDEX media_expiring ON media (expires_at) WHERE status = 'ready';
+CREATE INDEX media_deleting ON media (id) WHERE status = 'deleting';
 CREATE INDEX media_pending_by_uploader ON media (uploaded_by) WHERE owner_kind = 'pending';
 
 -- +goose Down

@@ -81,13 +81,14 @@ func newBackground(store *db.DB, clk clock.Clock, files media.Storage, log *slog
 	sched.Add(jobs.Every("maintenance", kindMaintenance, 24*time.Hour))
 
 	// Media retention: resolved instances' evidence after media_retention_days, and pending
-	// uploads never attached. Re-running is harmless (media.Expire).
+	// uploads never attached. Re-running is harmless (media.Expire). Files that couldn't be deleted
+	// are logged and retried by the next run; they don't fail the job.
 	runner.Register(kindMediaRetention, func(ctx context.Context, _ jobs.Job) error {
-		n, err := media.Expire(ctx, store, clk, files)
+		res, err := media.Expire(ctx, store, clk, files, log)
 		if err != nil {
 			return err
 		}
-		log.Info("media retention", "expired", n)
+		log.Info("media retention", "expired", res.Expired, "failed", res.Failed)
 		return nil
 	}, jobs.KindOptions{MaxAttempts: 3})
 	sched.Add(jobs.Every("media_retention", kindMediaRetention, 24*time.Hour))

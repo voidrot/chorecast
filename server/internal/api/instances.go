@@ -57,9 +57,10 @@ func registerInstances(hapi huma.API, h *handlers) {
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getChoreInstanceEvidence", Method: http.MethodGet, Path: "/instances/{instance}/evidence",
 		Summary: "A chore's submitted evidence",
-		Description: "Every submission's checklist, note and photos, oldest first, for parents and the instance's kids " +
-			"(its assignee, or a shared instance's members). Photo links are signed and work for 10 minutes; once " +
-			"retention has deleted a photo it is marked `expired` and has no links.",
+		Description: "The submissions' checklists, notes and photos, oldest first. Parents see every submission, the " +
+			"members of a shared instance the group's, and any other kid only their own (the assignee gets an empty " +
+			"list before submitting; a kid with no submission who isn't the assignee gets 403). Photo links are signed " +
+			"and work for 10 minutes; once retention has deleted a photo it is marked `expired` and has no links.",
 		Tags: []string{"instances"}, Security: auth.Require(auth.ScopeChoresRead),
 		Errors: []int{http.StatusForbidden, http.StatusNotFound},
 	}, h.instanceEvidence)
@@ -205,10 +206,7 @@ func (h *handlers) instanceEvidence(ctx context.Context, in *ChoreInstanceRefInp
 	if err != nil {
 		return nil, err
 	}
-	if !evidence.CanRead(p, inst) {
-		return nil, apierr.New(http.StatusForbidden, apierr.CodeForbidden, "you can't see this chore's evidence")
-	}
-	items, err := evidence.List(ctx, h.db.Queries, in.Instance, h.signedURLs)
+	items, err := evidence.ReadFor(ctx, h.db.Queries, p, inst, h.signedURLs)
 	if err != nil {
 		return nil, err
 	}

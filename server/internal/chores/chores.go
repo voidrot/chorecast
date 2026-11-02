@@ -37,7 +37,7 @@ const (
 type EvidenceRules struct {
 	Photos      int  `json:"photos" minimum:"0" maximum:"5" doc:"Minimum number of photos (taken in the app)"`
 	BeforeAfter bool `json:"beforeAfter,omitempty" doc:"The photos include a before and an after (needs photos >= 2)"`
-	Video       bool `json:"video,omitempty" doc:"A short video is required"`
+	Video       bool `json:"video,omitempty" doc:"A short video is required. Not available yet: true is refused with 422 video_evidence_unsupported"`
 	Checklist   bool `json:"checklist,omitempty" doc:"Every step must be ticked (needs steps)"`
 	Note        bool `json:"note,omitempty" doc:"A written note is required"`
 }
@@ -107,6 +107,11 @@ func New(d *db.DB, c clock.Clock, bus *events.Bus) *Service {
 }
 
 var errNotFound = apierr.New(http.StatusNotFound, apierr.CodeNotFound, "no such chore")
+
+// errVideoUnsupported refuses a video evidence requirement until video evidence exists (Phase 3):
+// no kid could complete the chore.
+var errVideoUnsupported = apierr.New(http.StatusUnprocessableEntity, apierr.CodeVideoUnsupported,
+	"video evidence isn't available yet; untick it")
 
 func optInt(v sql.NullInt64) *int {
 	if !v.Valid {
@@ -227,6 +232,9 @@ func (s *Service) Get(ctx context.Context, id int64) (Chore, error) {
 
 // normalize trims and checks what the schema can't, returning the cleaned input.
 func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, error) {
+	if in.Evidence.Video {
+		return in, errVideoUnsupported
+	}
 	var details []error
 	bad := func(loc, msg string, v any) {
 		details = append(details, &huma.ErrorDetail{Location: "body." + loc, Message: msg, Value: v})

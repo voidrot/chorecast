@@ -37,22 +37,31 @@ SELECT COUNT(*) FROM media
 WHERE uploaded_by = sqlc.arg(uploaded_by) AND owner_kind = 'pending' AND status = 'ready' AND expires_at > sqlc.arg(now);
 
 -- name: ListExpiredMedia :many
--- Media whose files retention deletes: expired and not kept, or evidence whose record is gone
--- (its instance was deleted along with its kid).
+-- Ready, unkept media retention takes: past its expiry, or evidence whose record is gone (its
+-- instance was deleted along with its kid).
 SELECT * FROM media
-WHERE status = 'ready'
-  AND ((keep = 0 AND expires_at < sqlc.arg(now))
+WHERE status = 'ready' AND keep = 0
+  AND (expires_at <= sqlc.arg(now)
        OR (owner_kind = 'evidence' AND NOT EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.id = media.owner_id)))
 ORDER BY id
 LIMIT sqlc.arg(max_rows);
 
--- name: MarkMediaExpired :execrows
--- After its files are deleted. Repeats ListExpiredMedia's condition, so media that stopped
--- expiring meanwhile (its instance reopened) stays ready.
-UPDATE media SET status = 'expired'
-WHERE media.id = sqlc.arg(id) AND media.status = 'ready'
-  AND ((keep = 0 AND expires_at < sqlc.arg(now))
-       OR (owner_kind = 'evidence' AND NOT EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.id = media.owner_id)));
+-- name: ClaimExpiredMedia :execrows
+-- Claims one item for deletion if it still qualifies (ListExpiredMedia's condition), before its
+-- files are deleted. Resolve, Reopen and attaching touch only ready media, so a claimed item
+-- can't be revived. 0 rows = it no longer qualifies.
+UPDATE media SET status = 'deleting'
+WHERE media.id = sqlc.arg(id) AND media.status = 'ready' AND media.keep = 0
+  AND (media.expires_at <= sqlc.arg(now)
+       OR (media.owner_kind = 'evidence' AND NOT EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.id = media.owner_id)));
+
+-- name: ListDeletingMedia :many
+-- Claimed media whose files aren't deleted yet: this run's, and any an earlier run couldn't finish.
+SELECT * FROM media WHERE status = 'deleting' AND id > sqlc.arg(after_id) ORDER BY id LIMIT sqlc.arg(max_rows);
+
+-- name: MarkMediaExpired :exec
+-- After a claimed item's files are deleted.
+UPDATE media SET status = 'expired' WHERE id = ? AND status = 'deleting';
 
 -- name: DeleteMediaHashOf :exec
 -- Abandoned pending media was never evidence, so its hash mustn't block a later upload.
