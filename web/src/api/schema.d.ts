@@ -1240,6 +1240,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/review-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chores waiting for review
+         * @description `submitted` instances, oldest submission first (a flat list: the client groups it by `kidName` / `instance.completedBy`). Each item has the chore's checklist steps with those the latest submission ticked, its note and its photos with signed thumbnail links (valid for 10 minutes; `expired` once retention deleted a photo), and the instance's rejection count and latest rejection. Filter by `kidId` (a shared chore matches its members), `choreId`, and `media`: `with` (the latest submission has photos) or `without`. A chore rejected and resubmitted between two page fetches moves to the back and can appear on a later page again. Parents only. Approve one with `POST /instances/{id}/approval`, several with `POST /review-queue/approvals`, and reject with `POST /instances/{id}/rejection`.
+         */
+        get: operations["listReviewQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/review-queue/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve several submitted chores
+         * @description Approves up to 100 instances, each in its own transaction, so one failing doesn't undo the others. The response has a result per distinct id, in request order: `approved`, or an error `code`: `already_approved` (by an earlier call, so a retry is safe), `instance_not_submitted` (open, missed or excused) or `instance_not_found`. If the server fails partway it answers 500: the earlier approvals stay, and a retry reports them as `already_approved`. Rejecting isn't offered in bulk, because it needs feedback per chore. Parents only.
+         */
+        post: operations["approveReviewQueue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/server/settings": {
         parameters: {
             query?: never;
@@ -1331,6 +1371,13 @@ export interface components {
         AcceptInviteOutputBody: {
             /** Format: int64 */
             userId: number;
+        };
+        ApproveReviewQueueInputBody: {
+            /** @description Instances to approve; repeats are approved once */
+            instanceIds: number[] | null;
+        };
+        ApproveReviewQueueOutputBody: {
+            results: components["schemas"]["ReviewQueueApprovalResult"][];
         };
         BeginTOTPOutputBody: {
             /** @description otpauth:// URL to show as a QR code */
@@ -2055,6 +2102,11 @@ export interface components {
             /** @description Pass as cursor to fetch the next page. Absent on the last page. */
             nextCursor?: string;
         };
+        PageReviewQueueItem: {
+            items: components["schemas"]["ReviewQueueItem"][];
+            /** @description Pass as cursor to fetch the next page. Absent on the last page. */
+            nextCursor?: string;
+        };
         PairDeviceInputBody: {
             appVersion?: string;
             code: string;
@@ -2221,6 +2273,27 @@ export interface components {
             reason?: "not_done" | "not_finished" | "needs_redo" | "evidence_unclear";
             /** @description Feedback in the parent's words */
             text?: string;
+        };
+        ReviewQueueApprovalResult: {
+            approved: boolean;
+            /** @description Why it wasn't approved, e.g. instance_not_submitted or instance_not_found */
+            code?: string;
+            /** Format: int64 */
+            instanceId: number;
+            message?: string;
+        };
+        ReviewQueueItem: {
+            instance: components["schemas"]["ChoreInstance"];
+            /** @description The kid who completed it (a shared chore's completer), else its assignee */
+            kidName: string;
+            /** @description The chore's checklist steps, with those the latest submission ticked; empty when it has none */
+            steps: components["schemas"]["ReviewQueueStep"][];
+            /** @description The latest submission: note, photos (signed thumbnails) and when it was submitted */
+            submission?: components["schemas"]["InstanceEvidence"];
+        };
+        ReviewQueueStep: {
+            done: boolean;
+            text: string;
         };
         ScheduleOccurrence: {
             /**
@@ -6326,6 +6399,127 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listReviewQueue: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from a previous page's nextCursor. Omit for the first page. */
+                cursor?: string;
+                /** @description Maximum number of items to return. */
+                limit?: number;
+                /** @description Only this kid's chores */
+                kidId?: number;
+                /** @description Only this chore's instances */
+                choreId?: number;
+                /** @description with = the latest submission has photos; without = it has none; omit for both */
+                media?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageReviewQueueItem"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    approveReviewQueue: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApproveReviewQueueInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApproveReviewQueueOutputBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

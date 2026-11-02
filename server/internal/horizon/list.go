@@ -97,7 +97,7 @@ func (g *Generator) List(ctx context.Context, f ListFilter) ([]ChoreInstance, er
 		if rej, ok := latest[r.ChoreInstance.ID]; ok {
 			last = &rej
 		}
-		out = append(out, toInstance(r.ChoreInstance, r.ChoreName, members[r.ChoreInstance.ID], last, today))
+		out = append(out, ToInstance(r.ChoreInstance, r.ChoreName, members[r.ChoreInstance.ID], last, today))
 	}
 	return out, nil
 }
@@ -125,10 +125,11 @@ func Instance(ctx context.Context, q *sqlc.Queries, now time.Time, id int64) (Ch
 		}
 		last = &r
 	}
-	return toInstance(row.ChoreInstance, row.ChoreName, members, last, Today(cal, now)), nil
+	return ToInstance(row.ChoreInstance, row.ChoreName, members, last, Today(cal, now)), nil
 }
 
-func toInstance(r sqlc.ChoreInstance, choreName string, members []int64, last *sqlc.ChoreInstanceRejection, today caltime.Date) ChoreInstance {
+// ToInstance builds the API instance from its row, its members and its latest rejection (if any).
+func ToInstance(r sqlc.ChoreInstance, choreName string, members []int64, last *sqlc.ChoreInstanceRejection, today caltime.Date) ChoreInstance {
 	d, _ := caltime.ParseDate(r.OccurrenceDate)
 	due, _ := db.ParseTimestamp(r.DueAt)
 	out := ChoreInstance{
