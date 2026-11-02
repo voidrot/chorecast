@@ -19,7 +19,8 @@ export type HouseholdFieldErrors = Partial<
 >
 
 const FIELD =
-  /^body\.(name|timezone|dayEnd|weekStart|siblingVisibility|mediaRetentionDays|autoApproveHours|offlineGraceMinutes|defaultChoreMinutes|streakMilestones)(?:\[\d+\](?:\.\w+)?)?$/
+  /^body\.(name|timezone|dayEnd|weekStart|siblingVisibility|mediaRetentionDays|autoApproveHours|offlineGraceMinutes|defaultChoreMinutes|streakMilestones)$/
+const ROW = /^body\.streakMilestones\[(\d+)\](?:\.\w+)?$/
 
 /** Which household controls the server's 422 field errors point at (the view shows its own text). */
 export function householdFieldErrors(
@@ -31,6 +32,40 @@ export function householdFieldErrors(
     if (key) out[key] = true
   }
   return out
+}
+
+/** Indexes of the milestone rows the server's 422 field errors point at. */
+export function milestoneRowErrors(
+  errors: { location?: string; message?: string }[] | null | undefined,
+): number[] {
+  const rows = new Set<number>()
+  for (const e of errors ?? []) {
+    const m = ROW.exec(e.location ?? '')
+    if (m) rows.add(Number(m[1]))
+  }
+  return [...rows]
+}
+
+/** Next free streak length after the last row, clamped to the maximum (3650). */
+export function nextMilestoneDays(list: StreakMilestone[]): number {
+  const taken = new Set(list.map((m) => m.days))
+  let days = Math.min((list.at(-1)?.days ?? 0) + 7, 3650)
+  while (taken.has(days) && days > 1) days--
+  return days
+}
+
+/** The PUT body: the form fields plus sorted milestones (an empty list clears them). */
+export function householdBody(
+  form: components['schemas']['HouseholdSettings'],
+  milestones: StreakMilestone[],
+  autoApproveHours: number | null,
+): components['schemas']['HouseholdSettings'] {
+  const { autoApproveHours: _, streakMilestones: __, ...rest } = form
+  return {
+    ...rest,
+    streakMilestones: sortMilestones(milestones),
+    ...(autoApproveHours != null ? { autoApproveHours } : {}),
+  }
 }
 
 /** Sorted by days, as the server stores them. Returns a new list. */

@@ -20,8 +20,11 @@ import type { components } from '@/api/schema'
 import { householdTimeZone } from '@/format'
 import {
   type HouseholdFieldErrors,
+  householdBody,
   householdFieldErrors,
   milestoneProblem,
+  milestoneRowErrors,
+  nextMilestoneDays,
   type StreakMilestone,
   sortMilestones,
 } from '@/settings/form'
@@ -39,6 +42,12 @@ const error = ref<ApiError>()
 const fieldErrors = ref<HouseholdFieldErrors>({})
 const milestones = ref<StreakMilestone[]>([])
 const milestoneError = ref<string>()
+const milestoneRows = ref<number[]>([])
+
+// A row is flagged when the server named it, or the whole list when the problem has no row.
+const rowInvalid = (i: number) =>
+  milestoneRows.value.includes(i) ||
+  (!!fieldErrors.value.streakMilestones && !milestoneRows.value.length)
 
 const zoneOptions = timeZones().map((z) => ({ value: z, label: z }))
 const weekOptions = weekStarts.map((value) => ({
@@ -51,8 +60,10 @@ const visibilityOptions = [
 ]
 
 function addMilestone() {
-  const last = milestones.value.at(-1)
-  milestones.value.push({ days: (last?.days ?? 0) + 7, points: last?.points ?? 10 })
+  milestones.value.push({
+    days: nextMilestoneDays(milestones.value),
+    points: milestones.value.at(-1)?.points ?? 10,
+  })
 }
 
 function load(s: Settings) {
@@ -79,18 +90,20 @@ async function save() {
   saving.value = true
   error.value = undefined
   fieldErrors.value = {}
+  milestoneRows.value = []
   try {
-    const { autoApproveHours: _, streakMilestones: __, ...rest } = form.value
-    const sorted = sortMilestones(milestones.value)
-    const body: Settings = {
-      ...rest,
-      ...(sorted.length ? { streakMilestones: sorted } : {}),
-      ...(autoApproveOn.value ? { autoApproveHours: autoApproveHours.value } : {}),
-    }
+    // Sort the rows first so the server's row indexes match what the user sees.
+    milestones.value = sortMilestones(milestones.value)
+    const body = householdBody(
+      form.value,
+      milestones.value,
+      autoApproveOn.value ? autoApproveHours.value : null,
+    )
     const { data, error: e, response } = await api.PUT('/household', { body })
     if (!data) {
       error.value = ApiError.fromProblem(response.status, e)
       fieldErrors.value = householdFieldErrors(error.value.fieldErrors)
+      milestoneRows.value = milestoneRowErrors(error.value.fieldErrors)
       return
     }
     load(data)
@@ -125,7 +138,12 @@ async function save() {
           />
         </NFormItem>
         <NFormItem :label="t('setup.household.timezone')" :show-feedback="false">
-          <NSelect v-model:value="form.timezone" :options="zoneOptions" filterable />
+          <NSelect
+            v-model:value="form.timezone"
+            :options="zoneOptions"
+            :status="fieldErrors.timezone ? 'error' : undefined"
+            filterable
+          />
         </NFormItem>
         <NFormItem :label="t('setup.household.dayEnd')" :show-feedback="false">
           <NTimePicker
@@ -133,12 +151,17 @@ async function save() {
             value-format="HH:mm"
             format="HH:mm"
             :clearable="false"
+            :status="fieldErrors.dayEnd ? 'error' : undefined"
             class="w-full"
             @update:formatted-value="form.dayEnd = $event ?? form.dayEnd"
           />
         </NFormItem>
         <NFormItem :label="t('setup.household.weekStart')" :show-feedback="false">
-          <NSelect v-model:value="form.weekStart" :options="weekOptions" />
+          <NSelect
+            v-model:value="form.weekStart"
+            :options="weekOptions"
+            :status="fieldErrors.weekStart ? 'error' : undefined"
+          />
         </NFormItem>
       </section>
       <p class="hint -mt-4">{{ t('settings.calendarHint') }}</p>
@@ -151,7 +174,11 @@ async function save() {
         </div>
         <p class="hint -mt-2">{{ t('settings.allowNegativeHint') }}</p>
         <NFormItem :label="t('settings.visibility.label')" :show-feedback="false" class="max-w-md">
-          <NSelect v-model:value="form.siblingVisibility" :options="visibilityOptions" />
+          <NSelect
+            v-model:value="form.siblingVisibility"
+            :options="visibilityOptions"
+            :status="fieldErrors.siblingVisibility ? 'error' : undefined"
+          />
         </NFormItem>
       </section>
 
@@ -165,7 +192,7 @@ async function save() {
               :min="1"
               :max="3650"
               :precision="0"
-              :status="fieldErrors.streakMilestones ? 'error' : undefined"
+              :status="rowInvalid(i) ? 'error' : undefined"
               class="w-32"
               :input-props="{ 'aria-label': t('settings.milestoneDaysLabel', { n: i + 1 }) }"
             >
@@ -176,7 +203,7 @@ async function save() {
               :min="1"
               :max="100000"
               :precision="0"
-              :status="fieldErrors.streakMilestones ? 'error' : undefined"
+              :status="rowInvalid(i) ? 'error' : undefined"
               class="w-32"
               :input-props="{ 'aria-label': t('settings.milestonePointsLabel', { n: i + 1 }) }"
             >
