@@ -33,7 +33,8 @@ func registerMedia(hapi huma.API, h *handlers) {
 			"metadata (EXIF, GPS). The photo is pending until it is attached to evidence. A kid's photo that exactly " +
 			"matches earlier kid evidence is rejected with 409 `duplicate_media`. Images over 24 MP or 12,000 px on a " +
 			"side, or that would need too much memory to decode, get 413; animated images get 415. Photos are processed " +
-			"one at a time; when several uploads are already waiting the answer is 503 `media_busy` with Retry-After.",
+			"one at a time; when several uploads are already waiting the answer is 503 `media_busy`, and a caller with " +
+			"two uploads in progress gets 429 `rate_limited`, both with Retry-After.",
 		Tags:          []string{"media"},
 		Security:      auth.Require(auth.ScopeChoresComplete),
 		DefaultStatus: http.StatusCreated,
@@ -41,7 +42,7 @@ func registerMedia(hapi huma.API, h *handlers) {
 		MaxBodyBytes:    h.cfg.Media.MaxPhotoBytes() + multipartOverhead,
 		BodyReadTimeout: 2 * time.Minute,
 		Errors: []int{http.StatusConflict, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
-			http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
+			http.StatusUnprocessableEntity, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 	}, h.uploadPhoto)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMedia",

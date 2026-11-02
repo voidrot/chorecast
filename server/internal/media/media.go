@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -64,17 +65,55 @@ type Service struct {
 	// decoded full-size photos at once. queue bounds the uploads holding or waiting for it.
 	sem   chan struct{}
 	queue chan struct{}
+
+	mu       sync.Mutex
+	inFlight map[callerKey]int // uploads holding or waiting for the slot, per caller
 }
 
 // MaxQueuedUploads is how many uploads may wait for the processing slot; more get 503
-// media_busy with Retry-After.
-const MaxQueuedUploads = 4
+// media_busy with Retry-After. MaxUploadsPerCaller is how many of those places one caller
+// (a parent or a kid, whatever device they use) may hold, so a single device sending many
+// uploads at once can't keep everyone else out; over it the answer is 429 rate_limited.
+const (
+	MaxQueuedUploads    = 4
+	MaxUploadsPerCaller = 2
+)
+
+type callerKey struct {
+	kind auth.Kind
+	id   int64
+}
+
+func keyFor(p *auth.Principal) callerKey {
+	if p.UserID != 0 {
+		return callerKey{p.Kind, p.UserID}
+	}
+	return callerKey{p.Kind, -p.TokenID}
+}
+
+// enter takes one of p's in-flight places, or reports that p holds them all.
+func (s *Service) enter(p *auth.Principal) (leave func(), ok bool) {
+	k := keyFor(p)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inFlight[k] >= MaxUploadsPerCaller {
+		return nil, false
+	}
+	s.inFlight[k]++
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.inFlight[k]--; s.inFlight[k] == 0 {
+			delete(s.inFlight, k)
+		}
+	}, true
+}
 
 // New returns the media service. It doesn't touch d or store until a request needs them.
 // signer verifies the URLs Open serves; it should be the one store signs with.
 func New(d *db.DB, c clock.Clock, store Storage, signer *Signer) *Service {
 	return &Service{db: d, clock: c, store: store, signer: signer,
-		sem: make(chan struct{}, 1), queue: make(chan struct{}, 1+MaxQueuedUploads)}
+		sem: make(chan struct{}, 1), queue: make(chan struct{}, 1+MaxQueuedUploads), inFlight: map[callerKey]int{}}
 }
 
 // NewKey returns a new random storage key (32 hex digits).
@@ -128,13 +167,25 @@ var errBusy = huma.ErrorWithHeaders(
 	apierr.New(http.StatusServiceUnavailable, apierr.CodeMediaBusy, "the server is busy processing other photos; try again shortly"),
 	http.Header{"Retry-After": {"5"}})
 
+var errTooManyOwn = huma.ErrorWithHeaders(
+	apierr.New(http.StatusTooManyRequests, apierr.CodeRateLimited, "wait for your other photo uploads to finish"),
+	http.Header{"Retry-After": {"5"}})
+
 // process reads, decodes and encodes the photo while holding the processing slot.
 func (s *Service) process(ctx context.Context, p *auth.Principal, r io.Reader, limit int64) (*Photo, error) {
+	leave, ok := s.enter(p)
+	if !ok {
+		return nil, errTooManyOwn
+	}
+	defer leave()
 	select {
 	case s.queue <- struct{}{}:
 		defer func() { <-s.queue }()
 	default:
 		return nil, errBusy
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	select {
 	case s.sem <- struct{}{}:

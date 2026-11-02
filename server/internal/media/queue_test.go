@@ -62,9 +62,13 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// Uploads wait for the single processing slot without reading their bodies, at most
-// MaxQueuedUploads of them; the next one is turned away at once with 503 media_busy.
-func TestUploadQueue(t *testing.T) {
+type queueEnv struct {
+	svc *Service
+	db  *db.DB
+}
+
+func newQueueEnv(t *testing.T) *queueEnv {
+	t.Helper()
 	store, err := db.Open(t.Context(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -72,43 +76,99 @@ func TestUploadQueue(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 	clk := clock.NewFake(time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC))
 	signer := NewSigner(store.Queries, clk)
-	svc := New(store, clk, NewLocal(t.TempDir(), "/files", signer), signer)
-	u, err := store.CreateUser(t.Context(), sqlc.CreateUserParams{DisplayName: "Mom", Role: "parent"})
+	return &queueEnv{svc: New(store, clk, NewLocal(t.TempDir(), "/files", signer), signer), db: store}
+}
+
+func (e *queueEnv) parent(t *testing.T) *auth.Principal {
+	t.Helper()
+	u, err := e.db.CreateUser(t.Context(), sqlc.CreateUserParams{DisplayName: "Parent", Role: "parent"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	parent := &auth.Principal{Kind: auth.KindParent, UserID: u.ID}
+	return &auth.Principal{Kind: auth.KindParent, UserID: u.ID}
+}
 
-	release := make(chan struct{})
-	var reads atomic.Int32
+// blockedUploads starts uploads by the given callers whose bodies block until release closes.
+func (e *queueEnv) blockedUploads(t *testing.T, callers []*auth.Principal, reads *atomic.Int32) (release func()) {
+	t.Helper()
+	ch := make(chan struct{})
 	var wg sync.WaitGroup
-	errs := make(chan error, 1+MaxQueuedUploads)
-	for i := range 1 + MaxQueuedUploads {
+	errs := make(chan error, len(callers))
+	for i, p := range callers {
 		data := mediatest.JPEG(t, mediatest.Halves(16, 10+i))
 		wg.Go(func() {
-			_, err := svc.UploadPhoto(t.Context(), parent, &blockingReader{release, &reads, bytes.NewReader(data)}, 1<<20)
+			_, err := e.svc.UploadPhoto(t.Context(), p, &blockingReader{ch, reads, bytes.NewReader(data)}, 1<<20)
 			errs <- err
 		})
 	}
-	waitFor(t, "the queue to fill", func() bool { return len(svc.queue) == cap(svc.queue) })
+	return func() {
+		close(ch)
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Errorf("queued upload: %v", err)
+			}
+		}
+	}
+}
+
+func wantProblem(t *testing.T, what string, err error, status int, code string) {
+	t.Helper()
+	var p *apierr.Problem
+	if !errors.As(err, &p) || p.Status != status || p.Code != code {
+		t.Fatalf("%s: err = %v, want %d %s", what, err, status, code)
+	}
+	var h huma.HeadersError
+	if !errors.As(err, &h) || h.GetHeaders().Get("Retry-After") == "" {
+		t.Errorf("%s: no Retry-After", what)
+	}
+}
+
+// Uploads wait for the single processing slot without reading their bodies, at most
+// MaxQueuedUploads of them; the next one is turned away at once with 503 media_busy.
+func TestUploadQueue(t *testing.T) {
+	e := newQueueEnv(t)
+	var callers []*auth.Principal
+	for range 1 + MaxQueuedUploads {
+		callers = append(callers, e.parent(t))
+	}
+	var reads atomic.Int32
+	release := e.blockedUploads(t, callers, &reads)
+	waitFor(t, "the queue to fill", func() bool { return len(e.svc.queue) == cap(e.svc.queue) })
 	waitFor(t, "the slot holder to read", func() bool { return reads.Load() > 0 })
 
-	_, err = svc.UploadPhoto(t.Context(), parent, bytes.NewReader(nil), 1<<20)
-	var p *apierr.Problem
-	if !errors.As(err, &p) || p.Status != http.StatusServiceUnavailable || p.Code != apierr.CodeMediaBusy {
-		t.Fatalf("over the queue: err = %v, want 503 media_busy", err)
-	}
+	_, err := e.svc.UploadPhoto(t.Context(), e.parent(t), bytes.NewReader(nil), 1<<20)
+	wantProblem(t, "over the queue", err, http.StatusServiceUnavailable, apierr.CodeMediaBusy)
 	time.Sleep(20 * time.Millisecond) // a waiter reading now would be a bug; give it the chance
 	if n := reads.Load(); n != 1 {
 		t.Errorf("%d uploads read their body; only the one holding the slot should", n)
 	}
-
-	close(release)
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			t.Errorf("queued upload: %v", err)
-		}
+	release()
+	if n := len(e.svc.inFlight); n != 0 {
+		t.Errorf("%d callers still counted in flight", n)
 	}
+}
+
+// One caller holds at most MaxUploadsPerCaller places, so they can't fill the queue alone.
+func TestUploadQueuePerCaller(t *testing.T) {
+	e := newQueueEnv(t)
+	mom := e.parent(t)
+	var callers []*auth.Principal
+	for range MaxUploadsPerCaller {
+		callers = append(callers, mom)
+	}
+	var reads atomic.Int32
+	release := e.blockedUploads(t, callers, &reads)
+	waitFor(t, "mom's uploads to queue", func() bool { return len(e.svc.queue) == MaxUploadsPerCaller })
+
+	_, err := e.svc.UploadPhoto(t.Context(), mom, bytes.NewReader(nil), 1<<20)
+	wantProblem(t, "mom's third upload", err, http.StatusTooManyRequests, apierr.CodeRateLimited)
+	// Someone else still gets a place.
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := e.svc.UploadPhoto(cancelled, e.parent(t), bytes.NewReader(nil), 1<<20); !errors.Is(err, context.Canceled) {
+		t.Errorf("another parent's upload: err = %v, want it queued (then cancelled)", err)
+	}
+	release()
 }
