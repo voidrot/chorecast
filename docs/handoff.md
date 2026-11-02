@@ -38,9 +38,8 @@ orchestrating session pushes and opens the PRs (see "Environment gotchas").
 4. **#36: backups.** A database backup contains the media signing key (see "Decisions already made").
 5. **#37: audit log.** The `instance.*` and `points.entry_posted` events are the hooks.
 6. **#38: install, first-run, backup and upgrade docs.**
-7. Follow-ups: **#83** (media: the JPEG header scan should skip stray bytes like Go's decoder; minor), **#88**
-   (kid photo avatars, split from #16) and **#89** (make the per-submission photo limit configurable through
-   `CHORECAST_MEDIA_MAX_FILES`).
+7. Follow-ups: **#88** (kid photo avatars, split from #16) and **#89** (make the per-submission photo limit
+   configurable through `CHORECAST_MEDIA_MAX_FILES`).
 
 #16 (kid profiles; the remaining work is #88) and #18 (device pairing; open only because nobody has run the
 end-to-end check on a real device) are also still open. The bodies of #26, #27 and #28 are scoped to the

@@ -194,6 +194,10 @@ Built (#75, `internal/media`): the photo half of the pipeline, local storage onl
   with decoder panics turned into 422 `invalid_image`), so the `CGO_ENABLED=0` build keeps working. One upload
   peaks at about 210 MB in the worst accepted case (87 MB for a 24 MP JPEG); `deploy/compose.yaml` suggests a
   `GOMEMLIMIT`.
+- Built (#83): the JPEG estimate finds markers the way Go's decoder does. It skips stray bytes, `FF` fill bytes
+  and stuffed `FF 00` pairs, also with fill bytes before them (`FF FF 00`, which the decoder skips while looking
+  for a restart marker), reads on through the scan data to the end of image, and counts the last JFIF or Adobe
+  marker. A file can no longer hide an Adobe RGB marker from the estimate and decode past the budget.
 - SHA-256 is of the decoded pixels (dimensions, then RGBA rows), so re-saving a photo with other metadata doesn't
   change it; dHash is stored for later near-duplicate flagging. A kid's upload that matches `media_hashes` is 409
   `duplicate_media`, answered after decoding but before encoding; kid uploads are recorded there, which outlives
