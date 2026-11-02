@@ -69,8 +69,8 @@ features add sources without schema changes. `created_by` is NULL for the system
   source), and these kinds require a source. A repeat `Post` writes nothing and returns the existing entry with
   `ErrAlreadyPosted`, so at-least-once callers (day close #24, approvals #25) treat that error as done and must
   not return it from their `InTx` function, or their own change rolls back. Undoing a reversal (re-approving,
-  un-excusing) means reversing the reversal, not posting again. Streak bonuses (#30) should use a per-day source
-  such as (`streak_day`, YYYYMMDD). A repeat's returned entry has `ReversedByID` set when it was reversed.
+  un-excusing) means reversing the reversal, not posting again. Streak bonuses (#30) use one source per day and
+  milestone (`streak_milestone`, see Streaks). A repeat's returned entry has `ReversedByID` set when it was reversed.
 - **Undo and re-apply.** A source's entry and its reversals form a chain C → R1 → R2 ….
   `ledger.Tip(ctx, tx, kidID, kind, src) (entry, inEffect, found, err)` returns the chain's unreversed end, and
   `inEffect` is true when the source's effect stands (an even number of reversals). To undo an effect in force,
