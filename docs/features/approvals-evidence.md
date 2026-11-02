@@ -216,6 +216,15 @@ Built (#75, `internal/media`): the photo half of the pipeline, local storage onl
   the temp dir before the handler runs (so the server needs a writable `/tmp`) and deleted after every request,
   whatever its outcome.
 
+Built (#118, `internal/media`): `DELETE /media/photos/{id}` (scope `chores:complete`) lets the uploader discard
+their own pending photo, so a kid who retakes photos can free pending slots (`MaxPendingUploads`) before the 24 h
+`PendingTTL`. It claims the row like retention does (status `deleting`, hash dropped) in one transaction with a
+conditional UPDATE on `owner_kind = 'pending' AND status = 'ready'`, so a completion attaching the same photo and a
+discard can't both win. It then deletes the files and marks the row `expired`; a file that can't be deleted leaves the
+row `deleting` for the retention job. The answer is 204. Another user's photo (a parent included) and an unknown id
+are both 404 `media_not_found`; a photo attached to a submission is 409 `media_attached`. Repeating the call for a
+photo already discarded or expired is 204 again.
+
 ## Review queue (parent)
 
 - List of `submitted` instances, oldest first, grouped by kid, with thumbnails, AI verdict chip, checklist and note.

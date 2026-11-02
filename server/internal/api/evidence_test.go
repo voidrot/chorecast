@@ -641,3 +641,92 @@ func TestMissAndExcuseStartRetention(t *testing.T) {
 		t.Errorf("expires_at after the excuse = %v, want 30 days from the excuse", exp)
 	}
 }
+
+func TestDiscardPendingPhoto(t *testing.T) {
+	e := newEvidenceEnv(t)
+	id := e.chore("Bed", e.samID, true, map[string]any{"photos": 1})
+	path := func(mid int64) string { return fmt.Sprintf("/api/v1/media/photos/%d", mid) }
+
+	// Fill the cap; the next upload is refused until a photo is discarded.
+	first := e.uploaded(e.sam, photo(t, 80, 21))
+	key := e.storageKey(first.ID)
+	e.shot = 100
+	for range media.MaxPendingUploads - 1 {
+		e.newPhoto(e.sam)
+	}
+	e.shot++
+	next := photo(t, 80, 20+e.shot)
+	wantCode(t, "over the cap", e.upload(e.sam, next, "image/jpeg"), 429, "rate_limited")
+
+	wantCode(t, "another kid", e.raw("DELETE", path(first.ID), e.sam2, nil, ""), 404, "media_not_found")
+	wantCode(t, "a parent who isn't the uploader", e.raw("DELETE", path(first.ID), e.mom, nil, ""), 404, "media_not_found")
+	wantCode(t, "unknown id", e.raw("DELETE", path(9999), e.sam, nil, ""), 404, "media_not_found")
+	wantCode(t, "anonymous", e.raw("DELETE", path(first.ID), nil, nil, ""), 401, "unauthenticated")
+	e.wantFiles(key, true)
+
+	wantCode(t, "discard", e.raw("DELETE", path(first.ID), e.sam, nil, ""), 204, "")
+	e.wantFiles(key, false)
+	if _, _, status, _ := e.mediaRow(first.ID); status != "expired" {
+		t.Errorf("discarded photo status %s, want expired", status)
+	}
+	wantCode(t, "repeated discard", e.raw("DELETE", path(first.ID), e.sam, nil, ""), 204, "")
+	wantCode(t, "the slot is free", e.upload(e.sam, next, "image/jpeg"), 201, "")
+	// The discarded picture's hash was dropped, so it isn't a duplicate (the cap is full again).
+	wantCode(t, "same picture again", e.upload(e.sam, photo(t, 80, 21), "image/jpeg"), 429, "rate_limited")
+	wantLocations(t, "attach a discarded photo", e.complete(id, e.sam,
+		map[string]any{"photos": []any{kidPhoto(first.ID, "", shotToday)}}), "body.photos[0].mediaId")
+
+	// An attached photo stays.
+	mine := e.newPhotoAfterFree()
+	wantCode(t, "complete", e.complete(id, e.sam, map[string]any{"photos": []any{kidPhoto(mine, "", shotToday)}}), 200, "")
+	wantCode(t, "discard an attached photo", e.raw("DELETE", path(mine), e.sam, nil, ""), 409, "media_attached")
+	e.wantFiles(e.storageKey(mine), true)
+}
+
+// newPhotoAfterFree discards one of sam's pending photos to make room, then uploads a new one.
+func (e *evidenceEnv) newPhotoAfterFree() int64 {
+	e.t.Helper()
+	var victim int64
+	if err := e.store.SQL.QueryRowContext(e.t.Context(),
+		`SELECT id FROM media WHERE uploaded_by = ? AND status = 'ready' ORDER BY id LIMIT 1`, e.samID).Scan(&victim); err != nil {
+		e.t.Fatal(err)
+	}
+	wantCode(e.t, "make room", e.raw("DELETE", fmt.Sprintf("/api/v1/media/photos/%d", victim), e.sam, nil, ""), 204, "")
+	return e.newPhoto(e.sam)
+}
+
+// A completion attaching a photo while its uploader discards it: one wins, and the data agrees.
+func TestDiscardRacesAttach(t *testing.T) {
+	for range 10 {
+		e := newEvidenceEnv(t)
+		id := e.chore("Bed", e.samID, true, map[string]any{"photos": 1})
+		mid := e.newPhoto(e.sam)
+		key := e.storageKey(mid)
+		var completed, discarded *httptest.ResponseRecorder
+		done := make(chan struct{}, 2)
+		go func() {
+			completed = e.complete(id, e.sam, map[string]any{"photos": []any{kidPhoto(mid, "", shotToday)}})
+			done <- struct{}{}
+		}()
+		go func() {
+			discarded = e.raw("DELETE", fmt.Sprintf("/api/v1/media/photos/%d", mid), e.sam, nil, "")
+			done <- struct{}{}
+		}()
+		<-done
+		<-done
+		owner, _, status, _ := e.mediaRow(mid)
+		if completed.Code == 200 {
+			wantCode(t, "discard after attach", discarded, 409, "media_attached")
+			if owner != "evidence" || status != "ready" {
+				t.Errorf("attached photo is %s/%s", owner, status)
+			}
+			e.wantFiles(key, true)
+			continue
+		}
+		wantCode(t, "discard won", discarded, 204, "")
+		if owner != "pending" || status != "expired" {
+			t.Errorf("discarded photo is %s/%s", owner, status)
+		}
+		e.wantFiles(key, false)
+	}
+}

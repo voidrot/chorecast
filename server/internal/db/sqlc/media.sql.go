@@ -127,6 +127,26 @@ func (q *Queries) DeleteMediaHashOf(ctx context.Context, mediaID sql.NullInt64) 
 	return err
 }
 
+const discardPendingMedia = `-- name: DiscardPendingMedia :execrows
+UPDATE media SET status = 'deleting'
+WHERE id = ?1 AND uploaded_by = ?2 AND owner_kind = 'pending' AND status = 'ready'
+`
+
+type DiscardPendingMediaParams struct {
+	ID         int64         `json:"id"`
+	UploadedBy sql.NullInt64 `json:"uploaded_by"`
+}
+
+// The uploader gives up a pending photo: claimed for deletion like retention does, if it is still
+// ready and unattached. Attaching touches only ready pending media, so one of the two wins.
+func (q *Queries) DiscardPendingMedia(ctx context.Context, arg DiscardPendingMediaParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, discardPendingMedia, arg.ID, arg.UploadedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getMedia = `-- name: GetMedia :one
 SELECT id, owner_kind, owner_id, uploaded_by, storage_key, thumb_key, kind, mime, bytes, width, height, thumb_width, thumb_height, sha256, dhash, status, keep, created_at, expires_at FROM media WHERE id = ?
 `
