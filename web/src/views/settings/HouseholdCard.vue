@@ -159,14 +159,14 @@ async function save() {
         <h3 class="font-medium">{{ t('settings.streaks') }}</h3>
         <p class="hint">{{ t('settings.streaksHint') }}</p>
         <ul class="flex flex-col gap-2">
-          <li v-for="(m, i) in milestones" :key="i" class="flex flex-wrap items-center gap-2">
+          <li v-for="(m, i) in milestones" :key="i" class="flex items-center gap-2">
             <NInputNumber
               v-model:value="m.days"
               :min="1"
               :max="3650"
               :precision="0"
               :status="fieldErrors.streakMilestones ? 'error' : undefined"
-              class="w-36"
+              class="w-32"
               :input-props="{ 'aria-label': t('settings.milestoneDaysLabel', { n: i + 1 }) }"
             >
               <template #suffix>{{ t('settings.daysSuffix') }}</template>
@@ -177,7 +177,7 @@ async function save() {
               :max="100000"
               :precision="0"
               :status="fieldErrors.streakMilestones ? 'error' : undefined"
-              class="w-36"
+              class="w-32"
               :input-props="{ 'aria-label': t('settings.milestonePointsLabel', { n: i + 1 }) }"
             >
               <template #suffix>{{ t('settings.milestonePointsSuffix') }}</template>
