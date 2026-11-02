@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -465,36 +466,87 @@ func TestReapprovalRestoresTheCreditWithoutPostingAgain(t *testing.T) {
 	}
 }
 
-// TestReapprovalRestoresTheCreditWhenThePointsDropToZero: a re-approval restores the first credit
-// even when the chore is now worth 0, and a first approval at 0 posts nothing.
-func TestReapprovalRestoresTheCreditWhenThePointsDropToZero(t *testing.T) {
-	f := newFixture(t)
-	c := f.chore(chores.ChoreInput{Name: "Dishes", Points: 5, RequiresApproval: true})
-	id := f.instance(c.ID, today, f.sam)
-	free := f.instance(c.ID, today, f.ada) // first approved after the drop
+// TestReapprovalDoesNotResplit: once an instance has been credited, a re-approval restores those
+// credits, to the same kids with the same amounts, and posts nothing new, even if the chore's
+// points or the completer changed: the instance's total stays what was first credited. Shares
+// follow the current split only on the first approval (a share of 0 isn't posted).
+func TestReapprovalDoesNotResplit(t *testing.T) {
 	ctx := t.Context()
-	approve := func(id int64) {
+	approve := func(f *fixture, id, kid int64) {
 		t.Helper()
-		if _, err := f.svc.Complete(ctx, id, instances.Completion{By: f.mom}); err != nil {
+		if _, err := f.svc.Complete(ctx, id, instances.Completion{KidID: kid, By: f.mom}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := f.svc.Approve(ctx, id, f.mom); err != nil {
 			t.Fatal(err)
 		}
 	}
-	approve(id)
-	if _, err := f.svc.Unapprove(ctx, id, f.mom, ""); err != nil {
-		t.Fatal(err)
+	unapprove := func(f *fixture, id int64) {
+		t.Helper()
+		if _, err := f.svc.Unapprove(ctx, id, f.mom, ""); err != nil {
+			t.Fatal(err)
+		}
 	}
-	f.exec("UPDATE chores SET points = 0 WHERE id = ?", c.ID)
-	approve(id)
-	if got := f.get(id); got.Status != horizon.StatusApproved || f.balance(f.sam) != 5 {
-		t.Errorf("re-approved at 0 points: %s, balance %d, want approved with the first 5 restored", got.Status, f.balance(f.sam))
-	}
-	approve(free)
-	if e := f.entries(free); len(e) != 0 || f.balance(f.ada) != 0 {
-		t.Errorf("a first approval at 0 points wrote %v (balance %d)", e, f.balance(f.ada))
-	}
+	balances := func(f *fixture) [3]int64 { return [3]int64{f.balance(f.sam), f.balance(f.ada), f.balance(f.kim)} }
+
+	t.Run("the points drop to 0", func(t *testing.T) {
+		f := newFixture(t)
+		c := f.chore(chores.ChoreInput{Name: "Dishes", Points: 5, RequiresApproval: true})
+		id := f.instance(c.ID, today, f.sam)
+		free := f.instance(c.ID, today, f.ada) // first approved after the drop
+		approve(f, id, 0)
+		unapprove(f, id)
+		f.exec("UPDATE chores SET points = 0 WHERE id = ?", c.ID)
+		approve(f, id, 0)
+		if got := f.get(id); got.Status != horizon.StatusApproved || f.balance(f.sam) != 5 {
+			t.Errorf("re-approved at 0 points: %s, balance %d, want approved with the first 5 restored", got.Status, f.balance(f.sam))
+		}
+		approve(f, free, 0)
+		if e := f.entries(free); len(e) != 0 || f.balance(f.ada) != 0 {
+			t.Errorf("a first approval at 0 points wrote %v (balance %d)", e, f.balance(f.ada))
+		}
+	})
+
+	t.Run("split evenly, another completer", func(t *testing.T) {
+		f := newFixture(t)
+		c := f.chore(chores.ChoreInput{Name: "Yard", Points: 2, RequiresApproval: true,
+			Assignment: &chores.ChoreAssignment{Mode: assign.ModeShared, KidIDs: []int64{f.sam, f.ada, f.kim},
+				SharedPoints: assign.PointsSplitEvenly, SharedPenalty: assign.PenaltyNone}})
+		id := f.instance(c.ID, today, 0, f.sam, f.ada, f.kim)
+		approve(f, id, f.sam) // 2 over 3: Sam gets the remainder (2), Ada and Kim 0
+		if got := balances(f); got != [3]int64{2, 0, 0} {
+			t.Fatalf("first approval: balances %v, want [2 0 0]", got)
+		}
+		unapprove(f, id)
+		f.exec("UPDATE chores SET points = 9 WHERE id = ?", c.ID)
+		approve(f, id, f.ada) // Ada completes it this time, and it's worth more
+		if got := balances(f); got != [3]int64{2, 0, 0} {
+			t.Errorf("re-approval: balances %v, want Sam's first 2 restored and nothing new", got)
+		}
+		unapprove(f, id)
+		if got := balances(f); got != [3]int64{0, 0, 0} {
+			t.Errorf("second reversal: balances %v, want 0s", got)
+		}
+	})
+
+	t.Run("reassigned after a reversal", func(t *testing.T) {
+		f := newFixture(t)
+		c := f.chore(chores.ChoreInput{Name: "Dishes", Points: 5, RequiresApproval: true})
+		id := f.instance(c.ID, today, f.sam)
+		approve(f, id, 0)
+		unapprove(f, id)
+		if _, err := f.svc.Reassign(ctx, id, f.ada, f.mom); err != nil {
+			t.Fatal(err)
+		}
+		approve(f, id, 0)
+		if got := balances(f); got != [3]int64{5, 0, 0} {
+			t.Errorf("re-approval after a reassignment: balances %v, want Sam's first credit restored", got)
+		}
+		unapprove(f, id) // reverses Sam's credit though Ada is the assignee now
+		if got := balances(f); got != [3]int64{0, 0, 0} {
+			t.Errorf("reversal after a reassignment: balances %v, want 0s", got)
+		}
+	})
 }
 
 func TestRejectKeepsHistory(t *testing.T) {
@@ -956,15 +1008,16 @@ func (m *modelInstance) credit() map[int64]int64 {
 	} else {
 		shares = assign.SplitPoints(int(m.chore.Points), m.chore.SharedPoints, m.completer, m.members)
 	}
-	for k, pts := range shares {
-		if _, ok := m.credited[k]; !ok {
-			if pts == 0 {
-				continue // a first credit of 0 isn't posted
+	// The first approval posts the split (shares of 0 aren't posted); a re-approval restores
+	// exactly those credits and doesn't re-split, whoever completed it or is assigned now.
+	if len(m.credited) == 0 {
+		for k, pts := range shares {
+			if pts > 0 {
+				m.credited[k] = int64(pts)
 			}
-			m.credited[k] = int64(pts)
 		}
-		out[k] = m.credited[k] // a re-approval restores the first amount, whatever the share now
 	}
+	maps.Copy(out, m.credited)
 	return out
 }
 

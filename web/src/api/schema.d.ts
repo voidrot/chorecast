@@ -665,7 +665,7 @@ export interface paths {
         put?: never;
         /**
          * Approve a submitted chore
-         * @description Credits the points: to the assignee, or for a shared chore to the completer or split evenly across the group. Re-approving after a reversal restores the earlier credit. Returns the updated instance.
+         * @description Credits the points: to the assignee, or for a shared chore to the completer or split evenly across the group. Re-approving after a reversal restores the earlier credits as first split, even if the points or the completer changed since. Returns the updated instance.
          */
         post: operations["approveChoreInstance"];
         delete?: never;

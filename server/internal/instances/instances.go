@@ -17,8 +17,8 @@
 // source status with an atomic UPDATE … WHERE status = from, writes ledger entries only through
 // internal/ledger, and emits one event. Ledger effects are once per (kind, kid, instance): to
 // undo or re-apply one, the transition reverses the chain's tip (ledger.Tip) and never posts
-// twice, so re-approving after a reversal restores each kid's original credit even if the
-// chore's points changed in between.
+// twice, so re-approving after a reversal restores the original credits, to the same kids with
+// the same amounts, and doesn't re-split even if the chore's points or the completer changed.
 package instances
 
 import (
@@ -340,11 +340,10 @@ func Unapprove(ctx context.Context, tx *events.Tx, clk clock.Clock, id, by int64
 	if err := move(ctx, tx, clk, in, horizon.StatusApproved, horizon.StatusOpen, ErrNotApproved); err != nil {
 		return err
 	}
-	// Credit goes only to the instance's kids; the completer is listed too in case the kid was
-	// reassigned since an earlier approval.
-	kids := in.kids()
-	if in.CompletedBy.Valid && !slices.Contains(kids, in.CompletedBy.Int64) {
-		kids = append(slices.Clone(kids), in.CompletedBy.Int64)
+	// Every kid credited for it, even one it was reassigned away from since (credit restores theirs).
+	kids, err := ledger.SourceKids(ctx, tx, ledger.KindChore, in.source())
+	if err != nil {
+		return err
 	}
 	if err := undo(ctx, tx, clk, in, ledger.KindChore, kids, by, cmp.Or(strings.TrimSpace(note), noteUnapproved)); err != nil {
 		return err
@@ -451,41 +450,50 @@ func shares(in instance) map[int64]int {
 	return assign.SplitPoints(pts, in.chore.SharedPoints, in.CompletedBy.Int64, in.members)
 }
 
-// credit puts each kid's share in effect: a first approval posts it (nothing for a share of 0), a
-// re-approval reverses the reversal of the earlier credit (restoring its amount, whatever the
-// share is now), and a credit in effect stays. The entries are dated to the instance's day, like
-// its missed penalty.
+// credit puts the instance's credit in effect. The first approval splits the points (shares) and
+// posts each kid's share (nothing for a share of 0). Once any credit exists, a re-approval only
+// restores the earlier credits, each to its kid with its amount (reversing a reversal tip), and
+// posts nothing new: it doesn't re-split, even if the points, the completer or the assignee
+// changed, so the instance's total stays what was first credited. The entries are dated to the
+// instance's day, like its missed penalty.
 func credit(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance, by int64, note string) error {
+	credited, err := ledger.SourceKids(ctx, tx, ledger.KindChore, in.source())
+	if err != nil {
+		return err
+	}
+	if len(credited) > 0 {
+		for _, kid := range credited {
+			tip, inEffect, _, err := ledger.Tip(ctx, tx, kid, ledger.KindChore, in.source())
+			if err != nil {
+				return err
+			}
+			if inEffect {
+				continue
+			}
+			if _, err := ledger.Reverse(ctx, tx, clk, tip.ID, cmp.Or(strings.TrimSpace(note), noteReapproved), by); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	date, err := caltime.ParseDate(in.OccurrenceDate)
 	if err != nil {
 		return fmt.Errorf("instance %d date: %w", in.ID, err)
 	}
 	split := shares(in)
 	kids := make([]int64, 0, len(split))
-	for k := range split {
-		kids = append(kids, k)
+	for k, pts := range split {
+		if pts > 0 {
+			kids = append(kids, k)
+		}
 	}
 	slices.Sort(kids) // a stable entry order
 	for _, kid := range kids {
-		pts := split[kid]
-		tip, inEffect, found, err := ledger.Tip(ctx, tx, kid, ledger.KindChore, in.source())
-		switch {
-		case err != nil:
+		if _, err := ledger.Post(ctx, tx, clk, ledger.Posting{
+			KidID: kid, Kind: ledger.KindChore, Amount: int64(split[kid]), Source: in.source(), LocalDate: date,
+			Note: note, CreatedBy: by,
+		}); err != nil {
 			return err
-		case !found && pts == 0:
-			// nothing to post
-		case !found:
-			_, err = ledger.Post(ctx, tx, clk, ledger.Posting{
-				KidID: kid, Kind: ledger.KindChore, Amount: int64(pts), Source: in.source(), LocalDate: date,
-				Note: note, CreatedBy: by,
-			})
-			if err != nil && !errors.Is(err, ledger.ErrAlreadyPosted) {
-				return err
-			}
-		case !inEffect:
-			if _, err := ledger.Reverse(ctx, tx, clk, tip.ID, cmp.Or(strings.TrimSpace(note), noteReapproved), by); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

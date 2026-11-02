@@ -230,3 +230,39 @@ func (q *Queries) ListKidPointsEntries(ctx context.Context, arg ListKidPointsEnt
 	}
 	return items, nil
 }
+
+const listPointsKidsBySource = `-- name: ListPointsKidsBySource :many
+SELECT kid_id FROM points_entries
+WHERE kind = ? AND source_kind = ? AND source_id = ?
+ORDER BY kid_id
+`
+
+type ListPointsKidsBySourceParams struct {
+	Kind       string         `json:"kind"`
+	SourceKind sql.NullString `json:"source_kind"`
+	SourceID   sql.NullInt64  `json:"source_id"`
+}
+
+// The kids with a kind entry for the source (the heads of their chains), by kid id.
+func (q *Queries) ListPointsKidsBySource(ctx context.Context, arg ListPointsKidsBySourceParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listPointsKidsBySource, arg.Kind, arg.SourceKind, arg.SourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var kid_id int64
+		if err := rows.Scan(&kid_id); err != nil {
+			return nil, err
+		}
+		items = append(items, kid_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

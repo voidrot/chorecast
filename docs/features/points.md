@@ -166,9 +166,12 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
   share of 0 posts nothing. Credit entries are dated to the instance's own day; for a flexible instance that's
   its week's first active day, so a credit is never dated ahead of today (day close dates a flexible penalty to
   the week's last day, when the week closed).
-- **Undo and re-apply** follow the ledger's rule: `Unapprove` reverses each kid's credit tip that's in effect, and
-  re-approving reverses that reversal instead of posting again. So a re-approval restores each kid's original
-  amount, even if the chore's points (or a split's completer) changed in between. `Excuse` reverses every penalty
+- **Undo and re-apply** follow the ledger's rule: `Unapprove` reverses every credit tip in effect for the instance
+  (`ledger.SourceKids`, so also a kid it was reassigned away from since), and re-approving reverses those
+  reversals instead of posting again. Credits follow the current split only on the first approval, when the
+  instance has no credit yet. A re-approval doesn't re-split, even if the chore's points, the completer or the
+  assignee changed: it restores every earlier credit to its original kid with its original amount and posts
+  nothing new, so the instance's total is always what was first credited. `Excuse` reverses every penalty
   tip in effect: the assignee's, or every member's of a shared instance.
 - **Reopening a closed day.** Day close takes every open instance due by the close. When a rejection or approval
   reversal reopens an instance whose close has already passed (`dayclose.ClosesAt`: the kid's day or week close

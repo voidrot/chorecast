@@ -48,7 +48,8 @@ func registerInstances(hapi huma.API, h *handlers) {
 		auth.Require(auth.ScopeChoresComplete), http.StatusForbidden, http.StatusUnprocessableEntity), h.completeInstance)
 	huma.Register(hapi, transition("approveChoreInstance", "approval", "Approve a submitted chore",
 		"Credits the points: to the assignee, or for a shared chore to the completer or split evenly across "+
-			"the group. Re-approving after a reversal restores the earlier credit.", review), h.approveInstance)
+			"the group. Re-approving after a reversal restores the earlier credits as first split, even if the "+
+			"points or the completer changed since.", review), h.approveInstance)
 	huma.Register(hapi, transition("rejectChoreInstance", "rejection", "Reject a submitted chore",
 		"Sends it back to `open` with a reason (a quick pick, text, or both) so the kid can redo it. "+
 			"The instance keeps a rejection count and its latest rejection.", review, http.StatusUnprocessableEntity), h.rejectInstance)
