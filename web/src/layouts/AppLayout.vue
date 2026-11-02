@@ -22,7 +22,7 @@ onMounted(async () => {
 
 // The review badge refreshes on first load and on every navigation.
 watch(
-  () => route.fullPath,
+  () => route.name,
   () => void reviewQueue.refresh(),
   { immediate: true },
 )
