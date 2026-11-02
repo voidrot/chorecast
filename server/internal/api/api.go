@@ -23,6 +23,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/horizon"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
+	"github.com/voidrot/chorecast/server/internal/instances"
 	"github.com/voidrot/chorecast/server/internal/kids"
 	"github.com/voidrot/chorecast/server/internal/ledger"
 	"github.com/voidrot/chorecast/server/internal/media"
@@ -89,7 +90,8 @@ func New(r chi.Router, deps Deps) huma.API {
 		kids: kids.NewService(deps.DB, deps.Clock, deps.Bus), household: household.New(deps.DB, deps.Bus),
 		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock, deps.Bus),
 		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock), horizon: horizon.New(deps.DB, deps.Clock),
-		streaks: streaks.New(deps.DB, deps.Bus, deps.Clock), clock: deps.Clock}
+		streaks: streaks.New(deps.DB, deps.Bus, deps.Clock), instances: instances.New(deps.DB, deps.Bus, deps.Clock),
+		clock: deps.Clock}
 	signer := media.NewSigner(queries, deps.Clock)
 	h.media = media.New(deps.DB, deps.Clock, media.NewLocal(deps.Config.DataDir, Prefix+mediaFilesPath, signer), signer)
 	huma.Register(hapi, huma.Operation{
@@ -152,6 +154,7 @@ type handlers struct {
 	media     *media.Service
 	streaks   *streaks.Service
 	clock     clock.Clock
+	instances *instances.Service
 }
 
 type HealthOutput struct {
