@@ -7,6 +7,11 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -133,7 +138,9 @@ class CompleteChoreTest {
     fun photoWithRefusedCaptureTimeIsDroppedSoTheKeyChanges() = runTest {
         val keys = mutableListOf<String?>()
         val engine = MockEngine { req ->
-            if (req.url.encodedPath.endsWith("/media/photos")) {
+            if (req.method.value == "DELETE") {
+                respond("", HttpStatusCode.NoContent)
+            } else if (req.url.encodedPath.endsWith("/media/photos")) {
                 respond(media, HttpStatusCode.Created, json)
             } else {
                 keys += req.headers["Idempotency-Key"]
@@ -192,5 +199,111 @@ class CompleteChoreTest {
         val engine = MockEngine { error("no request expected") }
         val out = ChoreCompleter(Files(), engine = engine).submit(url, "tok", needs, CompletionDraft(1))
         assertTrue(out.result is SubmitOutcome.Result.Failed)
+    }
+
+    private fun uploaded(vararg ids: Pair<String, Long?>) = CompletionDraft(
+        1,
+        photos = ids.map { (c, m) -> CapturedPhoto(c, Instant.parse("2026-05-04T13:00:00Z"), m) },
+    )
+
+    private fun TestScope.discarding(status: HttpStatusCode, calls: MutableList<String>) =
+        ChoreCompleter(
+            Files(),
+            engine = MockEngine { req ->
+                calls += "${req.method.value} ${req.url.encodedPath}"
+                respond("", status)
+            },
+            scope = backgroundScope,
+        )
+
+    @Test
+    fun removingAnUploadedPhotoDiscardsExactlyThatId() = runTest {
+        val calls = mutableListOf<String>()
+        discarding(HttpStatusCode.NoContent, calls)
+            .discardRemoved(url, "tok", uploaded("c1" to 41L, "c2" to 42L), "c2").join()
+        assertEquals(listOf("DELETE /api/v1/media/photos/42"), calls)
+    }
+
+    @Test
+    fun removingAPhotoThatWasNeverUploadedMakesNoCall() = runTest {
+        val calls = mutableListOf<String>()
+        discarding(HttpStatusCode.NoContent, calls).discardRemoved(url, "tok", uploaded("c1" to null), "c1").join()
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test
+    fun droppingADraftDiscardsAllItsUploadedIds() = runTest {
+        val calls = mutableListOf<String>()
+        discarding(HttpStatusCode.NoContent, calls)
+            .discardDropped(url, "tok", uploaded("c1" to 41L, "c2" to null, "c3" to 43L)).join()
+        assertEquals(listOf("DELETE /api/v1/media/photos/41", "DELETE /api/v1/media/photos/43"), calls)
+    }
+
+    @Test
+    fun aSubmittedDraftDiscardsNothing() = runTest {
+        val engine = MockEngine { req ->
+            if (req.url.encodedPath.endsWith("/completion")) respond(instance, HttpStatusCode.OK, json) else respond(media, HttpStatusCode.Created, json)
+        }
+        val completer = ChoreCompleter(Files("c1"), engine = engine, scope = backgroundScope)
+        val out = completer.submit(url, "tok", needs, draft())
+        assertTrue(out.result is SubmitOutcome.Result.Completed)
+        val calls = mutableListOf<String>()
+        discarding(HttpStatusCode.NoContent, calls).discardDropped(url, "tok", out.draft).join()
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test
+    fun notFoundAndConflictCountAsDoneWithoutRetry() = runTest {
+        for (status in listOf(HttpStatusCode.NotFound, HttpStatusCode.Conflict)) {
+            val calls = mutableListOf<String>()
+            discarding(status, calls).discardDropped(url, "tok", uploaded("c1" to 41L)).join()
+            assertEquals(1, calls.size)
+        }
+    }
+
+    @Test
+    fun aNetworkFailureIsRetriedOnceAndNeverThrows() = runTest {
+        var calls = 0
+        val engine = MockEngine {
+            calls++
+            throw IOException("offline")
+        }
+        ChoreCompleter(Files(), engine = engine, scope = backgroundScope)
+            .discardDropped(url, "tok", uploaded("c1" to 41L)).join()
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun serverErrorMakesOneCallAndEndsQuietly() = runTest {
+        val calls = mutableListOf<String>()
+        discarding(HttpStatusCode.InternalServerError, calls).discardDropped(url, "tok", uploaded("c1" to 41L)).join()
+        assertEquals(1, calls.size)
+    }
+
+    @Test
+    fun photosTheServerRefusesAreDiscardedToo() = runTest {
+        val deletes = mutableListOf<String>()
+        val deleted = CompletableDeferred<Unit>()
+        val engine = MockEngine { req ->
+            val path = req.url.encodedPath
+            when {
+                req.method.value == "DELETE" -> {
+                    deletes += path
+                    deleted.complete(Unit)
+                    respond("", HttpStatusCode.NoContent)
+                }
+                path.endsWith("/media/photos") -> respond(media, HttpStatusCode.Created, json)
+                else -> respond(
+                    """{"code":"validation_failed","errors":[{"location":"body.photos[0].capturedAt","message":"too early"}]}""",
+                    HttpStatusCode.UnprocessableEntity,
+                    problem,
+                )
+            }
+        }
+        val out = ChoreCompleter(Files("c1"), engine = engine, scope = backgroundScope).submit(url, "tok", needs, draft())
+        assertTrue(out.draft.photos.isEmpty())
+        // The engine answers on its own threads, so wait in real time.
+        withContext(Dispatchers.Default) { withTimeout(5_000) { deleted.await() } }
+        assertEquals(listOf("/api/v1/media/photos/41"), deletes)
     }
 }

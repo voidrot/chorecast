@@ -12,6 +12,12 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.util.reflect.typeInfo
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 import kotlinx.io.write
 import java.io.IOException
@@ -40,6 +46,8 @@ class ChoreCompleter(
     private val captures: CaptureStore,
     private val keys: IdempotencyKeys = IdempotencyKeys(),
     private val engine: HttpClientEngine? = null,
+    // Outlives any screen, so a discard still runs after the ViewModel that asked for it is cleared.
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     private fun media(url: ServerUrl, token: String) =
         MediaApi(baseUrl = url.apiBase, httpClientEngine = engine, httpClientConfig = ApiClients.config)
@@ -70,11 +78,13 @@ class ChoreCompleter(
             if (resp.success) {
                 keys.clear(current.instanceId)
                 current.photos.forEach { captures.delete(it.captureId) }
-                SubmitOutcome(current, SubmitOutcome.Result.Completed(resp.body()))
+                // The submission now owns the uploads, so none is pending and none may be discarded.
+                val attached = current.withoutMedia(current.photos.map { it.captureId }.toSet())
+                SubmitOutcome(attached, SubmitOutcome.Result.Completed(resp.body()))
             } else {
                 val problem = resp.problem()
                 val error = completionError(resp.status, problem.code, problem.errors.orEmpty().mapNotNull { it.location })
-                failed(current.afterInvalid(error), error)
+                failed(current.afterInvalid(url, token, error), error)
             }
         } catch (e: CancellationException) {
             throw e
@@ -85,17 +95,54 @@ class ChoreCompleter(
         }
     }
 
+    /** Frees the pending upload of [captureId], if [draft] has one. Call it as the photo leaves the draft. */
+    fun discardRemoved(url: ServerUrl, token: String, draft: CompletionDraft, captureId: String): Job =
+        discard(url, token, listOfNotNull(draft.photos.firstOrNull { it.captureId == captureId }?.mediaId))
+
+    /** Frees every pending upload of a [draft] that is being dropped. */
+    fun discardDropped(url: ServerUrl, token: String, draft: CompletionDraft): Job =
+        discard(url, token, draft.photos.mapNotNull { it.mediaId })
+
+    /**
+     * Best effort and in the background: the kid never waits for it or sees it fail. 404 (gone or not
+     * ours) and 409 (already attached) mean there is nothing left to free. A network failure is tried
+     * once more; anything else is left to the server's 24 h expiry.
+     */
+    private fun discard(url: ServerUrl, token: String, mediaIds: List<Long>): Job = scope.launch {
+        mediaIds.forEach { discardOne(url, token, it) }
+    }
+
+    private suspend fun discardOne(url: ServerUrl, token: String, id: Long) {
+        repeat(DISCARD_ATTEMPTS) {
+            try {
+                // Any answer ends it: 2xx, 404 and 409 mean nothing is left to free; other statuses won't change on a retry.
+                media(url, token).discardPhoto(id)
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: IOException) {
+                // network failure: try again after a pause
+                delay(DISCARD_RETRY_DELAY_MS)
+            } catch (_: Exception) {
+                return
+            }
+        }
+    }
+
     /**
      * A photo whose capture the server refuses is dropped, because sending it again would fail the
      * same way; dropping it also changes the body, so the next submit gets a new key. A photo whose
      * upload the server refuses (expired, already used) is uploaded again.
      */
-    private fun CompletionDraft.afterInvalid(error: CompleteError): CompletionDraft {
+    private fun CompletionDraft.afterInvalid(url: ServerUrl, token: String, error: CompleteError): CompletionDraft {
         if (error !is CompleteError.Invalid) return this
         val ids = { indexes: Set<Int> -> indexes.mapNotNull { photos.getOrNull(it)?.captureId }.toSet() }
         val retake = ids(error.retake)
+        val reupload = ids(error.photoIssues - error.retake)
         retake.forEach(captures::delete)
-        return withoutMedia(ids(error.photoIssues - error.retake)).let { d ->
+        // The ids forgotten here may still hold pending slots (a rejected photo stays unattached), so free them.
+        discard(url, token, photos.filter { it.captureId in retake + reupload }.mapNotNull { it.mediaId })
+        return withoutMedia(reupload).let { d ->
             d.copy(photos = d.photos.filterNot { it.captureId in retake })
         }
     }
@@ -137,3 +184,6 @@ class ChoreCompleter(
         Problem(code = "http_$status")
     }
 }
+
+private const val DISCARD_ATTEMPTS = 2
+private const val DISCARD_RETRY_DELAY_MS = 1_500L
