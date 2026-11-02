@@ -247,33 +247,6 @@ func (q *Queries) LatestChoreRotationStateBefore(ctx context.Context, arg Latest
 	return rotation_state, err
 }
 
-const listChoreInstanceMemberIDs = `-- name: ListChoreInstanceMemberIDs :many
-SELECT kid_id FROM chore_instance_members WHERE instance_id = ? ORDER BY kid_id
-`
-
-func (q *Queries) ListChoreInstanceMemberIDs(ctx context.Context, instanceID int64) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listChoreInstanceMemberIDs, instanceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var kid_id int64
-		if err := rows.Scan(&kid_id); err != nil {
-			return nil, err
-		}
-		items = append(items, kid_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listChoreInstanceMembersBetween = `-- name: ListChoreInstanceMembersBetween :many
 SELECT m.instance_id, m.kid_id FROM chore_instance_members m
 JOIN chore_instances i ON i.id = m.instance_id

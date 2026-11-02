@@ -73,9 +73,6 @@ SELECT sqlc.embed(i), c.name AS chore_name FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.id = ?;
 
--- name: ListChoreInstanceMemberIDs :many
-SELECT kid_id FROM chore_instance_members WHERE instance_id = ? ORDER BY kid_id;
-
 -- name: SetChoreInstanceStatus :execrows
 -- Moves an instance from one status to another; 0 rows = it isn't in from_status (any more).
 UPDATE chore_instances SET status = sqlc.arg(to_status), updated_at = sqlc.arg(updated_at)

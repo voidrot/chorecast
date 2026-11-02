@@ -9,7 +9,7 @@
 //
 // open → missed belongs to day close (internal/dayclose), which updates the status itself. When a
 // rejection or reversal reopens an instance whose close has passed already, day close misses it
-// in the same transaction, with its penalty (see missIfClosed).
+// in the same transaction, with its penalty (dayclose.MissInTx; see missIfClosed).
 //
 // Each transition runs inside the caller's transaction, so callers that act on many instances
 // (bulk approve, auto-approve) can call them from their own bus.InTx. A transition checks its
@@ -29,7 +29,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -38,6 +37,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/assign"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/clock"
+	"github.com/voidrot/chorecast/server/internal/dayclose"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/events"
@@ -171,7 +171,7 @@ func load(ctx context.Context, q *sqlc.Queries, id int64) (instance, error) {
 	}
 	in := instance{ChoreInstance: row.ChoreInstance, chore: c}
 	if !in.KidID.Valid {
-		if in.members, err = q.ListChoreInstanceMemberIDs(ctx, id); err != nil {
+		if in.members, err = q.ListChoreInstanceMembers(ctx, id); err != nil {
 			return instance{}, fmt.Errorf("load members: %w", err)
 		}
 	}
@@ -403,75 +403,19 @@ func Reassign(ctx context.Context, tx *events.Tx, clk clock.Clock, id, kidID, by
 	return tx.Emit(ctx, Reassigned{Change: ch, FromKidID: in.KidID.Int64})
 }
 
-// missInTx is day close's miss of one open instance inside the caller's transaction: an atomic
-// open → missed, its penalties and an instance.missed event.
-//
-// TODO(#24): call dayclose.MissInTx (and dayclose.ClosesAt in closePassed) once PR #82 merges.
-// Until then a reopened instance whose close has passed stays open for the next close to miss.
-var missInTx = func(context.Context, *events.Tx, clock.Clock, int64) error { return nil }
-
-// missIfClosed hands a reopened instance to day close when a close that takes it has passed
-// already: the kid can't redo that day, so it's missed now, in the same transaction, instead of
-// waiting open for the next close.
+// missIfClosed hands a reopened instance to day close when the close that takes it has passed
+// already (dayclose.ClosesAt): the kid can't redo that day, so it's missed now, with its penalty,
+// in the same transaction, instead of waiting open for the next close.
 func missIfClosed(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance) error {
-	passed, err := closePassed(ctx, tx.Q, clk, in)
-	if err != nil || !passed {
-		return err
-	}
-	return missInTx(ctx, tx, clk, in.ID)
-}
-
-// closePassed reports whether a close that takes the instance has passed. Day close takes every
-// open instance due by the close: the kid's day or week close for their own, the household day
-// end for shared ones.
-func closePassed(ctx context.Context, q *sqlc.Queries, clk clock.Clock, in instance) (bool, error) {
-	due, err := db.ParseTimestamp(in.DueAt)
+	closes, err := dayclose.ClosesAt(ctx, tx.Q, in.ChoreInstance)
 	if err != nil {
-		return false, fmt.Errorf("instance %d due time: %w", in.ID, err)
+		return fmt.Errorf("instance %d close: %w", in.ID, err)
 	}
-	now := clk.Now()
-	if due.After(now) {
-		return false, nil
+	if closes.After(clk.Now()) {
+		return nil
 	}
-	cal, err := household.Calendar(ctx, q)
-	if err != nil {
-		return false, err
-	}
-	// Shared instances close at the household day end, a kid's at their own.
-	end := cal.DayEnd
-	if in.KidID.Valid {
-		kid, err := q.GetKidByID(ctx, in.KidID.Int64)
-		if err != nil {
-			return false, fmt.Errorf("load kid: %w", err)
-		}
-		if end, err = kidDayEnd(cal, kid); err != nil {
-			return false, err
-		}
-	}
-	// The first close at or after the due time: a kid's flexible instances close at their week
-	// close, everything else at a day close.
-	_, closes := cal.NextDayClose(due.Add(-time.Nanosecond), end)
-	if in.Flexible == 1 && in.KidID.Valid {
-		date, err := caltime.ParseDate(in.OccurrenceDate)
-		if err != nil {
-			return false, fmt.Errorf("instance %d date: %w", in.ID, err)
-		}
-		if closes = cal.WeekClose(date, end); closes.Before(due) {
-			closes = cal.WeekClose(date.AddDays(7), end)
-		}
-	}
-	return !closes.After(now), nil
-}
-
-func kidDayEnd(cal caltime.Household, kid sqlc.User) (caltime.TimeOfDay, error) {
-	if !kid.DayEndOverride.Valid {
-		return cal.DayEnd, nil
-	}
-	t, err := caltime.ParseTimeOfDay(kid.DayEndOverride.String)
-	if err != nil {
-		return caltime.TimeOfDay{}, fmt.Errorf("kid %d day end: %w", kid.ID, err)
-	}
-	return cal.EffectiveDayEnd(&t)
+	_, err = dayclose.MissInTx(ctx, tx, clk, in.ID)
+	return err
 }
 
 // Shares is how an instance's points are credited: all to the assignee, or for a shared instance

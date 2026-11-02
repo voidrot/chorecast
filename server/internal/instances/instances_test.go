@@ -1,7 +1,6 @@
 package instances_test
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
+	"github.com/voidrot/chorecast/server/internal/dayclose"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/events"
@@ -65,7 +65,6 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{t: t, db: d, clk: clk, bus: bus, svc: instances.New(d, bus, clk),
 		chores: chores.New(d, clk, nil), kids: kids.NewService(d, clk, nil)}
 	f.exec("UPDATE household SET allow_negative_balance = 1")
-	instances.SetMissInTx(t, dayCloseMiss)
 	for i, k := range []*int64{&f.sam, &f.ada, &f.kim} {
 		kid, err := f.kids.Create(t.Context(), kids.KidInput{DisplayName: []string{"Sam", "Ada", "Kim"}[i], Color: "#2563eb"})
 		if err != nil {
@@ -124,53 +123,13 @@ func (f *fixture) tx(fn func(tx *events.Tx) error) error {
 	return f.bus.InTx(f.t.Context(), fn)
 }
 
-// dayCloseMiss stands in for dayclose.MissInTx (#24) until it merges, per the wave-2 contract:
-// mark an open instance missed atomically, post each affected kid's penalty dated to the
-// instance's day, and emit instance.missed.
-func dayCloseMiss(ctx context.Context, tx *events.Tx, clk clock.Clock, id int64) error {
-	res, err := tx.Q.GetChoreInstance(ctx, id)
-	if err != nil {
-		return err
-	}
-	in := res.ChoreInstance
-	n, err := tx.Q.SetChoreInstanceStatus(ctx, sqlc.SetChoreInstanceStatusParams{
-		ToStatus: horizon.StatusMissed, UpdatedAt: db.Timestamp(clk.Now()), ID: id, FromStatus: horizon.StatusOpen,
-	})
-	if err != nil || n == 0 {
-		return err
-	}
-	kids := []int64{in.KidID.Int64}
-	if !in.KidID.Valid {
-		if kids, err = tx.Q.ListChoreInstanceMemberIDs(ctx, id); err != nil {
-			return err
-		}
-	}
-	if err := tx.Emit(ctx, missed{instances.Change{InstanceID: id, KidIDs: kids, From: horizon.StatusOpen, To: horizon.StatusMissed}}); err != nil {
-		return err
-	}
-	c, err := tx.Q.GetChore(ctx, in.ChoreID)
-	if err != nil || c.Penalty == 0 || (!in.KidID.Valid && c.SharedPenalty != assign.PenaltyAll) {
-		return err
-	}
-	date, _ := caltime.ParseDate(in.OccurrenceDate)
-	for _, k := range kids {
-		_, err := ledger.Post(ctx, tx, clk, ledger.Posting{KidID: k, Kind: ledger.KindChorePenalty,
-			Amount: -c.Penalty, Source: ledger.Source{Kind: ledger.SourceChoreInstance, ID: id}, LocalDate: date})
-		if err != nil && !errors.Is(err, ledger.ErrAlreadyPosted) {
-			return err
-		}
-	}
-	return nil
-}
-
-type missed struct{ instances.Change }
-
-func (missed) EventType() string { return "instance.missed" }
-
-// miss closes the instance's day, as day close would.
+// miss closes the instance's day, as day close does.
 func (f *fixture) miss(id int64) {
 	f.t.Helper()
-	if err := f.tx(func(tx *events.Tx) error { return dayCloseMiss(f.t.Context(), tx, f.clk, id) }); err != nil {
+	if err := f.tx(func(tx *events.Tx) error {
+		_, err := dayclose.MissInTx(f.t.Context(), tx, f.clk, id)
+		return err
+	}); err != nil {
 		f.t.Fatal(err)
 	}
 }

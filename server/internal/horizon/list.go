@@ -113,7 +113,7 @@ func Instance(ctx context.Context, q *sqlc.Queries, now time.Time, id int64) (Ch
 	if err != nil {
 		return ChoreInstance{}, err
 	}
-	members, err := q.ListChoreInstanceMemberIDs(ctx, id)
+	members, err := q.ListChoreInstanceMembers(ctx, id)
 	if err != nil {
 		return ChoreInstance{}, err
 	}

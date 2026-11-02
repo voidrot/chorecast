@@ -171,11 +171,11 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
   amount, even if the chore's points (or a split's completer) changed in between. `Excuse` reverses every penalty
   tip in effect: the assignee's, or every member's of a shared instance.
 - **Reopening a closed day.** Day close takes every open instance due by the close. When a rejection or approval
-  reversal reopens an instance whose close has already passed (the kid's day or week close for their own
-  instances, the household day end for shared ones), the kid can't redo that day, so the same transaction hands
-  it to day close: it becomes `missed` with its penalty and an `instance.missed` event, after the
-  `instance.rejected` or `instance.unapproved` one, and the parent gets that state back. A parent can still
-  excuse it. While the day is open, it goes back to `open`.
+  reversal reopens an instance whose close has already passed (`dayclose.ClosesAt`: the kid's day or week close
+  for their own instances, the household day end for shared ones), the kid can't redo that day, so the same
+  transaction hands it to day close (`dayclose.MissInTx`): it becomes `missed` with its penalty and an
+  `instance.missed` event, after the `instance.rejected` or `instance.unapproved` one, and the parent gets that
+  state back. A parent can still excuse it. While the day is open, it goes back to `open`.
 - **Completion** records `completed_by` (the kid who did it) and `completed_at`; both stay after a rejection or
   reversal, which is how the horizon knows the instance was touched and keeps it. Kids complete their own
   instances or shared ones they're a member of. A parent completes for a kid and names the kid for a shared
