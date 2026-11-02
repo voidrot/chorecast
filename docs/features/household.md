@@ -59,7 +59,10 @@ the default) and `offlineGraceMinutes` (default 120), and `defaultChoreMinutes` 
 without an estimate). The day end can't move earlier than a kid's override.
 Changing the calendar emits `household.calendar_changed` in the same transaction; the horizon generator (#23)
 subscribes to it. `GET /server/settings` (owners) lists env-backed settings with `source: environment|default`;
-secrets are never returned. Swaps, nomination limits and streak milestones join the settings with their features.
+secrets are never returned. Swaps and nomination limits join the settings with their features.
+`streakMilestones` (#30) is a list of `{days, points}` (at most 20, days 1–3650 and distinct, points 1–100000),
+returned sorted by days. A new household starts with 3/5, 7/15 and 30/50; leaving the field out of a PUT clears it
+(no streak bonuses), like the other optional fields. Streaks are in points.md.
 
 ## Parents
 
