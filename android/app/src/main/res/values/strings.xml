@@ -128,7 +128,21 @@
     <string name="camera_open_settings">Open settings</string>
     <string name="camera_unavailable">The camera couldn\'t be started. Go back and try again.</string>
     <string name="camera_take_photo">Take photo</string>
-    <string name="chore_loading_failed">Couldn\'t load the details.</string>
+    <string name="kid_history_open">History</string>
+    <string name="kid_history_title">Past chores</string>
+    <string name="kid_history_empty">No past chores yet.</string>
+    <string name="kid_history_older">Show older</string>
+    <string name="kid_history_end">That\'s as far back as we can look.</string>
+    <string name="kid_history_failed">Couldn\'t load your past chores.</string>
+    <string name="kid_history_evidence_title">What you handed in</string>
+    <string name="kid_history_evidence_none">Nothing was handed in.</string>
+    <string name="kid_history_evidence_failed">Couldn\'t load what you handed in.</string>
+    <string name="kid_history_note">Note</string>
+    <string name="kid_history_photos">Photos</string>
+    <string name="kid_history_step_done">Done: %1$s</string>
+    <string name="kid_history_step_skipped">Not ticked: %1$s</string>
+    <string name="kid_history_photo_view">Open photo</string>
+    <string name="kid_history_photo_expired">This photo has expired and was removed.</string>
 
     <string name="devices_title">Devices</string>
     <string name="devices_none">No devices paired yet. Pair one from the web admin\'s Devices page.</string>

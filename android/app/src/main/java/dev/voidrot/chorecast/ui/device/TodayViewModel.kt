@@ -2,14 +2,16 @@ package dev.voidrot.chorecast.ui.device
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dev.voidrot.chorecast.api.models.Chore
+import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.core.CapturedPhoto
 import dev.voidrot.chorecast.core.ChoreCompleter
 import dev.voidrot.chorecast.core.CompleteError
 import dev.voidrot.chorecast.core.CompletionDraft
 import dev.voidrot.chorecast.core.CompletionNeeds
+import dev.voidrot.chorecast.core.EvidenceView
 import dev.voidrot.chorecast.core.Fetch
 import dev.voidrot.chorecast.core.KidChores
+import dev.voidrot.chorecast.core.KidHistory
 import dev.voidrot.chorecast.core.KidToday
 import dev.voidrot.chorecast.core.ServerUrl
 import dev.voidrot.chorecast.data.FileCaptureStore
@@ -17,6 +19,9 @@ import dev.voidrot.chorecast.core.PhotoProblem
 import dev.voidrot.chorecast.core.SubmitOutcome
 import dev.voidrot.chorecast.core.TodayChore
 import dev.voidrot.chorecast.core.completionNeeds
+import dev.voidrot.chorecast.core.firstHistory
+import dev.voidrot.chorecast.core.latestHistoryRange
+import dev.voidrot.chorecast.core.latestView
 import dev.voidrot.chorecast.core.isTodayStale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +30,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
 
 sealed interface TodayError {
     data class Offline(val reason: String) : TodayError
@@ -44,10 +50,6 @@ data class TodayState(
     val today: KidToday? = null,
     /** The instance whose details are open. */
     val selected: Long? = null,
-    /** Chores read on demand when the list didn't have them. */
-    val fetchedChores: Map<Long, Chore> = emptyMap(),
-    /** The chore whose last read failed, so a failure doesn't carry over to another chore. */
-    val failedChoreId: Long? = null,
     /** What the kid has put together for each instance, kept until it is accepted. */
     val drafts: Map<Long, CompletionDraft> = emptyMap(),
     /** The complete form is open for the selected chore. */
@@ -57,21 +59,36 @@ data class TodayState(
     val submitting: Boolean = false,
     /** Why the last submit failed. Cleared by the next submit or by [TodayViewModel.dismissCompleteError]. */
     val completeError: CompleteError? = null,
+    val history: HistoryState = HistoryState(),
 ) {
     val selectedDraft: CompletionDraft? get() = selected?.let { drafts[it] }
 
-    /** What the selected chore asks the kid to hand in. Null until the chore has been read. */
-    val selectedNeeds: CompletionNeeds? get() = selectedChoreDetails?.completionNeeds()
+    /** What the selected chore asks the kid to hand in; the instance carries the chore's steps and rules. */
+    val selectedNeeds: CompletionNeeds? get() = selectedChore?.instance?.completionNeeds()
 
     val selectedChore: TodayChore? get() = selected?.let { today?.plan?.find(it) }
-
-    val choreFailed: Boolean
-        get() = failedChoreId != null && failedChoreId == selectedChore?.instance?.choreId
-
-    /** The open instance's chore: steps, evidence rules, description. Null until it has been read. */
-    val selectedChoreDetails: Chore?
-        get() = selectedChore?.instance?.choreId?.let { fetchedChores[it] ?: today?.chores?.get(it) }
 }
+
+/** What opening a past chore shows. The photo links are signed and short-lived, so they are read on every open. */
+sealed interface EvidenceLoad {
+    data object Loading : EvidenceLoad
+
+    /** [view] is null when nothing was submitted (a missed or excused chore). */
+    data class Loaded(val view: EvidenceView?) : EvidenceLoad
+    data class Failed(val error: TodayError) : EvidenceLoad
+}
+
+/** The kid's history screen: finished chores back in time, and the one opened for its evidence. */
+data class HistoryState(
+    val open: Boolean = false,
+    /** Null until the first page has loaded. */
+    val history: KidHistory? = null,
+    val loading: Boolean = false,
+    /** The last page failed; with [history] present the loaded pages stay visible. */
+    val error: TodayError? = null,
+    val selected: ChoreInstance? = null,
+    val evidence: EvidenceLoad = EvidenceLoad.Loading,
+)
 
 /**
  * A kid's today list, points and streak, and the chore details opened from it. One per kid session
@@ -85,11 +102,14 @@ class TodayViewModel(
     private val kidId: Long,
     private val token: String,
     private val now: () -> Instant = Instant::now,
+    private val today: () -> LocalDate = LocalDate::now,
 ) : ViewModel() {
     private val _state = MutableStateFlow(TodayState())
     val state: StateFlow<TodayState> = _state.asStateFlow()
     private var refreshJob: Job? = null
     private var loadedAt: Instant? = null
+    private var historyJob: Job? = null
+    private var evidenceJob: Job? = null
 
     init {
         captures.clearAll()
@@ -130,26 +150,75 @@ class TodayViewModel(
         if (isTodayStale(loadedAt, now())) refresh()
     }
 
-    /** Opens a chore's details, reading the chore again so the steps and evidence rules are current. */
+    /** Opens a chore's details. The instance already carries its steps and evidence rules. */
     fun open(instanceId: Long) {
-        val choreId = _state.value.today?.plan?.find(instanceId)?.instance?.choreId ?: return
-        _state.update {
-            it.copy(selected = instanceId, failedChoreId = null, completing = false, cameraOpen = false, completeError = null)
-        }
-        viewModelScope.launch {
-            when (val result = client.chore(url, token, choreId)) {
-                is Fetch.Ok -> _state.update {
-                    it.copy(
-                        fetchedChores = it.fetchedChores + (choreId to result.value),
-                        failedChoreId = it.failedChoreId.takeIf { failed -> failed != choreId },
-                    )
-                }
-                else -> _state.update { it.copy(failedChoreId = choreId) }
+        if (_state.value.today?.plan?.find(instanceId) == null) return
+        _state.update { it.copy(selected = instanceId, completing = false, cameraOpen = false, completeError = null) }
+    }
+
+    fun close() = _state.update { it.copy(selected = null, completing = false, cameraOpen = false, completeError = null) }
+
+    // History: finished chores, paged backwards by date range.
+
+    fun openHistory() {
+        _state.update { it.copy(history = it.history.copy(open = true)) }
+        if (_state.value.history.history == null && _state.value.history.error == null) loadHistory()
+    }
+
+    fun closeHistory() {
+        evidenceJob?.cancel()
+        _state.update { it.copy(history = it.history.copy(open = false, selected = null)) }
+    }
+
+    /** Retry after a failed first page. */
+    fun retryHistory() = loadHistory()
+
+    /** Loads the first page, or the one before the oldest loaded. A load that is running is left alone. */
+    fun loadHistory() {
+        if (historyJob?.isActive == true) return
+        val loaded = _state.value.history.history
+        val range = loaded?.oldest?.older() ?: latestHistoryRange(today())
+        _state.update { it.copy(history = it.history.copy(loading = true, error = null)) }
+        historyJob = viewModelScope.launch {
+            val result = client.instancesIn(url, token, kidId, range)
+            _state.update { st ->
+                val h = st.history.copy(loading = false)
+                st.copy(
+                    history = when (result) {
+                        is Fetch.Ok -> h.copy(history = loaded?.withOlder(range, result.value) ?: firstHistory(range, result.value))
+                        else -> h.copy(error = result.toTodayError())
+                    },
+                )
             }
         }
     }
 
-    fun close() = _state.update { it.copy(selected = null, completing = false, cameraOpen = false, completeError = null) }
+    /** Opens a past chore and reads its evidence again, since the photo links expire. */
+    fun openHistoryChore(instance: ChoreInstance) {
+        evidenceJob?.cancel()
+        _state.update { it.copy(history = it.history.copy(selected = instance, evidence = EvidenceLoad.Loading)) }
+        evidenceJob = viewModelScope.launch {
+            val result = client.evidence(url, token, instance.id)
+            val load = when (result) {
+                is Fetch.Ok -> EvidenceLoad.Loaded(result.value.latestView(instance.steps.orEmpty()))
+                else -> EvidenceLoad.Failed(result.toTodayError())
+            }
+            _state.update { it.copy(history = it.history.copy(evidence = load)) }
+        }
+    }
+
+    fun closeHistoryChore() {
+        evidenceJob?.cancel()
+        _state.update { it.copy(history = it.history.copy(selected = null)) }
+    }
+
+    private fun Fetch<*>.toTodayError(): TodayError = when (this) {
+        Fetch.Unauthorized -> TodayError.SignedOut
+        is Fetch.Unreachable -> TodayError.Offline(reason)
+        is Fetch.Failed -> TodayError.Failed(code)
+        Fetch.NotFound -> TodayError.Failed("http_404")
+        is Fetch.Ok -> error("not an error")
+    }
 
     // The complete flow. Drafts live here, in the session's ViewModelStore, so a rotation keeps them.
 
