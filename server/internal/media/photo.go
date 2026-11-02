@@ -323,8 +323,8 @@ func (i jpegInfo) rgb() bool {
 // jpegHeader walks the file's markers up to the end of image the way the stdlib decoder's marker
 // loop does, since it decides RGB from the JFIF and Adobe markers it has seen by then, wherever
 // they are: bytes before a 0xFF are skipped, as is "\xff\x00", and runs of 0xFF are fill bytes.
-// Entropy-coded data after a start of scan holds no markers but restarts and "\xff\x00", so
-// walking through it finds the marker the decoder reads next. It records the start of frame
+// Entropy-coded data after a start of scan holds no markers but restarts, "\xff\x00" and, before
+// a restart, fill bytes, so walking through it finds the marker the decoder reads next. It records the start of frame
 // (progressive, each component's id and sampling factors) and the last JFIF (APP0) and Adobe
 // (APP14) values. It stops where the decoder would fail, which then never converts to RGB, and
 // returns no components if there is no valid SOF.
@@ -340,15 +340,17 @@ func jpegHeader(data []byte) jpegInfo {
 		i += ff + 1
 		m := data[i]
 		i++
-		if m == 0x00 {
-			continue
-		}
 		for m == 0xFF {
 			if i >= len(data) {
 				return info
 			}
 			m = data[i]
 			i++
+		}
+		// "\xff\x00" is skipped, and so is "\xff\xff…\x00": the decoder's restart resync (findRST)
+		// takes it as fill bytes and a stuffed byte, where its marker loop would fail instead.
+		if m == 0x00 {
+			continue
 		}
 		if m == 0xD9 { // end of image
 			return info
