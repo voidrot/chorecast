@@ -172,12 +172,18 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	target := filepath.Join(t.TempDir(), "data")
-	m, err := backup.Restore(t.Context(), out, target, false)
+	m, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m.MediaFiles != 3 {
 		t.Errorf("restored manifest: %+v", m)
+	}
+	entries, _ := os.ReadDir(target)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".restore-") || e.Name() == db.RestoreMarkerName {
+			t.Errorf("a successful restore left %s behind", e.Name())
+		}
 	}
 	if got, want := tableCounts(t, target), tableCounts(t, src); !equalCounts(got, want) {
 		t.Errorf("row counts after restore:\n got  %v\n want %v", got, want)
@@ -290,9 +296,22 @@ func TestScheduledBackup(t *testing.T) {
 	if got := step(firstAt); len(got) != 1 || got[0] != backup.FileName(firstAt) {
 		t.Fatalf("at day end + 1 h: %v, want %s", got, backup.FileName(firstAt))
 	}
-	// A retry of the same occurrence keeps the backup it already wrote.
+	// A retry of the same occurrence keeps the backup it already wrote, byte for byte, even though
+	// the data and the clock have moved on.
+	first := filepath.Join(backups, backup.FileName(firstAt))
+	before, err := os.ReadFile(first) //nolint:gosec // test file
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SQL.ExecContext(t.Context(), `UPDATE household SET name = 'Changed'`); err != nil {
+		t.Fatal(err)
+	}
+	clk.Advance(time.Minute)
 	if err := svc.Run(t.Context(), firstAt, log); err != nil {
 		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(first); !bytes.Equal(before, after) { //nolint:gosec // test file
+		t.Error("a retry rewrote the existing backup")
 	}
 	// Ten more days, one tick each: still only the newest seven.
 	var got []string
@@ -320,13 +339,13 @@ func TestRestoreRefusesWhileServerHoldsLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := backup.Restore(t.Context(), out, target, true); !errors.Is(err, db.ErrDataDirLocked) {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Force: true}); !errors.Is(err, db.ErrDataDirLocked) {
 		t.Fatalf("restore while locked: %v, want ErrDataDirLocked", err)
 	}
 	if err := lock.Unlock(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := backup.Restore(t.Context(), out, target, false); err != nil {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); err != nil {
 		t.Fatalf("restore after unlock: %v", err)
 	}
 }
@@ -345,13 +364,13 @@ func TestRestoreRefusesDataDirWithData(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := mediaHashes(t, src)
-	if _, err := backup.Restore(t.Context(), out, src, false); !errors.Is(err, backup.ErrNotEmpty) {
+	if _, err := backup.Restore(t.Context(), out, src, backup.RestoreOptions{}); !errors.Is(err, backup.ErrNotEmpty) {
 		t.Fatalf("restore over data: %v, want ErrNotEmpty", err)
 	}
 	if got := mediaHashes(t, src); !equalCounts(got, before) {
 		t.Error("a refused restore changed the media")
 	}
-	if _, err := backup.Restore(t.Context(), out, src, true); err != nil {
+	if _, err := backup.Restore(t.Context(), out, src, backup.RestoreOptions{Force: true}); err != nil {
 		t.Fatalf("forced restore: %v", err)
 	}
 	store, err := db.Open(t.Context(), src)
@@ -376,7 +395,7 @@ func TestRestoreRefusesNewerSchema(t *testing.T) {
 	}
 	out := writeBackup(t, src, clk)
 	target := t.TempDir()
-	if _, err := backup.Restore(t.Context(), out, target, false); !errors.Is(err, backup.ErrNewerSchema) {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrNewerSchema) {
 		t.Fatalf("restore newer schema: %v, want ErrNewerSchema", err)
 	}
 	assertUntouched(t, target)
@@ -389,7 +408,7 @@ func TestRestoreRefusesNewerSchema(t *testing.T) {
 		}
 		return editManifest(t, body, func(m *backup.Manifest) { m.SchemaVersion = 999 })
 	})
-	if _, err := backup.Restore(t.Context(), out, target, false); !errors.Is(err, backup.ErrNewerSchema) {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrNewerSchema) {
 		t.Fatalf("restore with a newer manifest: %v, want ErrNewerSchema", err)
 	}
 }
@@ -420,7 +439,7 @@ func TestRestoreMigratesOlderSchema(t *testing.T) {
 		{hdr: tar.Header{Name: "manifest.json", Typeflag: tar.TypeReg}, body: manifest},
 	})
 	target := t.TempDir()
-	if _, err := backup.Restore(t.Context(), out, target, false); err != nil {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	conn, err = sql.Open("sqlite", "file:"+filepath.Join(target, db.FileName)+"?mode=ro")
@@ -463,7 +482,7 @@ func TestRestoreRefusesUnsafeEntries(t *testing.T) {
 			out := buildArchive(t, entries)
 			parent := t.TempDir()
 			target := filepath.Join(parent, "data")
-			if _, err := backup.Restore(t.Context(), out, target, false); !errors.Is(err, backup.ErrInvalidArchive) {
+			if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrInvalidArchive) {
 				t.Fatalf("restore: %v, want ErrInvalidArchive", err)
 			}
 			for _, p := range []string{filepath.Join(parent, "evil"), "/tmp/evil"} {
@@ -478,7 +497,7 @@ func TestRestoreRefusesUnsafeEntries(t *testing.T) {
 	t.Run("duplicate entry", func(t *testing.T) {
 		out := buildArchive(t, append(good, good[0]))
 		target := t.TempDir()
-		if _, err := backup.Restore(t.Context(), out, target, false); !errors.Is(err, backup.ErrInvalidArchive) {
+		if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrInvalidArchive) {
 			t.Fatalf("restore: %v, want ErrInvalidArchive", err)
 		}
 	})
@@ -523,7 +542,7 @@ func TestRestoreRefusesCorruptArchive(t *testing.T) {
 	for name, archive := range cases {
 		t.Run(name, func(t *testing.T) {
 			target := t.TempDir()
-			if _, err := backup.Restore(t.Context(), archive, target, false); !errors.Is(err, backup.ErrInvalidArchive) {
+			if _, err := backup.Restore(t.Context(), archive, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrInvalidArchive) {
 				t.Fatalf("restore: %v, want ErrInvalidArchive", err)
 			}
 			assertUntouched(t, target)
@@ -536,7 +555,7 @@ func assertUntouched(t *testing.T, dir string) {
 	t.Helper()
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
-		if e.Name() != db.LockFileName {
+		if e.Name() != db.LockFileName && e.Name() != db.RestoreLockFileName {
 			t.Errorf("a refused restore left %s in the data dir", e.Name())
 		}
 	}

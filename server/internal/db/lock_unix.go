@@ -10,26 +10,29 @@ import (
 	"syscall"
 )
 
-// DataDirLock is an exclusive lock on a data dir. The kernel releases it when the process exits,
-// even after a crash, so a stale lock file never blocks anything.
+// DataDirLock is a lock on a file in the data dir (flock). The kernel releases it when the process
+// exits, even after a crash, so a stale lock file never blocks anything.
 type DataDirLock struct{ f *os.File }
 
-// LockDataDir takes the data dir's exclusive lock without waiting, creating the dir if needed.
-// It returns ErrDataDirLocked when another process holds it.
-func LockDataDir(dataDir string) (*DataDirLock, error) {
+// lockFile takes the lock on dataDir/name without waiting, creating the dir if needed.
+func lockFile(dataDir, name string, exclusive bool) (*DataDirLock, error) {
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
-	f, err := os.OpenFile(filepath.Join(dataDir, LockFileName), os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // fixed name inside the configured data dir
+	f, err := os.OpenFile(filepath.Join(dataDir, name), os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // fixed name inside the configured data dir
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil { //nolint:gosec // a file descriptor fits in an int
+	how := syscall.LOCK_SH
+	if exclusive {
+		how = syscall.LOCK_EX
+	}
+	if err := syscall.Flock(int(f.Fd()), how|syscall.LOCK_NB); err != nil { //nolint:gosec // a file descriptor fits in an int
 		_ = f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
 			return nil, ErrDataDirLocked
 		}
-		return nil, fmt.Errorf("lock data dir: %w", err)
+		return nil, fmt.Errorf("lock %s: %w", name, err)
 	}
 	return &DataDirLock{f: f}, nil
 }

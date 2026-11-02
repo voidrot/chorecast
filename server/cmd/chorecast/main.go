@@ -79,17 +79,11 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Held until exit, so a restore can't replace the database under a running server (and two
-	// servers can't share a data dir). Taken before Open, which migrates.
-	lock, err := db.LockDataDir(cfg.DataDir)
-	if err != nil {
-		return fmt.Errorf("%s: %w", cfg.DataDir, err)
-	}
-	defer func() { _ = lock.Unlock() }()
-	store, err := db.Open(ctx, cfg.DataDir)
+	lock, store, err := openServerDataDir(ctx, cfg.DataDir)
 	if err != nil {
 		return err
 	}
+	defer func() { _ = lock.Unlock() }()
 	defer func() { _ = store.Close() }()
 
 	clk := clock.Real{}
@@ -145,6 +139,26 @@ func serve() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// openServerDataDir takes the data dir lock, held until exit so a restore can't replace the
+// database under a running server and two servers can't share a data dir, then refuses a data
+// dir an interrupted restore left mixed, and only then opens (and migrates) the database.
+func openServerDataDir(ctx context.Context, dataDir string) (*db.DataDirLock, *db.DB, error) {
+	lock, err := db.LockDataDir(dataDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", dataDir, err)
+	}
+	if err := db.CheckRestoreMarker(dataDir); err != nil {
+		_ = lock.Unlock()
+		return nil, nil, err
+	}
+	store, err := db.Open(ctx, dataDir)
+	if err != nil {
+		_ = lock.Unlock()
+		return nil, nil, err
+	}
+	return lock, store, nil
 }
 
 // publicBase is the server's URL for printed links: CHORECAST_PUBLIC_URL, or localhost on the

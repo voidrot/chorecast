@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,27 +26,66 @@ var (
 	ErrNewerSchema = errors.New("backup: the backup's schema is newer than this binary")
 	// ErrNotEmpty means the data dir already holds a database or media; restoring needs force.
 	ErrNotEmpty = errors.New("backup: the data dir already has data")
+	// ErrTooLarge means the archive would extract to more than the restore may write.
+	ErrTooLarge = errors.New("backup: the archive is larger than the space a restore may use")
+	// ErrLinkedData means the data dir's database or media is a symlink or a mount point, which a
+	// restore would replace with a plain file or directory.
+	ErrLinkedData = errors.New("backup: the database or media in the data dir is a symlink or a mount point")
 )
 
-const maxManifestBytes = 1 << 20
+const (
+	maxManifestBytes = 1 << 20
+	// maxMediaEntryBytes caps one media file; photos are capped far lower at upload.
+	maxMediaEntryBytes = 1 << 30
+	// freeSpaceMargin is left free on the data disk when the restore budget comes from free space.
+	freeSpaceMargin = 256 << 20
+	copyChunk       = 1 << 20
+	stagePrefix     = ".restore-"
+)
 
-// Restore replaces the database and media in dataDir with the archive's. It holds the data dir
-// lock throughout, so it refuses to run while a server uses dataDir (db.ErrDataDirLocked). Without
-// force it refuses a data dir that already has data (ErrNotEmpty).
+// RestoreOptions tune Restore.
+type RestoreOptions struct {
+	// Force replaces a data dir that already has data.
+	Force bool
+	// MaxBytes caps what the restore extracts in total. Zero means the free space on the data
+	// dir's disk minus a 256 MiB margin.
+	MaxBytes int64
+}
+
+// Restore replaces the database and media in dataDir with the archive's.
 //
-// The archive is extracted to a staging dir inside dataDir and checked there: only a manifest,
-// the database and media files in the storage layout are accepted, every row count and media
-// total must match the manifest, and the schema must not be newer than this binary's (an older
-// one is migrated). Only then is the existing data moved aside and the restored data moved in, so
-// a refused or failed restore leaves dataDir as it was. Backups in dataDir/backups are never
-// touched.
-func Restore(ctx context.Context, archive, dataDir string, force bool) (Manifest, error) {
+// It holds the data dir lock, so it refuses while a server uses dataDir, and the restore lock, so
+// it refuses while an admin or backup command runs (db.ErrDataDirLocked). It refuses while an
+// interrupted restore's marker exists (db.ErrRestoreInterrupted), when the database or media is a
+// symlink or mount point (ErrLinkedData), and, without opts.Force, a data dir that already has
+// data (ErrNotEmpty).
+//
+// The archive is extracted to a staging dir inside dataDir within the size budget (ErrTooLarge),
+// and checked there: only a manifest, the database and media files in the storage layout are
+// accepted, every row count and media total must match the manifest, and the schema must not be
+// newer than this binary's (an older one is migrated). Only then is a marker written, the
+// existing data moved aside and the restored data moved in. If a move fails, the moves are
+// undone; if undoing fails too, the staging dir and the marker are kept and the error names where
+// the old data is. Backups in dataDir/backups are never touched.
+func Restore(ctx context.Context, archive, dataDir string, opts RestoreOptions) (Manifest, error) {
 	lock, err := db.LockDataDir(dataDir)
 	if err != nil {
-		return Manifest{}, err
+		return Manifest{}, fmt.Errorf("%w: a server or another restore is using %s; stop it first", err, dataDir)
 	}
 	defer func() { _ = lock.Unlock() }()
-	if !force {
+	restoreLock, err := db.LockRestore(dataDir)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("%w: an admin or backup command is using %s; wait for it", err, dataDir)
+	}
+	defer func() { _ = restoreLock.Unlock() }()
+	if err := db.CheckRestoreMarker(dataDir); err != nil {
+		return Manifest{}, err
+	}
+	removeStaleStages(dataDir) // with no marker, they are leftovers of a crash after the swap
+	if err := checkLayout(dataDir); err != nil {
+		return Manifest{}, err
+	}
+	if !opts.Force {
 		has, err := hasData(dataDir)
 		if err != nil {
 			return Manifest{}, err
@@ -54,14 +94,23 @@ func Restore(ctx context.Context, archive, dataDir string, force bool) (Manifest
 			return Manifest{}, fmt.Errorf("%w: %s (use --force to replace it)", ErrNotEmpty, dataDir)
 		}
 	}
+	budget, err := restoreBudget(dataDir, opts.MaxBytes)
+	if err != nil {
+		return Manifest{}, err
+	}
 
-	stage, err := os.MkdirTemp(dataDir, ".restore-*")
+	stage, err := os.MkdirTemp(dataDir, stagePrefix+"*")
 	if err != nil {
 		return Manifest{}, fmt.Errorf("backup: create staging dir: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(stage) }()
+	keepStage := false
+	defer func() {
+		if !keepStage {
+			_ = os.RemoveAll(stage)
+		}
+	}()
 	restored := filepath.Join(stage, "new")
-	m, got, err := extract(ctx, archive, restored)
+	m, got, err := extract(ctx, archive, restored, budget)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -76,10 +125,25 @@ func Restore(ctx context.Context, archive, dataDir string, force bool) (Manifest
 	if err := store.Close(); err != nil {
 		return Manifest{}, err
 	}
-	if err := swap(dataDir, restored, filepath.Join(stage, "old")); err != nil {
+
+	old := filepath.Join(stage, "old")
+	if err := db.WriteRestoreMarker(dataDir, old); err != nil {
 		return Manifest{}, err
 	}
-	syncDir(dataDir)
+	stranded, err := swap(dataDir, restored, old)
+	if stranded {
+		keepStage = true
+		return Manifest{}, fmt.Errorf("backup: restore failed and undoing it failed too; previous data that "+
+			"wasn't moved back is in %s, and %s blocks the server until you sort it out: %w",
+			old, filepath.Join(dataDir, db.RestoreMarkerName), err)
+	}
+	if rmErr := db.RemoveRestoreMarker(dataDir); rmErr != nil {
+		keepStage = true // the marker still names the old data
+		return Manifest{}, errors.Join(err, rmErr)
+	}
+	if err != nil {
+		return Manifest{}, err // undone: dataDir is as it was
+	}
 	return m, nil
 }
 
@@ -104,6 +168,61 @@ func hasData(dataDir string) (bool, error) {
 	return len(entries) > 0, err
 }
 
+// checkLayout refuses a database or media dir that is a symlink or a mount point: the swap would
+// move the link or mount aside and put plain files in the data dir instead of where they live.
+func checkLayout(dataDir string) error {
+	dirInfo, err := os.Stat(dataDir)
+	if err != nil {
+		return err
+	}
+	for _, n := range []string{db.FileName, mediaDirName} {
+		p := filepath.Join(dataDir, n)
+		info, err := os.Lstat(p)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %s is a symlink; restore into a data dir that holds the files themselves", ErrLinkedData, p)
+		}
+		if otherDevice(info, dirInfo) {
+			return fmt.Errorf("%w: %s is a mount point; restore into a data dir that holds the files themselves", ErrLinkedData, p)
+		}
+	}
+	return nil
+}
+
+// removeStaleStages deletes staging dirs a crashed restore left behind. Only called with the
+// locks held and no marker, so none belongs to a running or interrupted swap.
+func removeStaleStages(dataDir string) {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), stagePrefix) {
+			_ = os.RemoveAll(filepath.Join(dataDir, e.Name()))
+		}
+	}
+}
+
+// restoreBudget is how many bytes a restore may extract: max if set, otherwise the free space on
+// dataDir's disk minus a margin.
+func restoreBudget(dataDir string, maxBytes int64) (int64, error) {
+	if maxBytes > 0 {
+		return maxBytes, nil
+	}
+	free, ok := freeBytes(dataDir)
+	if !ok {
+		return math.MaxInt64, nil // shortcut: no free-space check outside unix; pass MaxBytes there
+	}
+	if free <= freeSpaceMargin {
+		return 0, fmt.Errorf("%w: only %d bytes free in %s", ErrTooLarge, free, dataDir)
+	}
+	return free - freeSpaceMargin, nil
+}
+
 // totals is what extraction found, to check against the manifest.
 type totals struct{ mediaFiles, mediaBytes int64 }
 
@@ -111,10 +230,10 @@ func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalidArchive, fmt.Sprintf(format, args...))
 }
 
-// extract unpacks archive into dir, accepting only regular files at the paths a backup has.
-// Anything else, such as a symlink, a hard link, an absolute path or one with "..", is refused
-// before it is written.
-func extract(ctx context.Context, archive, dir string) (Manifest, totals, error) {
+// extract unpacks archive into dir, accepting only regular files at the paths a backup has, and
+// at most budget bytes in all. Anything else, such as a symlink, a hard link, a sparse file, an
+// absolute path or one with "..", is refused before it is written.
+func extract(ctx context.Context, archive, dir string, budget int64) (Manifest, totals, error) {
 	var m Manifest
 	var got totals
 	f, err := os.Open(archive) //nolint:gosec // the operator names the archive to restore
@@ -148,6 +267,13 @@ func extract(ctx context.Context, archive, dir string) (Manifest, totals, error)
 		if hdr.Typeflag != tar.TypeReg {
 			return m, got, invalid("entry %q is not a regular file", name)
 		}
+		// The tar reader expands sparse files to their full size: a few hundred bytes of archive
+		// can claim gigabytes. Backups never contain them.
+		for k := range hdr.PAXRecords {
+			if strings.HasPrefix(k, "GNU.sparse.") {
+				return m, got, invalid("entry %q is a sparse file", name)
+			}
+		}
 		isMedia := strings.HasPrefix(name, mediaDirName+"/") && validMediaPath(strings.TrimPrefix(name, mediaDirName+"/"))
 		if (name != manifestName && name != db.FileName && !isMedia) || !filepath.IsLocal(name) {
 			return m, got, invalid("unexpected entry %q", name)
@@ -166,7 +292,14 @@ func extract(ctx context.Context, archive, dir string) (Manifest, totals, error)
 			}
 			continue
 		}
-		if err := writeEntry(filepath.Join(dir, filepath.FromSlash(name)), tr, hdr.Size); err != nil {
+		if isMedia && hdr.Size > maxMediaEntryBytes {
+			return m, got, invalid("media entry %q is %d bytes", name, hdr.Size)
+		}
+		if hdr.Size > budget {
+			return m, got, fmt.Errorf("%w: %q alone needs %d more bytes than the %d left", ErrTooLarge, name, hdr.Size-budget, budget)
+		}
+		budget -= hdr.Size
+		if err := writeEntry(ctx, filepath.Join(dir, filepath.FromSlash(name)), tr, hdr.Size); err != nil {
 			return m, got, err
 		}
 		if isMedia {
@@ -187,8 +320,9 @@ func extract(ctx context.Context, archive, dir string) (Manifest, totals, error)
 	return m, got, nil
 }
 
-// writeEntry writes exactly size bytes from r to a new file at path.
-func writeEntry(path string, r io.Reader, size int64) error {
+// writeEntry writes exactly size bytes from r to a new file at path, in chunks so a cancelled
+// ctx stops a large entry.
+func writeEntry(ctx context.Context, path string, r io.Reader, size int64) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
@@ -197,8 +331,15 @@ func writeEntry(path string, r io.Reader, size int64) error {
 		return err
 	}
 	defer func() { _ = out.Close() }()
-	if _, err := io.CopyN(out, r, size); err != nil {
-		return invalid("read %s: %v", filepath.Base(path), err)
+	for left := size; left > 0; {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, err := io.CopyN(out, r, min(left, copyChunk))
+		if err != nil {
+			return invalid("read %s: %v", filepath.Base(path), err)
+		}
+		left -= n
 	}
 	if err := out.Sync(); err != nil {
 		return err
@@ -250,36 +391,43 @@ func verify(ctx context.Context, dir string, m Manifest, got totals) error {
 }
 
 // swap moves dataDir's current data into old, then the restored data from restored into dataDir.
-// If a step fails it moves everything back.
-func swap(dataDir, restored, old string) (err error) {
+// If a step fails it undoes the moves made so far and returns the error. stranded reports that
+// undoing failed, so the data dir is a mix and some previous data may still be in old; the error
+// then includes why.
+func swap(dataDir, restored, old string) (stranded bool, err error) {
 	if err := os.Mkdir(old, 0o750); err != nil {
-		return err
+		return false, err
 	}
 	var movedOut, movedIn []string
-	defer func() {
-		if err == nil {
-			return
-		}
+	undo := func(cause error) (bool, error) {
+		errs := []error{cause}
 		for _, n := range movedIn {
-			_ = os.RemoveAll(filepath.Join(dataDir, n))
+			if err := rename(filepath.Join(dataDir, n), filepath.Join(restored, n)); err != nil {
+				errs = append(errs, fmt.Errorf("undo: move restored %s back out: %w", n, err))
+			}
 		}
 		for _, n := range movedOut {
-			_ = os.Rename(filepath.Join(old, n), filepath.Join(dataDir, n))
+			if err := rename(filepath.Join(old, n), filepath.Join(dataDir, n)); err != nil {
+				errs = append(errs, fmt.Errorf("undo: move previous %s back: %w", n, err))
+			}
 		}
-	}()
+		// Any failed undo step leaves the data dir mixed, so the marker must stay.
+		return len(errs) > 1, errors.Join(errs...)
+	}
 	for _, n := range dataNames {
-		if err := os.Rename(filepath.Join(dataDir, n), filepath.Join(old, n)); err == nil {
+		if err := rename(filepath.Join(dataDir, n), filepath.Join(old, n)); err == nil {
 			movedOut = append(movedOut, n)
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("backup: move aside %s: %w", n, err)
+			return undo(fmt.Errorf("backup: move aside %s: %w", n, err))
 		}
 	}
 	for _, n := range dataNames {
-		if err := os.Rename(filepath.Join(restored, n), filepath.Join(dataDir, n)); err == nil {
+		if err := rename(filepath.Join(restored, n), filepath.Join(dataDir, n)); err == nil {
 			movedIn = append(movedIn, n)
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("backup: move in %s: %w", n, err)
+			return undo(fmt.Errorf("backup: move in %s: %w", n, err))
 		}
 	}
-	return nil
+	syncDir(dataDir)
+	return false, nil
 }

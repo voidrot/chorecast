@@ -38,6 +38,7 @@ const (
 	manifestName = "manifest.json"
 	mediaDirName = "media"
 	fileStamp    = "20060102T150405Z"
+	workPrefix   = ".chorecast-backup-"
 )
 
 // ErrExists means the output file already exists; Write never replaces one.
@@ -71,8 +72,8 @@ func FileName(t time.Time) string { return "chorecast-" + t.UTC().Format(fileSta
 var fileNamePattern = regexp.MustCompile(`^chorecast-\d{8}T\d{6}Z\.tar\.gz$`)
 
 // Write archives the database and media in dataDir to out. It writes a temporary file next to out
-// and renames it into place, so out is either absent or a complete archive. It returns ErrExists
-// if out already exists.
+// and hard-links it into place, so out is either absent or a complete archive. It returns
+// ErrExists if out already exists, also when another writer creates it first.
 //
 // The snapshot is taken on a connection of its own, so the server's connection is never blocked:
 // in WAL mode VACUUM INTO is a reader, and writers carry on while it runs.
@@ -89,9 +90,10 @@ func Write(ctx context.Context, dataDir, out string, clk clock.Clock) (Result, e
 	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return Result{}, fmt.Errorf("backup: create %s: %w", outDir, err)
 	}
+	removeStaleWork(outDir, clk.Now())
 	// Everything temporary lives in one directory next to out (not /tmp, which is often RAM on a
 	// Pi), removed whatever happens.
-	work, err := os.MkdirTemp(outDir, ".chorecast-backup-*")
+	work, err := os.MkdirTemp(outDir, workPrefix+"*")
 	if err != nil {
 		return Result{}, fmt.Errorf("backup: create work dir: %w", err)
 	}
@@ -128,16 +130,69 @@ func Write(ctx context.Context, dataDir, out string, clk clock.Clock) (Result, e
 	if err := tmp.Close(); err != nil {
 		return Result{}, fmt.Errorf("backup: close archive: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), out); err != nil {
-		return Result{}, fmt.Errorf("backup: rename archive: %w", err)
+	if err := publish(tmp.Name(), out); err != nil {
+		return Result{}, err
 	}
 	syncDir(outDir)
 	return res, nil
 }
 
-// vacuumInto writes a consistent copy of the database at src to dst, which must not exist.
+// link and rename are os.Link and os.Rename; tests replace them to inject races and failures.
+var (
+	link   = os.Link
+	rename = os.Rename
+)
+
+// publish puts the finished archive tmp at out without ever replacing an existing file: a hard
+// link fails if out exists, where a rename would overwrite it.
+func publish(tmp, out string) error {
+	err := link(tmp, out)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, fs.ErrExist):
+		return fmt.Errorf("%w: %s", ErrExists, out)
+	case errors.Is(err, errors.ErrUnsupported) || errors.Is(err, fs.ErrPermission):
+		// shortcut: filesystems without hard links (FAT, some network mounts) get a checked
+		// rename, which can race with another writer of the same name; fine for a USB stick.
+		if _, err := os.Lstat(out); err == nil {
+			return fmt.Errorf("%w: %s", ErrExists, out)
+		}
+		if err := rename(tmp, out); err != nil {
+			return fmt.Errorf("backup: publish archive: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("backup: publish archive: %w", err)
+	}
+}
+
+// staleWorkAge is how old a backup work dir must be before Write treats it as left by a crash.
+// A backup of a large media dir on a Pi takes minutes, not an hour.
+const staleWorkAge = time.Hour
+
+// removeStaleWork deletes work dirs a crashed backup left in dir (each holds a database copy).
+// Failing to is not an error: it only costs disk space until the next try.
+func removeStaleWork(dir string, now time.Time) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), workPrefix) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && now.Sub(info.ModTime()) > staleWorkAge {
+			_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
+// vacuumInto writes a consistent copy of the database at src to dst, which must not exist. The
+// source is opened read-only: VACUUM INTO only reads it, and still sees WAL content a running
+// server hasn't checkpointed yet.
 func vacuumInto(ctx context.Context, src, dst string) error {
-	conn, err := openFile(src, "rw")
+	conn, err := openFile(src, "ro")
 	if err != nil {
 		return err
 	}

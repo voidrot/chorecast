@@ -1,9 +1,29 @@
 package config
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
+
+// A set but invalid value is logged as ignored, so a KEEP of 0 doesn't silently become 7.
+func TestInvalidSettingWarns(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	t.Setenv("CHORECAST_BACKUP_KEEP", "0")
+	t.Setenv("CHORECAST_BACKUP_AFTER_DAY_END", "")
+	Load()
+	if !strings.Contains(buf.String(), "CHORECAST_BACKUP_KEEP") {
+		t.Errorf("no warning for CHORECAST_BACKUP_KEEP=0: %q", buf.String())
+	}
+	if strings.Contains(buf.String(), "CHORECAST_BACKUP_AFTER_DAY_END") {
+		t.Errorf("an unset variable was warned about: %q", buf.String())
+	}
+}
 
 func TestBackupConfig(t *testing.T) {
 	for env, want := range map[string]int{"": 7, "3": 3, "0": 7, "-1": 7, "many": 7} {

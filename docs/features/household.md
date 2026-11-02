@@ -151,34 +151,47 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
 
 Built (#36): the server takes a backup daily at the household day end plus `CHORECAST_BACKUP_AFTER_DAY_END`
 (default `1h`, any Go duration under 24 h) and keeps the newest `CHORECAST_BACKUP_KEEP` (default 7) in
-`$DATA_DIR/backups`. These are server settings from the environment; there is no backup UI. The job
-(`backup.scheduled`, its own queue) names each file after its scheduled time, so a retried run finds its own
-file and does nothing, and it skips runs more than 24 h late (caught up after downtime) because the newest one
-covers them. Pruning counts every `chorecast-<timestamp>.tar.gz` in that dir, CLI backups written there
-included. The snapshot runs on a connection of its own, so it doesn't block the server's single connection. In
-WAL mode `VACUUM INTO` is a reader: on a 108 MB database it took about 0.1 s, and concurrent writes stayed under
-1 ms. The archive holds `chorecast.db`, then `media/aa/bb/<key>` streamed from disk, then `manifest.json`
-(format, app version and commit, creation time, goose schema version, row count per table, media file count and
-bytes). It is written owner-only (0600) to a temp file next to the target and renamed into place. A failed
-backup is logged, and the job makes up to 3 attempts. The `problems` notification arrives with notifications. S3 is not
-built yet.
+`$DATA_DIR/backups`. A `CHORECAST_BACKUP_KEEP` under 1 (or not a number) falls back to 7 with a warning in the
+log; there is no setting that turns scheduled backups off. These are server settings from the environment;
+there is no backup UI. The job (`backup.scheduled`, its own queue) names each file after its scheduled time, so
+a retried run finds its own file and leaves it unchanged, and it skips runs more than 24 h late (caught up after
+downtime) because the newest one covers them. Pruning counts every `chorecast-<timestamp>.tar.gz` in that dir,
+CLI backups written there included. The snapshot runs on a read-only connection of its own, so it doesn't block
+the server's single connection. In WAL mode `VACUUM INTO` is a reader: on a 108 MB database it took about 0.1 s,
+and concurrent writes stayed under 1 ms. The archive holds `chorecast.db`, then `media/aa/bb/<key>` streamed from
+disk, then `manifest.json` (format, app version and commit, creation time, goose schema version, row count per
+table, media file count and bytes). It is written owner-only (0600) to a temp file next to the target and
+hard-linked into place, so an existing file is never replaced. Work dirs a crashed backup left (`.chorecast-backup-*`)
+are removed by the next backup once they are an hour old. A failed backup is logged, and the job makes up to 3
+attempts. The `problems` notification arrives with notifications. S3 is not built yet.
 
 `chorecast backup [--out PATH]` writes the same archive, by default into `$DATA_DIR/backups`, and is safe while
-the server runs. `chorecast restore [--force] <file>` restores into `CHORECAST_DATA_DIR`:
-- The server holds an exclusive lock on `$DATA_DIR/chorecast.lock` (`flock`) while it runs, so restore refuses
-  while a server uses the data dir. A second server is refused too. In Docker, stop the service and restore with
-  `docker compose run --rm chorecast restore /data/backups/<file>`.
-- It refuses a data dir that already has a database or media, unless `--force`.
-- It extracts into a staging dir and accepts only regular files named `manifest.json`, `chorecast.db` or
-  `media/aa/bb/<key>` in the storage layout. Any other path, absolute paths, `..`, symlinks, hard links,
-  directories and duplicate entries are refused, and nothing is written outside the staging dir.
+the server runs. `chorecast restore [--force] <file>` restores into `CHORECAST_DATA_DIR`. **Restore only archives
+you created**: an archive replaces every account, secret and photo.
+- Locks (`flock`, released by the kernel even after a crash): the server holds `chorecast.lock` exclusively, so
+  restore refuses while a server uses the data dir, and a second server is refused too. Restore also holds
+  `chorecast-restore.lock` exclusively, which `chorecast admin` and `chorecast backup` take shared: they work beside
+  a running server but not during a restore, and a restore waits for them. In Docker, stop the service and restore
+  with `docker compose run --rm chorecast restore /data/backups/<file>`.
+- It refuses a data dir that already has a database or media, unless `--force`, and one whose `chorecast.db` or
+  `media` is a symlink or a mount point (the swap would replace the link with plain files).
+- It extracts into a staging dir (`.restore-*` in the data dir) and accepts only regular files named
+  `manifest.json`, `chorecast.db` or `media/aa/bb/<key>` in the storage layout. Any other path, absolute paths,
+  `..`, symlinks, hard links, sparse files, directories and duplicate entries are refused, and nothing is written
+  outside the staging dir. Extraction stops at a budget: the free space on the data disk minus 256 MiB, with
+  1 GiB at most per media file. It copies in chunks and stops on Ctrl-C.
 - It checks the gzip checksum, the database integrity (`PRAGMA quick_check`), and that the row counts and media
   totals match the manifest.
 - A schema newer than this binary's is refused. An older one is migrated in staging with the embedded
   migrations. Until v1 the single migration is edited in place, so two builds can both report schema 1 with
   different tables; the check only protects across releases once migrations are forward-only.
-- Only then does it move the old database (with its `-wal`/`-shm`) and media aside and the restored ones in. A
-  refused or failed restore leaves the data dir as it was, and the `backups` dir is never touched.
+- Only then does it write the marker `chorecast.restoring` (naming where the previous data goes), move the old
+  database (with its `-wal`/`-shm`) and media aside into the staging dir, move the restored ones in, and remove
+  the marker and the staging dir. A restore refused before this step leaves the data dir untouched. If a move
+  fails, the moves are undone and the data dir is as it was. If undoing fails too, or the process dies mid-swap,
+  the marker and the staging dir stay: `serve`, `restore`, `backup` and `admin` then refuse to start and print
+  where the previous data is. Move it back (or keep the restored data), then delete the marker. The next restore
+  removes leftover `.restore-*` dirs once no marker exists. The `backups` dir is never touched.
 
 ## Audit log
 

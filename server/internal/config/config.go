@@ -2,6 +2,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -103,18 +104,29 @@ func env(key, def string) string {
 
 // envPositiveInt reads a positive integer, falling back to def when unset or invalid.
 func envPositiveInt(key string, def int) int {
-	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key)))
+	v := os.Getenv(key)
+	n, err := strconv.Atoi(strings.TrimSpace(v))
 	if err != nil || n <= 0 {
+		warnInvalid(key, v, def)
 		return def
 	}
 	return n
 }
 
+// warnInvalid logs that a set variable was ignored for its default; unset ones aren't mentioned.
+func warnInvalid(key, value string, def any) {
+	if strings.TrimSpace(value) != "" {
+		slog.Warn("ignoring an invalid setting; using the default", "env", key, "value", value, "default", def)
+	}
+}
+
 // envDayOffset reads a Go duration such as "1h" or "90m" in [0, 24h), falling back to def when
 // unset or invalid.
 func envDayOffset(key string, def time.Duration) time.Duration {
-	d, err := time.ParseDuration(strings.TrimSpace(os.Getenv(key)))
+	v := os.Getenv(key)
+	d, err := time.ParseDuration(strings.TrimSpace(v))
 	if err != nil || d < 0 || d >= 24*time.Hour {
+		warnInvalid(key, v, def.String())
 		return def
 	}
 	return d

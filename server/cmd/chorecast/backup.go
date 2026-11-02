@@ -35,6 +35,11 @@ func backupCmd(ctx context.Context, args []string, dataDir string, clk clock.Clo
 	if *path == "" {
 		*path = filepath.Join(dataDir, backup.DirName, backup.FileName(clk.Now()))
 	}
+	release, err := blockRestore(dataDir)
+	if err != nil {
+		return err
+	}
+	defer release()
 	res, err := backup.Write(ctx, dataDir, *path, clk)
 	if err != nil {
 		return err
@@ -42,6 +47,21 @@ func backupCmd(ctx context.Context, args []string, dataDir string, clk clock.Clo
 	_, err = fmt.Fprintf(out, "Wrote %s (%d bytes): schema %d, %d tables, %d media files (%d bytes). The snapshot took %s.\n",
 		res.Path, res.Size, res.SchemaVersion, len(res.Tables), res.MediaFiles, res.MediaBytes, res.Snapshot)
 	return err
+}
+
+// blockRestore is what the commands that work beside a running server (admin, backup) take
+// first: the restore lock shared, so no restore runs meanwhile, and a check that no restore was
+// interrupted. Call the returned func to release the lock.
+func blockRestore(dataDir string) (func(), error) {
+	lock, err := db.BlockRestore(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("%w: a restore is running in %s; wait for it", err, dataDir)
+	}
+	if err := db.CheckRestoreMarker(dataDir); err != nil {
+		_ = lock.Unlock()
+		return nil, err
+	}
+	return func() { _ = lock.Unlock() }, nil
 }
 
 // restoreCmd runs "chorecast restore" into dataDir. --force may come before or after the file.
@@ -56,14 +76,12 @@ func restoreCmd(ctx context.Context, args []string, dataDir string, out io.Write
 	if err := fs.Parse(fs.Args()[1:]); err != nil || fs.NArg() != 0 {
 		return errors.New(restoreUsage)
 	}
-	m, err := backup.Restore(ctx, file, dataDir, *force)
-	if errors.Is(err, db.ErrDataDirLocked) {
-		return fmt.Errorf("%w: stop the server using %s, then restore", err, dataDir)
-	}
+	m, err := backup.Restore(ctx, file, dataDir, backup.RestoreOptions{Force: *force})
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "Restored %s into %s: backup from %s (chorecast %s, schema %d), %d media files. Start the server to use it.\n",
+	// %q: the version comes from the archive and may hold control characters.
+	_, err = fmt.Fprintf(out, "Restored %s into %s: backup from %s (chorecast %q, schema %d), %d media files. Start the server to use it.\n",
 		file, dataDir, m.CreatedAt.Format("2006-01-02 15:04 MST"), m.AppVersion, m.SchemaVersion, m.MediaFiles)
 	return err
 }

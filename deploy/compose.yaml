@@ -17,7 +17,8 @@ services:
       # Largest accepted photo upload in MB (default 15):
       # CHORECAST_MEDIA_MAX_PHOTO_MB: 15
       # Daily backups to /data/backups, this long after the household day end, keeping the
-      # newest few (defaults 1h and 7). Restore with the server stopped:
+      # newest few (defaults 1h and 7; a KEEP under 1 falls back to 7 with a warning). Restore
+      # only archives you created, with the server stopped:
       #   docker compose run --rm chorecast restore /data/backups/chorecast-<time>.tar.gz
       # CHORECAST_BACKUP_AFTER_DAY_END: 1h
       # CHORECAST_BACKUP_KEEP: 7
