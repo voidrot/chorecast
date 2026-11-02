@@ -701,6 +701,10 @@
             "format": "date",
             "type": "string"
           },
+          "description": {
+            "description": "The chore's description",
+            "type": "string"
+          },
           "dueAt": {
             "format": "date-time",
             "type": "string"

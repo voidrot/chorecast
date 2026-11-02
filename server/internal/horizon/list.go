@@ -18,6 +18,7 @@ type ChoreInstance struct {
 	ChoreName          string                  `json:"choreName"`
 	Points             int                     `json:"points,omitempty" doc:"The chore's points; absent = 0"`
 	Steps              []string                `json:"steps,omitempty" doc:"The chore's checklist steps"`
+	Description        string                  `json:"description,omitempty" doc:"The chore's description"`
 	Evidence           chores.EvidenceRules    `json:"evidence,omitzero" doc:"What the chore asks the kid to hand in; absent = nothing"`
 	KidID              int64                   `json:"kidId,omitempty" doc:"The assignee; absent for a shared instance"`
 	GroupKidIDs        []int64                 `json:"groupKidIds,omitempty" doc:"Shared: the members who may complete it"`
@@ -138,7 +139,8 @@ func ToInstance(r sqlc.ChoreInstance, c sqlc.Chore, members []int64, last *sqlc.
 	due, _ := db.ParseTimestamp(r.DueAt)
 	out := ChoreInstance{
 		ID: r.ID, ChoreID: r.ChoreID, ChoreName: c.Name, Points: int(c.Points), Steps: chores.StepsOf(c), Evidence: chores.EvidenceOf(c),
-		KidID: r.KidID.Int64, GroupKidIDs: members,
+		Description: c.Description,
+		KidID:       r.KidID.Int64, GroupKidIDs: members,
 		Date: d, Slot: r.Slot, Seq: int(r.Seq), DueAt: due, Flexible: r.Flexible == 1, Status: r.Status,
 		Planned: d.After(today), AutoAssigned: r.AutoAssigned == 1, ManuallyReassigned: r.ManuallyReassigned == 1,
 		CompletedBy: r.CompletedBy.Int64, RejectionCount: int(r.RejectionCount),
