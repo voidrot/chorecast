@@ -11,6 +11,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
+	"github.com/voidrot/chorecast/server/internal/dayclose"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/devices"
 	"github.com/voidrot/chorecast/server/internal/events"
@@ -101,6 +102,9 @@ func newBackground(store *db.DB, clk clock.Clock, log *slog.Logger) (*jobs.Runne
 			return generate(ctx)
 		}, jobs.KindOptions{})
 	}
+
+	// Day and week closes: open instances whose day has closed become missed, with their penalty.
+	dayclose.New(store, bus, clk).Register(runner, sched, log)
 
 	return runner, sched, bus
 }
