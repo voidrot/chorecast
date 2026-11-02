@@ -90,8 +90,9 @@ WHERE id = ? AND status = 'submitted';
 -- name: ReassignChoreInstance :execrows
 -- A parent's pick replaces any auto-pick; manually_reassigned keeps the horizon from replanning it,
 -- and reassigned_from keeps the kid it was planned for (the first, across several reassignments).
+-- due_at is the new kid's (it differs for a slotless instance when their day ends differ).
 UPDATE chore_instances SET kid_id = sqlc.arg(kid_id), reassigned_from = COALESCE(reassigned_from, kid_id),
-    manually_reassigned = 1, auto_assigned = 0, updated_at = sqlc.arg(updated_at)
+    due_at = sqlc.arg(due_at), manually_reassigned = 1, auto_assigned = 0, updated_at = sqlc.arg(updated_at)
 WHERE id = sqlc.arg(id) AND status = 'open' AND kid_id IS NOT NULL;
 
 -- name: InsertChoreInstanceRejection :exec

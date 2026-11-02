@@ -497,20 +497,27 @@ func (q *Queries) ListLatestChoreInstanceRejectionsBetween(ctx context.Context, 
 
 const reassignChoreInstance = `-- name: ReassignChoreInstance :execrows
 UPDATE chore_instances SET kid_id = ?1, reassigned_from = COALESCE(reassigned_from, kid_id),
-    manually_reassigned = 1, auto_assigned = 0, updated_at = ?2
-WHERE id = ?3 AND status = 'open' AND kid_id IS NOT NULL
+    due_at = ?2, manually_reassigned = 1, auto_assigned = 0, updated_at = ?3
+WHERE id = ?4 AND status = 'open' AND kid_id IS NOT NULL
 `
 
 type ReassignChoreInstanceParams struct {
 	KidID     sql.NullInt64 `json:"kid_id"`
+	DueAt     string        `json:"due_at"`
 	UpdatedAt string        `json:"updated_at"`
 	ID        int64         `json:"id"`
 }
 
 // A parent's pick replaces any auto-pick; manually_reassigned keeps the horizon from replanning it,
 // and reassigned_from keeps the kid it was planned for (the first, across several reassignments).
+// due_at is the new kid's (it differs for a slotless instance when their day ends differ).
 func (q *Queries) ReassignChoreInstance(ctx context.Context, arg ReassignChoreInstanceParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, reassignChoreInstance, arg.KidID, arg.UpdatedAt, arg.ID)
+	result, err := q.db.ExecContext(ctx, reassignChoreInstance,
+		arg.KidID,
+		arg.DueAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
 	if err != nil {
 		return 0, err
 	}

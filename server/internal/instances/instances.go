@@ -362,7 +362,8 @@ func Excuse(ctx context.Context, tx *events.Tx, clk clock.Clock, id, by int64, n
 }
 
 // Reassign moves an open, single-kid instance to kidID and marks it manually reassigned, so the
-// horizon keeps it as it is.
+// horizon keeps it as it is and counts it as the original kid's occurrence. An instance without a
+// slot becomes due at the new kid's own day (or week) close.
 func Reassign(ctx context.Context, tx *events.Tx, clk clock.Clock, id, kidID, by int64) error {
 	in, err := load(ctx, tx.Q, id)
 	if err != nil {
@@ -387,8 +388,20 @@ func Reassign(ctx context.Context, tx *events.Tx, clk clock.Clock, id, kidID, by
 	} else if err != nil {
 		return fmt.Errorf("load kid: %w", err)
 	}
+	due := in.DueAt
+	if in.Slot == "" {
+		cal, err := household.Calendar(ctx, tx.Q)
+		if err != nil {
+			return err
+		}
+		date, err := caltime.ParseDate(in.OccurrenceDate)
+		if err != nil {
+			return fmt.Errorf("instance %d date: %w", in.ID, err)
+		}
+		due = db.Timestamp(horizon.SlotlessDueAt(cal, date, in.Flexible == 1, horizon.KidDayEnd(cal, k.DayEndOverride)))
+	}
 	n, err := tx.Q.ReassignChoreInstance(ctx, sqlc.ReassignChoreInstanceParams{
-		KidID: sql.NullInt64{Int64: kidID, Valid: true}, UpdatedAt: db.Timestamp(clk.Now()), ID: in.ID,
+		KidID: sql.NullInt64{Int64: kidID, Valid: true}, DueAt: due, UpdatedAt: db.Timestamp(clk.Now()), ID: in.ID,
 	})
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
 		return ErrTaken

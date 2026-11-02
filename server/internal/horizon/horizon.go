@@ -276,14 +276,7 @@ func newPlanner(ctx context.Context, q *sqlc.Queries, cal caltime.Household, def
 			k.BirthDate, _ = caltime.ParseDate(u.BirthDate.String) // invalid = unknown, not age-gated
 		}
 		kids = append(kids, k)
-		dayEnds[u.ID] = cal.DayEnd
-		if u.DayEndOverride.Valid {
-			if o, err := caltime.ParseTimeOfDay(u.DayEndOverride.String); err == nil {
-				if end, err := cal.EffectiveDayEnd(&o); err == nil {
-					dayEnds[u.ID] = end
-				}
-			}
-		}
+		dayEnds[u.ID] = KidDayEnd(cal, u.DayEndOverride)
 	}
 	return &assign.Planner{Kids: kids, DefaultMinutes: defaultMinutes, Ledger: &assign.Ledger{}}, dayEnds, nil
 }
@@ -334,6 +327,28 @@ func b2i(b bool) int64 {
 	return 0
 }
 
+// KidDayEnd is a kid's effective day end: their day_end_override when it's valid, else the
+// household's.
+func KidDayEnd(cal caltime.Household, override sql.NullString) caltime.TimeOfDay {
+	if override.Valid {
+		if o, err := caltime.ParseTimeOfDay(override.String); err == nil {
+			if end, err := cal.EffectiveDayEnd(&o); err == nil {
+				return end
+			}
+		}
+	}
+	return cal.DayEnd
+}
+
+// SlotlessDueAt is when a kid's instance without a slot is due: at the close of its day for a
+// kid whose day ends at end, or of its week when flexible (date is then the week's first day).
+func SlotlessDueAt(cal caltime.Household, date caltime.Date, flexible bool, end caltime.TimeOfDay) time.Time {
+	if flexible {
+		return cal.WeekClose(date, end)
+	}
+	return cal.DayClose(date, end)
+}
+
 // dueAt is when an assigned occurrence is due. Without a slot, a kid's instance closes with the
 // kid's own day (or week); shared instances use the household day end.
 func (r *run) dueAt(o schedule.ScheduleOccurrence, kid int64) time.Time {
@@ -341,10 +356,7 @@ func (r *run) dueAt(o schedule.ScheduleOccurrence, kid int64) time.Time {
 	if o.Slot != "" || kid == 0 || !ok {
 		return o.DueAt
 	}
-	if o.Flexible {
-		return r.cal.WeekClose(o.Date, end)
-	}
-	return r.cal.DayClose(o.Date, end)
+	return SlotlessDueAt(r.cal, o.Date, o.Flexible, end)
 }
 
 // planChore plans one chore's occurrences in the horizon. Disabled and unscheduled chores get

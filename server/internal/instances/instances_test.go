@@ -778,6 +778,47 @@ func TestReassignDoesNotDuplicateOnRegeneration(t *testing.T) {
 	}
 }
 
+// TestReassignMovesTheDueTimeToTheNewKid: an instance without a slot is due at its kid's own day
+// (or week) close, so a reassignment moves it to the new kid's; a slot keeps its time.
+func TestReassignMovesTheDueTimeToTheNewKid(t *testing.T) {
+	f := newFixture(t) // the household day (and Sam's) ends at 21:00 in Chicago
+	f.exec("UPDATE users SET day_end_override = '19:00' WHERE id = ?", f.ada)
+	c := f.chore(chores.ChoreInput{Name: "Dishes", Points: 5})
+	ctx := t.Context()
+	at := func(s string) time.Time {
+		t.Helper()
+		v, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+
+	daily := f.instance(c.ID, "2026-11-02", f.sam)    // Monday, CST (UTC-6)
+	flexible := f.instance(c.ID, "2026-10-25", f.sam) // this week's (it starts on Sunday the 25th)
+	f.exec("UPDATE chore_instances SET flexible = 1 WHERE id = ?", flexible)
+	slotted := f.instanceDue(c.ID, "2026-11-02", at("2026-11-02T14:00:00Z"), f.sam) // 08:00
+	for _, tc := range []struct {
+		what string
+		id   int64
+		kid  int64
+		want string
+	}{
+		{"a day's instance, to Ada (19:00)", daily, f.ada, "2026-11-03T01:00:00Z"},
+		{"and back to Sam (21:00)", daily, f.sam, "2026-11-03T03:00:00Z"},
+		{"a flexible instance, to Ada: her week close (Saturday 19:00 CDT)", flexible, f.ada, "2026-11-01T00:00:00Z"},
+		{"a slot keeps its time", slotted, f.ada, "2026-11-02T14:00:00Z"},
+	} {
+		got, err := f.svc.Reassign(ctx, tc.id, tc.kid, f.mom)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.what, err)
+		}
+		if !got.DueAt.Equal(at(tc.want)) {
+			t.Errorf("%s: due %s, want %s", tc.what, got.DueAt.UTC().Format(time.RFC3339), tc.want)
+		}
+	}
+}
+
 // TestLedgerStaysConsistent drives random transitions over single and shared instances and checks
 // after every step that each kid's balance is the sum of the effects in force for their
 // instances, that a credit is in force exactly while an instance is approved and a penalty
