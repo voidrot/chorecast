@@ -208,6 +208,21 @@ toggles, invites, role changes, password/2FA resets, archive/delete, backups/res
 the web admin with filters; purged after 365 days by the daily maintenance job. The points ledger stays the source
 of truth for points; the audit log records who did what around it.
 
+Built (#37, `internal/audit`): the `audit_log` table also has `event_id` (rows written from a domain event; a
+redelivered event writes nothing), and `data` holds typed details (`AuditDetails`: setting changes as field/from/to,
+kids, points, note, rejection reason, role) with no field a credential could go in. Each action is recorded one way.
+`internal/audit/recorder` subscribes to the events that identify an action on their own: chore approvals (actor
+`system` for auto-approvals), rejections, un-approvals, excuses and manual adjustments. Everything else writes its
+row in its own transaction with `audit.Record`: settings changes (only when a field changes), invites created,
+revoked and accepted (the new parent is the actor), role changes, parent removal, password and 2FA resets (`cli`
+when run through `chorecast admin`), device pairing (the parent who made the code) and revocation, kid archive and
+unarchive, and manual points reversals (their `points.entry_posted` looks like an un-approval's). `GET /audit`
+(`server:manage`, so owners only) pages newest first and filters by `actorKind`, `actorId`, `action` and
+household-local `from`/`to` days. The web admin's Audit log screen (owners only) shows it with those filters and
+Load more. Not recorded yet: backups and restores (#110 is still open; it should call `audit.Record` with
+`audit.CLI`, and a restore should write into the restored database after the swap), kiosk toggles, exports, chore
+deletion, reassignment, and parents' own password, 2FA and PIN changes.
+
 ## i18n
 
 - Android: all UI strings in `strings.xml`, plurals via `plurals`; dates and numbers via the locale.
