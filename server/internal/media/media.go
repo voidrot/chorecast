@@ -254,20 +254,8 @@ func (s *Service) attachKidAvatar(ctx context.Context, p *auth.Principal, kid in
 	if err := tx.Commit(); err != nil {
 		return sqlc.Medium{}, err
 	}
-	s.discard(ctx, released)
+	s.deleteReleased(ctx, released)
 	return m, nil
-}
-
-// discard deletes the files of media already claimed (status deleting) and marks it expired. It is
-// best effort: on failure the row stays deleting, and the retention job (Expire) retries it.
-func (s *Service) discard(ctx context.Context, ms []sqlc.Medium) {
-	ctx = context.WithoutCancel(ctx)
-	for _, m := range ms {
-		if err := deleteFiles(ctx, s.store, m); err != nil {
-			continue
-		}
-		_ = s.db.MarkMediaExpired(ctx, m.ID)
-	}
 }
 
 // ReleaseKidAvatar removes kid's avatar photo, if any: the media is claimed (status deleting) and
@@ -278,7 +266,7 @@ func (s *Service) ReleaseKidAvatar(ctx context.Context, kid int64) error {
 	if err != nil {
 		return fmt.Errorf("release kid avatar: %w", err)
 	}
-	s.discard(ctx, released)
+	s.deleteReleased(ctx, released)
 	return nil
 }
 
@@ -589,12 +577,21 @@ func (s *Service) Discard(ctx context.Context, p *auth.Principal, id int64) erro
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	// Claimed, so it is already gone for readers and the slot is free; retention retries the files.
+	s.deleteClaimed(ctx, m)
+	return nil
+}
+
+// deleteClaimed deletes the files of media already claimed (status deleting) and marks it
+// expired. Best effort: on failure it logs, the row stays deleting and the retention job retries.
+func (s *Service) deleteClaimed(ctx context.Context, m sqlc.Medium) {
 	if err := deleteFiles(ctx, s.store, m); err != nil {
-		// Claimed, so it is already gone for readers and the slot is free; retention retries the files.
-		slog.Warn("discard photo: can't delete the files; retention retries", "media", id, "err", err)
-		return nil
+		slog.Warn("media: can't delete the files of released media; retention retries", "media", m.ID, "err", err)
+		return
 	}
-	return s.db.MarkMediaExpired(ctx, id)
+	if err := s.db.MarkMediaExpired(ctx, m.ID); err != nil {
+		slog.Warn("media: can't mark released media expired; retention retries", "media", m.ID, "err", err)
+	}
 }
 
 // SignedURLs are fresh links to a media file and its thumbnail, valid until Expires.
@@ -663,4 +660,11 @@ func (s *Service) Open(ctx context.Context, key, exp, sig string) (File, error) 
 	}
 	sec, _ := strconv.ParseInt(exp, 10, 64) // Verify accepted it
 	return File{Mime: m.Mime, Data: data, Expires: time.Unix(sec, 0)}, nil
+}
+
+func (s *Service) deleteReleased(ctx context.Context, ms []sqlc.Medium) {
+	ctx = context.WithoutCancel(ctx)
+	for _, m := range ms {
+		s.deleteClaimed(ctx, m)
+	}
 }
