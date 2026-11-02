@@ -468,8 +468,9 @@ func TestReapprovalRestoresTheCreditWithoutPostingAgain(t *testing.T) {
 
 // TestReapprovalDoesNotResplit: a re-approval restores an earlier credit with its amount instead
 // of posting again, even if the chore's points changed. A shared instance keeps its first split
-// whoever completes it again; a single-kid one credits only its current assignee, so a kid it was
-// reassigned away from stays reversed. A first credit of 0 isn't posted.
+// whoever completes it again. A single-kid one credits only its current assignee, and a shared
+// one whose completer takes all only its current completer, so another kid's earlier credit stays
+// reversed. A first credit of 0 isn't posted.
 func TestReapprovalDoesNotResplit(t *testing.T) {
 	ctx := t.Context()
 	approve := func(f *fixture, id, kid int64) {
@@ -526,6 +527,25 @@ func TestReapprovalDoesNotResplit(t *testing.T) {
 		unapprove(f, id)
 		if got := balances(f); got != [3]int64{0, 0, 0} {
 			t.Errorf("second reversal: balances %v, want 0s", got)
+		}
+	})
+
+	t.Run("completer takes all, another completer", func(t *testing.T) {
+		f := newFixture(t)
+		c := f.chore(chores.ChoreInput{Name: "Tidy", Points: 6, RequiresApproval: true,
+			Assignment: &chores.ChoreAssignment{Mode: assign.ModeShared, KidIDs: []int64{f.sam, f.ada, f.kim},
+				SharedPoints: assign.PointsCompleterTakesAll, SharedPenalty: assign.PenaltyNone}})
+		id := f.instance(c.ID, today, 0, f.sam, f.ada, f.kim)
+		approve(f, id, f.sam)
+		unapprove(f, id)
+		approve(f, id, f.ada) // Ada did it this time: she's paid, and Sam stays reversed
+		if got := balances(f); got != [3]int64{0, 6, 0} {
+			t.Errorf("re-approval with another completer: balances %v, want [0 6 0]", got)
+		}
+		unapprove(f, id)
+		approve(f, id, f.sam) // Sam again: his own credit is restored, not posted again
+		if got := balances(f); got != [3]int64{6, 0, 0} {
+			t.Errorf("Sam completes again: balances %v, want [6 0 0]", got)
 		}
 	})
 
@@ -1033,17 +1053,21 @@ func (m *modelInstance) credit() map[int64]int64 {
 	} else {
 		shares = assign.SplitPoints(int(m.chore.Points), m.chore.SharedPoints, m.completer, m.members)
 	}
-	// A single-kid instance credits its current assignee: their first credit, or the points now.
-	if m.kid != 0 {
-		if _, ok := m.credited[m.kid]; !ok && m.chore.Points > 0 {
-			m.credited[m.kid] = m.chore.Points
+	// One kid earns it all (the assignee, or a completer-takes-all instance's current completer):
+	// their first credit, or the points now.
+	if one := m.kid; one != 0 || m.chore.SharedPoints != assign.PointsSplitEvenly {
+		if one == 0 {
+			one = m.completer
 		}
-		if v, ok := m.credited[m.kid]; ok {
-			out[m.kid] = v
+		if _, ok := m.credited[one]; !ok && m.chore.Points > 0 {
+			m.credited[one] = m.chore.Points
+		}
+		if v, ok := m.credited[one]; ok {
+			out[one] = v
 		}
 		return out
 	}
-	// Shared: the first approval posts the split (shares of 0 aren't posted); a re-approval
+	// Split evenly: the first approval posts the split (shares of 0 aren't posted); a re-approval
 	// restores exactly those credits and doesn't re-split, whoever completed it.
 	if len(m.credited) == 0 {
 		for k, pts := range shares {

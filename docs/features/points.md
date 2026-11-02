@@ -171,10 +171,12 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
   reversal instead of posting again, which restores the original amount even if the chore's points changed.
   A single-kid instance is credited only to its current assignee: their earlier credit is restored, or else the
   current points are posted, and a kid it was reassigned away from stays reversed (nobody is paid for another
-  kid's work). A shared instance can't be reassigned, so its group is stable: credits follow the split only on
-  the first approval, and a re-approval doesn't re-split, even if the points or the completer changed. It
-  restores every earlier credit to its kid with its amount and posts nothing new, so the instance's total is
-  always what was first credited. `Excuse` reverses every penalty
+  kid's work). A shared `completer_takes_all` instance works the same way for its current completer: their
+  earlier credit is restored, or else the points are posted, and an earlier completer stays reversed. A shared
+  `split_evenly` instance can't be reassigned, so its group is stable: credits follow the split only on the
+  first approval, and a re-approval doesn't re-split, even if the points or the completer changed. It restores
+  every earlier credit to its kid with its amount and posts nothing new, so the instance's total is always what
+  was first credited. `Excuse` reverses every penalty
   tip in effect: the assignee's, or every member's of a shared instance.
 - **Reopening a closed day.** Day close takes every open instance due by the close. When a rejection or approval
   reversal reopens an instance whose close has already passed (`dayclose.ClosesAt`: the kid's day or week close

@@ -5815,7 +5815,7 @@
     },
     "/instances/{instance}/approval": {
       "post": {
-        "description": "Credits the points: to the assignee, or for a shared chore to the completer or split evenly across the group. Re-approving after a reversal restores the earlier credit with its amount: the current assignee's, or a shared chore's first split (not re-split if the points or the completer changed). Returns the updated instance.",
+        "description": "Credits the points: to the assignee, or for a shared chore to the completer or split evenly across the group. Re-approving after a reversal restores the earlier credit with its amount: the current assignee's or completer's (or posts theirs if they have none), or an even split's first split, which isn't re-split if the points or the completer changed. Returns the updated instance.",
         "operationId": "approveChoreInstance",
         "parameters": [
           {

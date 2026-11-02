@@ -453,6 +453,18 @@ func missIfClosed(ctx context.Context, tx *events.Tx, clk clock.Clock, in instan
 	return err
 }
 
+// soleEarner is the one kid an instance credits in full: its assignee, or the completer of a
+// shared instance whose completer takes all. ok is false for a split.
+func soleEarner(in instance) (int64, bool) {
+	switch {
+	case in.KidID.Valid:
+		return in.KidID.Int64, true
+	case in.chore.SharedPoints != assign.PointsSplitEvenly:
+		return in.CompletedBy.Int64, in.CompletedBy.Valid
+	}
+	return 0, false
+}
+
 // Shares is how an instance's points are credited: all to the assignee, or for a shared instance
 // to the completer or split evenly across the members (remainder to the completer).
 func shares(in instance) map[int64]int {
@@ -471,10 +483,13 @@ func shares(in instance) map[int64]int {
 // posted. A kid it was reassigned away from keeps their reversed credit, so nobody is paid for
 // another kid's work.
 //
-// A shared instance's group can't change, so the first approval splits the points (shares) and
-// posts each share above 0, and a re-approval restores every earlier credit, each to its kid with
-// its amount, and posts nothing new: it doesn't re-split, even if the points or the completer
-// changed, so the total stays what was first credited.
+// A shared instance whose completer takes all works the same way for its current completer: an
+// earlier completer's credit stays reversed.
+//
+// A shared instance split evenly keeps its group (it can't be reassigned), so the first approval
+// splits the points (shares) and posts each share above 0, and a re-approval restores every
+// earlier credit, each to its kid with its amount, and posts nothing new: it doesn't re-split,
+// even if the points or the completer changed, so the total stays what was first credited.
 func credit(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance, by int64, note string) error {
 	date, err := caltime.ParseDate(in.OccurrenceDate)
 	if err != nil {
@@ -496,12 +511,13 @@ func credit(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance, by
 		return err
 	}
 
-	if in.KidID.Valid {
-		found, err := restore(in.KidID.Int64)
+	// One kid gets it all: the assignee, or a shared instance's current completer.
+	if one, ok := soleEarner(in); ok {
+		found, err := restore(one)
 		if err != nil || found || in.chore.Points == 0 {
 			return err
 		}
-		return post(in.KidID.Int64, in.chore.Points)
+		return post(one, in.chore.Points)
 	}
 
 	credited, err := ledger.SourceKids(ctx, tx, ledger.KindChore, in.source())
