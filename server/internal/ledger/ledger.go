@@ -16,11 +16,15 @@
 //		return err
 //	})
 //
-// ErrAlreadyReversed from Reverse is the same kind of retry signal: the reversal is already
-// there, so treat it as done and return nil, or the caller's own change rolls back.
-//
 // A source's entry and its reversals form a chain C → R1 → R2 …. To undo or re-apply a source's
-// effect, find the chain's live end with Tip and reverse it; never Post again for that source.
+// effect, call Tip and Reverse the tip only when inEffect is the state you want to change (true to
+// undo, false to re-apply); never Post again for that source.
+//
+// ErrAlreadyReversed is not a retry signal like ErrAlreadyPosted. A retry in its own transaction
+// can't run into its own earlier reversal (a rolled-back attempt left none, and a committed one
+// shows in Tip), so the error means someone else reversed the entry. Treating it as done can leave
+// the wrong state: a parent reverses C and then R1, and an un-approve job's Reverse(C) gets
+// ErrAlreadyReversed while the credit stands. Re-read Tip instead.
 package ledger
 
 import (
@@ -66,8 +70,8 @@ const (
 )
 
 var (
-	// ErrAlreadyReversed is returned by Reverse for an entry that has a reversal already. For an
-	// at-least-once caller retrying its own reversal, it means done.
+	// ErrAlreadyReversed is returned by Reverse for an entry that has a reversal already. It
+	// doesn't mean done: someone else reversed the entry, so re-read Tip and decide again.
 	ErrAlreadyReversed = apierr.New(http.StatusConflict, apierr.CodeAlreadyReversed, "this entry has already been reversed")
 	// ErrAlreadyPosted is returned by Post when an entry of the same kind, kid and source exists.
 	// The returned PointsEntry is that existing entry, so at-least-once callers can carry on.
@@ -232,8 +236,8 @@ func Reverse(ctx context.Context, tx *events.Tx, c clock.Clock, entryID int64, n
 // Tip finds the kid's kind entry for src (kind is KindChore, KindChorePenalty or KindStreakBonus,
 // which have at most one entry per source) and follows its reversals C → R1 → R2 … to the newest,
 // unreversed one. found is false when nothing was posted for the source. inEffect reports whether
-// the source's effect stands: true for an even number of reversals (C itself, or R2, …). To undo
-// an effect in force, or re-apply one that was undone, Reverse the returned entry.
+// the source's effect stands: true for an even number of reversals (C itself, or R2, …). Reverse
+// the returned entry only when inEffect is the state to change: true to undo, false to re-apply.
 func Tip(ctx context.Context, tx *events.Tx, kidID int64, kind string, src Source) (entry PointsEntry, inEffect bool, found bool, err error) {
 	if !onceKind(kind) {
 		return PointsEntry{}, false, false, fmt.Errorf("ledger.Tip: %q entries aren't once per source", kind)

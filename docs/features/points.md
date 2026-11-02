@@ -74,14 +74,17 @@ features add sources without schema changes. `created_by` is NULL for the system
 - **Undo and re-apply.** A source's entry and its reversals form a chain C → R1 → R2 ….
   `ledger.Tip(ctx, tx, kidID, kind, src) (entry, inEffect, found, err)` returns the chain's unreversed end, and
   `inEffect` is true when the source's effect stands (an even number of reversals). To undo an effect in force,
-  or re-apply one that was undone, `Reverse` the tip. `Tip` takes only the once-per-source kinds.
+  or re-apply one that was undone, `Reverse` the tip, and only when `inEffect` is the state you want to change
+  (true to undo, false to re-apply). `Tip` takes only the once-per-source kinds.
 - **Clamping.** With `allowNegativeBalance` off, a deduction is clamped so the balance doesn't drop below 0. If
   the balance is already at or below 0, it clamps to 0. A clamped entry is still written, with
   `requested_amount` set. Reversals are never clamped (always the exact negation), so reversing a credit that
   was already spent can take a balance below zero. That exclusion is an owner decision, not an oversight.
 - **Reversals** take a required note, copy the original's source and can themselves be reversed. A second
-  reversal of one entry fails with `ErrAlreadyReversed` (409 `already_reversed`). Inside a caller's own
-  transaction, a retry that gets `ErrAlreadyReversed` is done, the same as `ErrAlreadyPosted`.
+  reversal of one entry fails with `ErrAlreadyReversed` (409 `already_reversed`). Unlike `ErrAlreadyPosted`,
+  it is not success. A retry in its own transaction can't see its own earlier reversal, so the error means
+  someone else reversed the entry. For example, a parent reverses C and then R1, and an un-approve job's
+  `Reverse(C)` gets `ErrAlreadyReversed` while the credit stands. Callers re-read `Tip` instead.
 - **`local_date`** is the caller's date (day close passes the closed day). Otherwise it is the kid's current day:
   the day whose window, up to the kid's effective day end, contains now. A reversal gets the `local_date` of the
   entry it reverses (owner decision), so un-approving last week's chore corrects last week.
