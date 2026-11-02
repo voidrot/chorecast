@@ -76,7 +76,8 @@
     "devices": "Devices",
     "chores": "Chores",
     "review": "Review",
-    "today": "Today"
+    "today": "Today",
+    "audit": "Audit log"
   },
   "session": {
     "parent": "Parent",
@@ -728,6 +729,84 @@
       "instance_shared": "A shared chore cannot be reassigned.",
       "instance_taken": "That kid already has this chore on that day.",
       "instance_not_found": "This chore no longer exists."
+    }
+  },
+  "audit": {
+    "title": "Audit log",
+    "intro": "Who changed what in the household. Entries are kept for a year.",
+    "ownersOnly": "Only owners can see the audit log.",
+    "empty": "Nothing matches these filters.",
+    "loadMore": "Load more",
+    "filterActor": "Who",
+    "filterAction": "What",
+    "filterDates": "Dates",
+    "actor": {
+      "system": "Chorecast (automatic)",
+      "cli": "Server command line",
+      "unknown": "A former parent"
+    },
+    "actions": {
+      "settings_updated": "Changed household settings",
+      "chore_approved": "Approved {target}",
+      "chore_rejected": "Sent back {target}",
+      "chore_unapproved": "Reversed the approval of {target}",
+      "chore_excused": "Excused missed {target}",
+      "points_adjusted": "Adjusted {target}'s points",
+      "points_reversed": "Reversed a points entry for {target}",
+      "invite_created": "Created an invite",
+      "invite_revoked": "Revoked an invite",
+      "invite_accepted": "{target} joined with an invite",
+      "parent_role_changed": "Changed {target}'s role",
+      "parent_removed": "Removed {target}",
+      "parent_password_reset": "Reset {target}'s password",
+      "parent_totp_disabled": "Turned off two-factor sign-in for {target}",
+      "device_paired": "Paired {target}",
+      "device_revoked": "Unpaired {target}",
+      "kid_archived": "Archived {target}",
+      "kid_unarchived": "Unarchived {target}"
+    },
+    "actionNames": {
+      "settings_updated": "Settings changed",
+      "chore_approved": "Chore approved",
+      "chore_rejected": "Chore sent back",
+      "chore_unapproved": "Approval reversed",
+      "chore_excused": "Missed chore excused",
+      "points_adjusted": "Points adjusted",
+      "points_reversed": "Points entry reversed",
+      "invite_created": "Invite created",
+      "invite_revoked": "Invite revoked",
+      "invite_accepted": "Invite accepted",
+      "parent_role_changed": "Role changed",
+      "parent_removed": "Parent removed",
+      "parent_password_reset": "Password reset",
+      "parent_totp_disabled": "Two-factor sign-in turned off",
+      "device_paired": "Device paired",
+      "device_revoked": "Device unpaired",
+      "kid_archived": "Kid archived",
+      "kid_unarchived": "Kid unarchived"
+    },
+    "detail": {
+      "change": "{field}: {from} → {to}",
+      "empty": "(none)",
+      "amount": "Points: {n}",
+      "reverses": "Undoes entry #{id}",
+      "feedback": "Feedback: {text}",
+      "note": "Note: {text}",
+      "role": "Role: {role}",
+      "sharedDevice": "Shared family device"
+    },
+    "fields": {
+      "name": "Household name",
+      "timezone": "Timezone",
+      "dayEnd": "Day end",
+      "weekStart": "Week starts",
+      "allowNegativeBalance": "Negative balances",
+      "siblingVisibility": "What kids see of each other",
+      "mediaRetentionDays": "Photo retention (days)",
+      "autoApproveHours": "Auto-approve after (hours)",
+      "offlineGraceMinutes": "Offline grace (minutes)",
+      "defaultChoreMinutes": "Default chore minutes",
+      "streakMilestones": "Streak milestones"
     }
   }
 }
