@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"fmt"
 	"image/png"
@@ -311,4 +312,60 @@ func TestMediaScoping(t *testing.T) {
 	wantCode(t, "display", e.raw("GET", path(samPhoto), display, nil, ""), 404, "media_not_found")
 	wantCode(t, "anonymous", e.raw("GET", path(samPhoto), nil, nil, ""), 401, "unauthenticated")
 	wantCode(t, "unknown id", e.raw("GET", "/api/v1/media/999", e.mom, nil, ""), 404, "media_not_found")
+}
+
+// Multipart parts over 8 KB are spooled to the temp dir; none may be left behind, whatever the
+// upload's outcome.
+func TestUploadLeavesNoTempFiles(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	e := newMediaEnv(t, config.Config{Media: config.MediaConfig{MaxPhotoMB: 1}})
+	noise := make([]byte, 200<<10)
+	_, _ = rand.Read(noise)
+	cancelled := func() *httptest.ResponseRecorder {
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "photo.jpg")
+		_, _ = part.Write(photo(t, 400, 300))
+		_, _ = part.Write(noise) // trailing bytes, so the part is spooled
+		_ = w.Close()
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		req := httptest.NewRequestWithContext(ctx, "POST", "/api/v1/media/photos", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+e.sam)
+		rec := httptest.NewRecorder()
+		e.r.ServeHTTP(rec, req)
+		return rec
+	}
+	big := make([]byte, 1<<20+1)
+	copy(big, []byte{0xFF, 0xD8, 0xFF})
+	for name, rec := range map[string]func() *httptest.ResponseRecorder{
+		"success": func() *httptest.ResponseRecorder {
+			return e.upload(e.sam, append(photo(t, 400, 301), noise...), "image/jpeg")
+		},
+		"415":       func() *httptest.ResponseRecorder { return e.upload(e.sam, noise, "image/jpeg") },
+		"413 file":  func() *httptest.ResponseRecorder { return e.upload(e.sam, big, "image/jpeg") },
+		"413 body":  func() *httptest.ResponseRecorder { return e.upload(e.sam, make([]byte, 3<<20), "image/jpeg") },
+		"cancelled": cancelled,
+		"422 no file": func() *httptest.ResponseRecorder {
+			var body bytes.Buffer
+			w := multipart.NewWriter(&body)
+			part, _ := w.CreateFormFile("other", "photo.jpg")
+			_, _ = part.Write(noise)
+			_ = w.Close()
+			return e.raw("POST", "/api/v1/media/photos", e.sam, &body, w.FormDataContentType())
+		},
+		"409 dup": func() *httptest.ResponseRecorder {
+			return e.upload(e.sam, append(photo(t, 400, 301), noise...), "image/jpeg")
+		},
+	} {
+		res := rec()
+		if res.Code < 200 {
+			t.Fatalf("%s: no response", name)
+		}
+		if left, _ := os.ReadDir(tmp); len(left) != 0 {
+			t.Errorf("%s (%d): temp files left: %v", name, res.Code, left)
+		}
+	}
 }

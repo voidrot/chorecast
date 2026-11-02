@@ -74,11 +74,13 @@ func New(r chi.Router, deps Deps) huma.API {
 	if deps.DB != nil {
 		queries = deps.DB.Queries
 	}
-	// Order matters: the setup gate runs first; idempotency needs the principal resolved by auth.
+	// Order matters: the setup gate runs first; idempotency needs the principal resolved by auth;
+	// the multipart cleanup must be last, so it sees the request copy the body is parsed on.
 	hapi.UseMiddleware(
 		setup.Gate(hapi, deps.Setup),
 		auth.Middleware(hapi, auth.NewStore(queries, deps.Clock)),
 		idempotency.Middleware(hapi, queries, deps.Clock),
+		removeMultipartFiles,
 	)
 
 	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock),
