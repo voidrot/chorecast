@@ -69,34 +69,48 @@ Built (#27, `internal/evidence`, server only; Android capture is #31, the review
   completing for them; anyone else's is answered as "no such photo". Nothing is written when a rule fails.
 - **Capture window** (rule 2): a kid's photo must be captured at or after `dayclose.OpensAt`, the close of the day
   before the instance's day (for its kid's effective day end, or the household's for a shared instance), or before
-  its week for a flexible chore. Parents' photos are exempt (rule 5). The device time is trusted as sent; the
-  offline clock-skew flag (#35) is to widen or flag the window at `OpensAt`.
-- **Video** (Phase 3): a chore that asks for a video can't be completed yet (422 `video_evidence_unsupported`), for
-  kids and parents alike. Parents can still set the requirement; such a chore is missed at day close and can be
-  excused.
+  its week for a flexible chore. Parents' photos are exempt (rule 5). Any photo's `capturedAt`, a parent's
+  included, must be a storable time no later than now + 10 minutes (`evidence.MaxCaptureSkew`), else 422 at
+  `body.photos[i].capturedAt`. Otherwise the device time is trusted as sent; the offline clock-skew flag (#35) is
+  to widen or flag the window at `OpensAt` and the skew allowance.
+- **Video** (Phase 3): chores can't ask for a video yet: create and update refuse `evidence.video = true` with 422
+  `video_evidence_unsupported`, and the web form disables the checkbox ("coming later"; it stays untickable for a
+  chore that already has it). A chore that has it anyway can't be completed (the same 422), for kids and parents.
 - **Records.** Each completion adds a `chore_instance_evidence` row (`attempt` 1, 2, … per instance, the kid, who
   submitted it, the ticks, the note), so a resubmission after a rejection keeps the earlier set. Its photos move to
   `owner_kind = 'evidence'` with `owner_id` = that row, and `chore_instance_evidence_photos` keeps each one's
   order, role, capture time and capture id. A photo can be attached once, and its picture can't be uploaded by a kid
   again (409 `duplicate_media`), so the same photo can't serve two instances. An instance with evidence counts as
   touched for the horizon and for deleting its chore.
-- **Reading.** `GET /instances/{id}/evidence` (`chores:read`) returns every submission, oldest first, to parents
-  and the instance's kids (its assignee, or a shared instance's members); anyone else gets 403. Photos carry signed
-  `url` and `thumbUrl` links (10 minutes), or `expired: true` and no links once retention deleted them. In Go,
-  `evidence.CanRead(principal, instance)` then `evidence.List(ctx, q, instanceID, signer)` is the same read, for the
-  review queue. Attached photos aren't readable through `GET /media/{id}` by kids; this endpoint is their path.
+- **Reading.** `GET /instances/{id}/evidence` (`chores:read`) returns submissions oldest first. Parents see every
+  submission; the members of a shared instance see the group's; any other kid sees only the submissions they made,
+  so a kid an instance was reassigned to doesn't see the earlier kid's, and the earlier kid keeps theirs. A kid with
+  no submission who isn't the assignee, a display or a device gets 403. Photos carry signed `url` and `thumbUrl`
+  links (10 minutes), or `expired: true` and no links once retention has taken them; a stored capture time that
+  doesn't parse is left out instead of failing the read. In Go, `evidence.ReadFor(ctx, q, principal, instance,
+  signer)` is that scoped read, and `evidence.List(ctx, q, instanceID, signer)` the unscoped one for parents' views
+  (the review queue). Attached photos aren't readable through `GET /media/{id}` by kids; this endpoint is their path.
 - **Retention.** When an instance resolves (approved, also on completion when no approval is needed; missed;
   excused) its evidence photos get `expires_at` = then + `media_retention_days`, unless `keep` is set; a reversed
   approval clears it, and a later resolution restarts it. Pending uploads get `expires_at` = upload + 24 h
-  (`media.PendingTTL`), cleared when attached. The daily job `media.retention` (`media.Expire`) deletes the photo
-  and thumbnail files of every ready item past `expires_at` and not kept, and of evidence whose record is gone (its
-  instance was deleted with its kid), then marks the row `expired`. Files go first, so a run that stops halfway is
-  finished by the next; re-runs find nothing. Hashes stay in `media_hashes`, so reuse is still caught, except for
-  abandoned pending uploads, which were never evidence: their hash is dropped so the kid may upload that photo
+  (`media.PendingTTL`), cleared when attached. The daily job `media.retention` (`media.Expire`) takes every ready,
+  unkept item past `expires_at`, and unkept evidence whose record is gone (its instance was deleted with its kid).
+  It works in two steps, so a parent reopening an instance mid-run can't leave a ready photo without files:
+  1. *Claim*: in a transaction that re-checks the item still qualifies, it becomes status `deleting`. Resolve,
+     Reopen and attaching touch only `ready` media, so a claimed item stays claimed, and reads show it expired.
+  2. *Delete*: the files of every `deleting` item (this run's, and any an earlier run left after a crash or a
+     failed delete) are deleted and the item becomes `expired`. A file that can't be deleted is logged, counted
+     and retried by the next run; the others go on.
+
+  Re-runs find nothing new. Hashes stay in `media_hashes`, so reuse is still caught, except for abandoned pending
+  uploads, which were never evidence: their hash is dropped when they're claimed, so the kid may upload that photo
   again. Nothing sets `keep` yet; the favorite toggle comes with the review screens.
 - **Uploads** (follow-ups from #75): a kid repeating their own upload that is still pending (an offline retry that
-  lost its response) gets that photo back with 201 instead of 409. A kid may hold 20 attachable pending uploads
-  (`media.MaxPendingUploads`); more is 429 `rate_limited`. Parents aren't capped.
+  lost its response) gets that photo back with 201 instead of 409. Repeating one that is past its 24 h replaces it:
+  the old upload is claimed for retention and the new one is stored. A kid may hold 20 attachable pending uploads
+  (`media.MaxPendingUploads`); more is 429 `rate_limited`, but a retry never is: the repeat is recognized before
+  the cap, again if the cap check fails (a racing first upload), and atomically in the insert transaction. Parents
+  aren't capped.
 
 ## Fresh-evidence rules (no reusing old photos)
 
@@ -180,7 +194,7 @@ Built (#75, `internal/media`): the photo half of the pipeline, local storage onl
   first use in the `server_keys` table (row `media_url`), so **database backups contain it**: anyone holding a
   backup can mint links (they can also read the media files in the same data dir). Rotate it with
   `chorecast admin rotate-media-key` and restart the server; links handed out before stop working. A wrong
-  or expired signature is 403 `invalid_media_url`; media whose row is gone, whose status is `expired`, or whose file
+  or expired signature is 403 `invalid_media_url`; media whose row is gone, whose status isn't `ready` (retention is deleting or has deleted it), or whose file
   is missing is 410 `media_expired`. Files are served with `Cache-Control: private` and `nosniff`.
 - Files live under `$CHORECAST_DATA_DIR/media/aa/bb/<key>` (`<key>_t` for the thumbnail), keyed by a random
   128-bit hex key and written to a temp file, then renamed. Photo processing runs one at a time; up to 4 uploads
