@@ -60,6 +60,7 @@ const (
 	CodeChoreHasHistory      = "chore_has_history"          // a chore with history is disabled, not deleted (409)
 	CodeDuplicateMedia       = "duplicate_media"            // a kid's photo matches earlier kid evidence exactly (409)
 	CodeMediaNotFound        = "media_not_found"            // (404)
+	CodeMediaAttached        = "media_attached"             // the photo is already attached to a submission, so it can't be discarded (409)
 	CodeMediaExpired         = "media_expired"              // the media file was deleted, e.g. by retention (410)
 	CodeInvalidMediaURL      = "invalid_media_url"          // a media URL's signature is wrong or has expired (403)
 	CodeImageTooLarge        = "image_too_large"            // the image's dimensions exceed the side or pixel cap (413)

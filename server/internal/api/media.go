@@ -59,6 +59,19 @@ func registerMedia(hapi huma.API, h *handlers) {
 		Errors:      []int{http.StatusNotFound},
 	}, h.getMedia)
 	huma.Register(hapi, huma.Operation{
+		OperationID: "discardPhoto",
+		Method:      http.MethodDelete,
+		Path:        "/media/photos/{id}",
+		Summary:     "Discard a pending photo",
+		Description: "Deletes the caller's own photo that no submission has attached yet, and frees its pending slot. " +
+			"Repeating the call for a pending photo already discarded or expired is 204 too. Another user's photo, and an unknown id, are 404 " +
+			"`media_not_found`; a photo already attached to a submission is 409 `media_attached`.",
+		Tags:          []string{"media"},
+		Security:      auth.Require(auth.ScopeChoresComplete),
+		DefaultStatus: http.StatusNoContent,
+		Errors:        []int{http.StatusNotFound, http.StatusConflict},
+	}, h.discardPhoto)
+	huma.Register(hapi, huma.Operation{
 		OperationID: "getMediaFile",
 		Method:      http.MethodGet,
 		Path:        mediaFilesPath + "/{key}",
@@ -179,6 +192,18 @@ func (h *handlers) getMedia(ctx context.Context, in *GetMediaInput) (*MediaItemO
 		return nil, err
 	}
 	return &MediaItemOutput{Body: item}, nil
+}
+
+type DiscardPhotoInput struct {
+	ID int64 `path:"id"`
+}
+
+func (h *handlers) discardPhoto(ctx context.Context, in *DiscardPhotoInput) (*struct{}, error) {
+	p, _ := auth.PrincipalFrom(ctx)
+	if err := h.media.Discard(ctx, p, in.ID); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 type GetMediaFileInput struct {

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"sync"
@@ -57,6 +58,7 @@ const (
 
 var (
 	errNotFound    = apierr.New(http.StatusNotFound, apierr.CodeMediaNotFound, "no such media")
+	errAttached    = apierr.New(http.StatusConflict, apierr.CodeMediaAttached, "this photo is attached to a submission and can't be discarded")
 	errExpired     = apierr.New(http.StatusGone, apierr.CodeMediaExpired, "this media has expired and was deleted")
 	errInvalidURL  = apierr.New(http.StatusForbidden, apierr.CodeInvalidMediaURL, "the media link is invalid or has expired")
 	errDuplicate   = apierr.New(http.StatusConflict, apierr.CodeDuplicateMedia, "this photo was already used as evidence; take a new one")
@@ -430,6 +432,62 @@ func (s *Service) Get(ctx context.Context, p *auth.Principal, id int64) (sqlc.Me
 		return sqlc.Medium{}, errNotFound
 	}
 	return m, nil
+}
+
+// Discard drops p's own pending photo id, freeing its pending slot at once. It claims the row
+// like retention does (status deleting, hash dropped) in one transaction, so a completion
+// attaching the same photo meanwhile either wins (409 media_attached) or finds it gone. The files
+// are then deleted; if that fails the row stays deleting and the retention job retries.
+// Someone else's photo and an unknown id are both 404 media_not_found. Discarding an already
+// discarded or expired pending photo is a no-op, so a repeated DELETE is 204 too.
+func (s *Service) Discard(ctx context.Context, p *auth.Principal, id int64) error {
+	tx, err := s.db.SQL.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := s.db.WithTx(tx)
+	m, err := q.GetMedia(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("load media %d: %w", id, err)
+	}
+	if p.UserID == 0 || !m.UploadedBy.Valid || m.UploadedBy.Int64 != p.UserID {
+		return errNotFound
+	}
+	if m.OwnerKind != OwnerPending {
+		return errAttached
+	}
+	n, err := q.DiscardPendingMedia(ctx, sqlc.DiscardPendingMediaParams{
+		ID: id, UploadedBy: sql.NullInt64{Int64: p.UserID, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("discard media %d: %w", id, err)
+	}
+	if n == 0 { // not ready any more: discarded or expired already, or attached meanwhile
+		cur, err := q.GetMedia(ctx, id)
+		if err != nil {
+			return fmt.Errorf("reload media %d: %w", id, err)
+		}
+		if cur.OwnerKind != OwnerPending {
+			return errAttached
+		}
+		return nil
+	}
+	if err := q.DeleteMediaHashOf(ctx, sql.NullInt64{Int64: id, Valid: true}); err != nil {
+		return fmt.Errorf("drop media %d hash: %w", id, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if err := deleteFiles(ctx, s.store, m); err != nil {
+		// Claimed, so it is already gone for readers and the slot is free; retention retries the files.
+		slog.Warn("discard photo: can't delete the files; retention retries", "media", id, "err", err)
+		return nil
+	}
+	return s.db.MarkMediaExpired(ctx, id)
 }
 
 // SignedURLs are fresh links to a media file and its thumbnail, valid until Expires.

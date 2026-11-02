@@ -55,6 +55,12 @@ WHERE media.id = sqlc.arg(id) AND media.status = 'ready' AND media.keep = 0
   AND (media.expires_at <= sqlc.arg(now)
        OR (media.owner_kind = 'evidence' AND NOT EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.id = media.owner_id)));
 
+-- name: DiscardPendingMedia :execrows
+-- The uploader gives up a pending photo: claimed for deletion like retention does, if it is still
+-- ready and unattached. Attaching touches only ready pending media, so one of the two wins.
+UPDATE media SET status = 'deleting'
+WHERE id = sqlc.arg(id) AND uploaded_by = sqlc.arg(uploaded_by) AND owner_kind = 'pending' AND status = 'ready';
+
 -- name: ListDeletingMedia :many
 -- Claimed media whose files aren't deleted yet: this run's, and any an earlier run couldn't finish.
 SELECT * FROM media WHERE status = 'deleting' AND id > sqlc.arg(after_id) ORDER BY id LIMIT sqlc.arg(max_rows);
