@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"net/http"
 	"slices"
@@ -146,21 +147,25 @@ func (h *handlers) completeInstance(ctx context.Context, in *CompleteChoreInstan
 	if in.Body != nil {
 		kid = in.Body.KidID
 	}
+	inst, err := h.instances.Get(ctx, in.Instance)
+	if err != nil {
+		return nil, err
+	}
 	if p.Kind == auth.KindKid {
-		inst, err := h.instances.Get(ctx, in.Instance)
-		if err != nil {
-			return nil, err
-		}
 		mine := inst.KidID == p.UserID || slices.Contains(inst.GroupKidIDs, p.UserID)
 		if !mine || (kid != 0 && kid != p.UserID) {
 			return nil, apierr.New(http.StatusForbidden, apierr.CodeForbidden, "you can only complete your own chores")
 		}
 		kid = p.UserID
 	}
-	if kid != 0 && !p.CanAccessKid(kid) {
+	// The kid it's completed for: the one named, else the assignee. Complete gets that kid, so if
+	// the instance was reassigned since, it refuses (422) instead of completing it for a kid who
+	// wasn't checked. A shared instance needs a named member, which Complete checks too.
+	target := cmp.Or(kid, inst.KidID)
+	if target != 0 && !p.CanAccessKid(target) {
 		return nil, apierr.New(http.StatusForbidden, apierr.CodeForbidden, "you can't complete this kid's chores")
 	}
-	return instanceOutput(h.instances.Complete(ctx, in.Instance, instances.Completion{KidID: kid, By: p.UserID}))
+	return instanceOutput(h.instances.Complete(ctx, in.Instance, instances.Completion{KidID: target, By: p.UserID}))
 }
 
 func (h *handlers) approveInstance(ctx context.Context, in *ChoreInstanceRefInput) (*ChoreInstanceOutput, error) {
