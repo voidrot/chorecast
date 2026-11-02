@@ -122,12 +122,16 @@ implementation:
   at or before the household's, so by then every member's day has closed, and it's when the horizon makes a
   shared instance due. A member's earlier day close doesn't touch it. The penalty goes to every member in
   `chore_instance_members` when `shared_penalty = 'all'`, to nobody when `'none'`.
-- **Due by the close.** A close at instant T takes every open instance with `due_at` ≤ T (capped at now). That
-  catches up on its own: after downtime, or a failed job, the next close also takes every earlier day that didn't
-  close. A slot later than a kid's early day end (slot 20:00, day end 19:00) isn't due at that day's close, so the
-  next day's close takes it, still dated its own day.
-- **Per instance, one transaction:** `UPDATE … SET status = 'missed' WHERE id = ? AND status = 'open'` (0 rows:
-  someone else moved it, so skip), then a `chore_penalty` entry of −`penalty` per affected kid (source
+- **Due by the close.** A close at instant T takes every open instance with `due_at` ≤ T. That catches up on its
+  own: after downtime, or a failed job, the next close also takes every earlier day that didn't close. A slot later
+  than a kid's early day end (slot 20:00, day end 19:00) isn't due at that day's close, so the next day's close
+  takes it, still dated its own day. A close whose instant is still ahead does nothing (the kid's day end moved
+  later after the job was queued). The moved close is a new occurrence, because the schedule's job key includes
+  the close instant, so it still runs that day.
+- **Per instance, one transaction** (`dayclose.MissInTx`): `UPDATE … SET status = 'missed' WHERE id = ? AND
+  status = 'open' RETURNING …` (no row: someone else moved it, so skip). The assignee, the members and the
+  chore's penalty are all read inside the transaction, so a reassignment between the list and the close
+  penalizes the new assignee. Then a `chore_penalty` entry of −`penalty` per affected kid (source
   `chore_instance`, created by the system), then an `instance.missed` event `{instanceId, kidIds, from, to}`
   (`kidIds` is the assignee or the shared group). A penalty of 0 posts nothing; the instance is still missed.
   `ErrAlreadyPosted` counts as done, and clamping is the ledger's (above). A re-run or duplicate job finds
@@ -138,6 +142,14 @@ implementation:
   instances already due, so the two never touch the same instance, whichever runs first at the household day end.
 - **Archived kids'** days still close, so their remaining instances are settled instead of piling up until they're
   unarchived.
+- **For transitions that reopen an instance (#25).** `dayclose.ClosesAt(ctx, q, instance)` is when a close takes
+  the instance, and `dayclose.MissInTx(ctx, tx, clock, id)` misses it inside the caller's transaction. If a
+  reopen happens after the close has passed, call `MissInTx` instead of leaving the instance open until the next
+  close. `ErrAlreadyPosted` counts as "the penalty stands", which holds only while no transition reopens an
+  instance whose penalty was reversed.
+- **Schedules** are named after their kind (`day_close:<kind>:kid:<id>`), so another feature scheduling the same
+  closes (streaks, #30) keeps its own cursor. Closes find due instances through the partial index
+  `chore_instances_open_due`.
 
 ## Streaks
 
