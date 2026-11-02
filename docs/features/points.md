@@ -110,6 +110,35 @@ missed (−penalty if set) ── parent excuses ──▶ excused (penalty reve
 - A `submitted` instance at day close stays `submitted`: the kid did the work, so it's still approvable.
 - Bonus chores: `available → claimed → (same flow)`. An unclaimed bonus expires at day close with no penalty.
 
+Built (#24, `internal/dayclose`, server only). Three job kinds close days and weeks: `dayclose.kid_day` at each
+kid's effective day end (`KidDayCloses`), `dayclose.kid_week` at the day close of the week's last day
+(`KidWeekCloses`), and `dayclose.shared` at the household day end (`HouseholdDayCloses`). Choices made in
+implementation:
+
+- **What closes.** Every instance is required in v1 (there's no optional flag yet). A kid's day close takes their
+  open non-flexible instances, the week close their open flexible ones. `submitted`, `approved` and `excused` are
+  left alone.
+- **Shared instances close at the household day end**, for days and flexible weeks alike. Every kid's day end is
+  at or before the household's, so by then every member's day has closed, and it's when the horizon makes a
+  shared instance due. A member's earlier day close doesn't touch it. The penalty goes to every member in
+  `chore_instance_members` when `shared_penalty = 'all'`, to nobody when `'none'`.
+- **Due by the close.** A close at instant T takes every open instance with `due_at` ≤ T (capped at now). That
+  catches up on its own: after downtime, or a failed job, the next close also takes every earlier day that didn't
+  close. A slot later than a kid's early day end (slot 20:00, day end 19:00) isn't due at that day's close, so the
+  next day's close takes it, still dated its own day.
+- **Per instance, one transaction:** `UPDATE … SET status = 'missed' WHERE id = ? AND status = 'open'` (0 rows:
+  someone else moved it, so skip), then a `chore_penalty` entry of −`penalty` per affected kid (source
+  `chore_instance`, created by the system), then an `instance.missed` event `{instanceId, kidIds, from, to}`
+  (`kidIds` is the assignee or the shared group). A penalty of 0 posts nothing; the instance is still missed.
+  `ErrAlreadyPosted` counts as done, and clamping is the ledger's (above). A re-run or duplicate job finds
+  nothing open and changes nothing.
+- **`local_date`** of a penalty is the instance's day; for a flexible instance it's the week's last day, the day
+  the week closed.
+- **Horizon ordering.** The horizon regenerates only untouched instances not yet due, and a close only takes
+  instances already due, so the two never touch the same instance, whichever runs first at the household day end.
+- **Archived kids'** days still close, so their remaining instances are settled instead of piling up until they're
+  unarchived.
+
 ## Streaks
 
 Evaluated at day close for each kid:
