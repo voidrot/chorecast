@@ -348,6 +348,20 @@ func TestUploadLeavesNoTempFiles(t *testing.T) {
 		"success": func() *httptest.ResponseRecorder {
 			return e.upload(e.sam, append(photo(t, 400, 301), noise...), "image/jpeg")
 		},
+		"keyed": func() *httptest.ResponseRecorder {
+			var body bytes.Buffer
+			w := multipart.NewWriter(&body)
+			part, _ := w.CreateFormFile("file", "photo.jpg")
+			_, _ = part.Write(append(photo(t, 400, 302), noise...))
+			_ = w.Close()
+			req := httptest.NewRequestWithContext(t.Context(), "POST", "/api/v1/media/photos", &body)
+			req.Header.Set("Content-Type", w.FormDataContentType())
+			req.Header.Set("Authorization", "Bearer "+e.sam)
+			req.Header.Set("Idempotency-Key", "upload-1")
+			rec := httptest.NewRecorder()
+			e.r.ServeHTTP(rec, req)
+			return rec
+		},
 		"415":       func() *httptest.ResponseRecorder { return e.upload(e.sam, noise, "image/jpeg") },
 		"413 file":  func() *httptest.ResponseRecorder { return e.upload(e.sam, big, "image/jpeg") },
 		"413 body":  func() *httptest.ResponseRecorder { return e.upload(e.sam, make([]byte, 3<<20), "image/jpeg") },
