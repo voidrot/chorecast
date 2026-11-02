@@ -108,14 +108,14 @@ func (q *Queries) DeleteChoreInstances(ctx context.Context, choreID int64) error
 }
 
 const getChoreInstance = `-- name: GetChoreInstance :one
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.id, c.name, c.description, c.points, c.penalty, c.estimated_minutes, c.min_age, c.steps, c.slots, c.schedule, c.assign_mode, c.assign_kids, c.shared_points, c.shared_penalty, c.rotation_state, c.requires_approval, c.escalate, c.auto_approve_hours, c.evidence_photos, c.evidence_before_after, c.evidence_video, c.evidence_checklist, c.evidence_note, c.location_id, c.disabled, c.created_at, c.updated_at FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.id = ?
 `
 
 type GetChoreInstanceRow struct {
 	ChoreInstance ChoreInstance `json:"chore_instance"`
-	ChoreName     string        `json:"chore_name"`
+	Chore         Chore         `json:"chore"`
 }
 
 func (q *Queries) GetChoreInstance(ctx context.Context, id int64) (GetChoreInstanceRow, error) {
@@ -140,7 +140,33 @@ func (q *Queries) GetChoreInstance(ctx context.Context, id int64) (GetChoreInsta
 		&i.ChoreInstance.RejectionCount,
 		&i.ChoreInstance.CreatedAt,
 		&i.ChoreInstance.UpdatedAt,
-		&i.ChoreName,
+		&i.Chore.ID,
+		&i.Chore.Name,
+		&i.Chore.Description,
+		&i.Chore.Points,
+		&i.Chore.Penalty,
+		&i.Chore.EstimatedMinutes,
+		&i.Chore.MinAge,
+		&i.Chore.Steps,
+		&i.Chore.Slots,
+		&i.Chore.Schedule,
+		&i.Chore.AssignMode,
+		&i.Chore.AssignKids,
+		&i.Chore.SharedPoints,
+		&i.Chore.SharedPenalty,
+		&i.Chore.RotationState,
+		&i.Chore.RequiresApproval,
+		&i.Chore.Escalate,
+		&i.Chore.AutoApproveHours,
+		&i.Chore.EvidencePhotos,
+		&i.Chore.EvidenceBeforeAfter,
+		&i.Chore.EvidenceVideo,
+		&i.Chore.EvidenceChecklist,
+		&i.Chore.EvidenceNote,
+		&i.Chore.LocationID,
+		&i.Chore.Disabled,
+		&i.Chore.CreatedAt,
+		&i.Chore.UpdatedAt,
 	)
 	return i, err
 }
@@ -353,7 +379,7 @@ func (q *Queries) ListChoreInstanceMembersFrom(ctx context.Context, occurrenceDa
 }
 
 const listChoreInstancesBetween = `-- name: ListChoreInstancesBetween :many
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.id, c.name, c.description, c.points, c.penalty, c.estimated_minutes, c.min_age, c.steps, c.slots, c.schedule, c.assign_mode, c.assign_kids, c.shared_points, c.shared_penalty, c.rotation_state, c.requires_approval, c.escalate, c.auto_approve_hours, c.evidence_photos, c.evidence_before_after, c.evidence_video, c.evidence_checklist, c.evidence_note, c.location_id, c.disabled, c.created_at, c.updated_at FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= ?1 AND i.occurrence_date <= ?2
   AND (CAST(?3 AS INTEGER) = 0 OR i.kid_id = CAST(?3 AS INTEGER)
@@ -370,7 +396,7 @@ type ListChoreInstancesBetweenParams struct {
 
 type ListChoreInstancesBetweenRow struct {
 	ChoreInstance ChoreInstance `json:"chore_instance"`
-	ChoreName     string        `json:"chore_name"`
+	Chore         Chore         `json:"chore"`
 }
 
 // Instances on [from, to] for every kid (kid = 0) or one kid, including shared instances they're a member of.
@@ -402,7 +428,33 @@ func (q *Queries) ListChoreInstancesBetween(ctx context.Context, arg ListChoreIn
 			&i.ChoreInstance.RejectionCount,
 			&i.ChoreInstance.CreatedAt,
 			&i.ChoreInstance.UpdatedAt,
-			&i.ChoreName,
+			&i.Chore.ID,
+			&i.Chore.Name,
+			&i.Chore.Description,
+			&i.Chore.Points,
+			&i.Chore.Penalty,
+			&i.Chore.EstimatedMinutes,
+			&i.Chore.MinAge,
+			&i.Chore.Steps,
+			&i.Chore.Slots,
+			&i.Chore.Schedule,
+			&i.Chore.AssignMode,
+			&i.Chore.AssignKids,
+			&i.Chore.SharedPoints,
+			&i.Chore.SharedPenalty,
+			&i.Chore.RotationState,
+			&i.Chore.RequiresApproval,
+			&i.Chore.Escalate,
+			&i.Chore.AutoApproveHours,
+			&i.Chore.EvidencePhotos,
+			&i.Chore.EvidenceBeforeAfter,
+			&i.Chore.EvidenceVideo,
+			&i.Chore.EvidenceChecklist,
+			&i.Chore.EvidenceNote,
+			&i.Chore.LocationID,
+			&i.Chore.Disabled,
+			&i.Chore.CreatedAt,
+			&i.Chore.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -485,6 +537,38 @@ func (q *Queries) ListChoreInstancesFrom(ctx context.Context, occurrenceDate str
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listKidChoreIDsWithInstances = `-- name: ListKidChoreIDsWithInstances :many
+SELECT i.chore_id FROM chore_instances i WHERE i.kid_id = CAST(?1 AS INTEGER)
+UNION
+SELECT i.chore_id FROM chore_instances i
+JOIN chore_instance_members m ON m.instance_id = i.id
+WHERE m.kid_id = CAST(?1 AS INTEGER)
+`
+
+// The chores the kid still has an instance of (any status): assigned, or a member of the shared group.
+func (q *Queries) ListKidChoreIDsWithInstances(ctx context.Context, kidID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listKidChoreIDsWithInstances, kidID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var chore_id int64
+		if err := rows.Scan(&chore_id); err != nil {
+			return nil, err
+		}
+		items = append(items, chore_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -587,7 +671,7 @@ func (q *Queries) ListLatestChoreInstanceRejectionsByIDs(ctx context.Context, id
 }
 
 const listReviewQueue = `-- name: ListReviewQueue :many
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name, c.steps AS chore_steps, COALESCE(u.display_name, '') AS kid_name
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.id, c.name, c.description, c.points, c.penalty, c.estimated_minutes, c.min_age, c.steps, c.slots, c.schedule, c.assign_mode, c.assign_kids, c.shared_points, c.shared_penalty, c.rotation_state, c.requires_approval, c.escalate, c.auto_approve_hours, c.evidence_photos, c.evidence_before_after, c.evidence_video, c.evidence_checklist, c.evidence_note, c.location_id, c.disabled, c.created_at, c.updated_at, COALESCE(u.display_name, '') AS kid_name
 FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 LEFT JOIN users u ON u.id = COALESCE(i.completed_by, i.kid_id)
@@ -618,8 +702,7 @@ type ListReviewQueueParams struct {
 
 type ListReviewQueueRow struct {
 	ChoreInstance ChoreInstance `json:"chore_instance"`
-	ChoreName     string        `json:"chore_name"`
-	ChoreSteps    string        `json:"chore_steps"`
+	Chore         Chore         `json:"chore"`
 	KidName       string        `json:"kid_name"`
 }
 
@@ -661,8 +744,33 @@ func (q *Queries) ListReviewQueue(ctx context.Context, arg ListReviewQueueParams
 			&i.ChoreInstance.RejectionCount,
 			&i.ChoreInstance.CreatedAt,
 			&i.ChoreInstance.UpdatedAt,
-			&i.ChoreName,
-			&i.ChoreSteps,
+			&i.Chore.ID,
+			&i.Chore.Name,
+			&i.Chore.Description,
+			&i.Chore.Points,
+			&i.Chore.Penalty,
+			&i.Chore.EstimatedMinutes,
+			&i.Chore.MinAge,
+			&i.Chore.Steps,
+			&i.Chore.Slots,
+			&i.Chore.Schedule,
+			&i.Chore.AssignMode,
+			&i.Chore.AssignKids,
+			&i.Chore.SharedPoints,
+			&i.Chore.SharedPenalty,
+			&i.Chore.RotationState,
+			&i.Chore.RequiresApproval,
+			&i.Chore.Escalate,
+			&i.Chore.AutoApproveHours,
+			&i.Chore.EvidencePhotos,
+			&i.Chore.EvidenceBeforeAfter,
+			&i.Chore.EvidenceVideo,
+			&i.Chore.EvidenceChecklist,
+			&i.Chore.EvidenceNote,
+			&i.Chore.LocationID,
+			&i.Chore.Disabled,
+			&i.Chore.CreatedAt,
+			&i.Chore.UpdatedAt,
 			&i.KidName,
 		); err != nil {
 			return nil, err

@@ -73,9 +73,9 @@ balance (`GET /kids/{kid}/points`), the current daily streak (`GET /kids/{kid}/s
 after a rejection, waiting for a parent, done, missed, excused) and points. The days after today come from the same
 call (the server's default range, today to today+7) and show as planned. The chore detail shows the due time, the
 steps, what the chore asks to hand in, and the parent's rejection reason and words. Pull to refresh; loading, empty
-and error states. The Complete button is a placeholder until #101. Points per chore come from the chore, because
-`ChoreInstance` carries none: the app reads `GET /chores` (kids hold `chores:read`) and `GET /chores/{id}` for
-the details. My week, goals, badges and history are not built yet.
+and error states. The Complete button is a placeholder until #101. The app reads points per chore from
+`GET /chores` and the details from `GET /chores/{id}`; since #108 each instance carries the chore's points, steps and
+evidence rules, so the app can drop those calls. My week, goals, badges and history are not built yet.
 
 ## Badges
 

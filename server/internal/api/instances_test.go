@@ -1,7 +1,9 @@
 package api_test
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/voidrot/chorecast/server/internal/horizon"
@@ -74,6 +76,73 @@ func TestListChoreInstances(t *testing.T) {
 		wantCode(t, what, s.do("GET", "/api/v1/instances"+q, nil, mom), 422, "validation_failed")
 	}
 	wantCode(t, "signed out", s.do("GET", "/api/v1/instances", nil), 401, "unauthenticated")
+}
+
+// An instance carries its chore's points, steps and evidence rules, so the kid app needs no chore read.
+func TestChoreInstanceCarriesChoreDetails(t *testing.T) {
+	s := newAuthServer(t)
+	mom := sessionCookie(t, s.do("POST", "/api/v1/auth/login", login(nil)))
+	sam, _ := s.store.GetKidBySlug(t.Context(), sqlNull("sam"))
+	wantCode(t, "create chore", s.do("POST", "/api/v1/chores", map[string]any{
+		"name": "Dishes", "points": 5, "requiresApproval": true, "steps": []string{"Wash", "Dry"},
+		"evidence":   map[string]any{"photos": 2, "beforeAfter": true, "checklist": true, "note": true},
+		"schedule":   map[string]any{"type": "daily", "startDate": "2026-10-31"},
+		"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam.ID}},
+	}, mom), 201, "")
+	wantCode(t, "create a bare chore", s.do("POST", "/api/v1/chores", map[string]any{
+		"name": "Bare", "points": 0, "requiresApproval": false, "evidence": map[string]any{"photos": 0},
+		"schedule":   map[string]any{"type": "daily", "startDate": "2026-10-31"},
+		"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam.ID}},
+	}, mom), 201, "")
+	if _, err := horizon.New(s.store, s.clk).Generate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_, token := pairDevice(t, s, pair(t, s, mom, "sam").Code)
+	rec := s.bearer("GET", "/api/v1/instances", token, nil)
+	wantCode(t, "kid lists instances", rec, 200, "")
+
+	// Optional in the spec: a bare chore's instances leave all three out.
+	bare := 0
+	for _, raw := range decode[struct{ Items []map[string]json.RawMessage }](t, rec).Items {
+		if string(raw["choreName"]) != `"Bare"` {
+			continue
+		}
+		bare++
+		for _, key := range []string{"points", "steps", "evidence"} {
+			if v, ok := raw[key]; ok {
+				t.Errorf("bare chore instance has %s = %s, want it absent", key, v)
+			}
+		}
+	}
+	if bare == 0 {
+		t.Fatal("no instances of the bare chore")
+	}
+
+	items := decode[struct {
+		Items []struct {
+			ChoreName string
+			Points    int
+			Steps     []string
+			Evidence  struct {
+				Photos                       int
+				BeforeAfter, Checklist, Note bool
+			}
+		}
+	}](t, rec).Items
+	dishes := 0
+	for _, i := range items {
+		if i.ChoreName != "Dishes" {
+			continue
+		}
+		dishes++
+		if i.Points != 5 || !slices.Equal(i.Steps, []string{"Wash", "Dry"}) ||
+			i.Evidence.Photos != 2 || !i.Evidence.BeforeAfter || !i.Evidence.Checklist || !i.Evidence.Note {
+			t.Errorf("instance = %+v, want the chore's points, steps and evidence", i)
+		}
+	}
+	if dishes == 0 {
+		t.Fatal("no instances of Dishes")
+	}
 }
 
 func TestDeleteChoreWithHistoryIsRefused(t *testing.T) {

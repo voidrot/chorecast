@@ -149,6 +149,15 @@ today to today+7, at most 62 days, `chores:read`) lists instances with `planned`
 their own, including shared ones they're a member of (`CanAccessKid`). An instance with submitted evidence (#27)
 counts as touched (`horizon.existing.untouched`, `ChoreHasHistory`).
 
+Built (#108, server only). Each `ChoreInstance` (`GET /instances`, the transition responses and the review queue)
+carries its chore's `points`, `steps` and `evidence` rules, in the chore's shape. All three are optional in the spec:
+absent means 0 points, no steps, nothing to hand in. Kids (a kid-bound device or a kid session on a shared tablet)
+read only their chores: `GET /chores` lists the chores whose assignment includes them (everyone, an auto-pick from
+every kid, or listed as fixed kid, rotation turn, auto pool or shared member, unless an eligibility exception says
+they never get it) plus any chore they still have an instance of (any status), since a reassignment or a swap can
+hand them a sibling's. `GET /chores/{id}` answers 404 `not_found` for any other chore. The minimum age isn't
+applied. Parents and displays still read every chore; any other principal kind gets 403.
+
 ## Disruptions
 
 - **Kid away**: `absences(kid_id, start_date, end_date, note)`. Parent-created. Shows on the calendar.

@@ -533,6 +533,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceRules",
+            "description": "What the chore asks the kid to hand in; absent = nothing"
+          },
           "flexible": {
             "description": "One of a flexible chore's completions for the week",
             "type": "boolean"
@@ -569,6 +573,11 @@
             "description": "Dated after today: a forecast that may still change",
             "type": "boolean"
           },
+          "points": {
+            "description": "The chore's points; absent = 0",
+            "format": "int64",
+            "type": "integer"
+          },
           "rejectionCount": {
             "description": "How many times a parent rejected it",
             "format": "int64",
@@ -592,6 +601,16 @@
               "excused"
             ],
             "type": "string"
+          },
+          "steps": {
+            "description": "The chore's checklist steps",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4589,6 +4608,7 @@
     },
     "/chores": {
       "get": {
+        "description": "Parents and displays get every chore. A kid gets the chores assigned to them (everyone, an auto-pick from every kid, or listed in the assignment, unless an exception excludes them) and those they have an instance of.",
         "operationId": "listChores",
         "responses": {
           "200": {
@@ -4601,7 +4621,7 @@
             },
             "description": "OK"
           },
-          "default": {
+          "403": {
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4609,7 +4629,17 @@
                 }
               }
             },
-            "description": "Error"
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           }
         },
         "security": [
@@ -4857,6 +4887,7 @@
         ]
       },
       "get": {
+        "description": "A kid gets 404 for a chore they can't see (see `listChores`).",
         "operationId": "getChore",
         "parameters": [
           {
@@ -4879,6 +4910,16 @@
               }
             },
             "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "404": {
             "content": {

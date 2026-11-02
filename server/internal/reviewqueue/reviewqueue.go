@@ -117,13 +117,13 @@ func build(ctx context.Context, q *sqlc.Queries, clk clock.Clock, rows []sqlc.Li
 			last = &rej
 		}
 		item := ReviewQueueItem{
-			Instance: horizon.ToInstance(in, r.ChoreName, members[in.ID], last, today), KidName: r.KidName,
+			Instance: horizon.ToInstance(in, r.Chore, members[in.ID], last, today), KidName: r.KidName,
 		}
 		var done []int
 		if sub, ok := submissions[in.ID]; ok {
 			item.Submission, done = &sub, sub.Checklist
 		}
-		if item.Steps, err = steps(r.ChoreSteps, done); err != nil {
+		if item.Steps, err = steps(r.Chore.Steps, done); err != nil {
 			return nil, fmt.Errorf("chore %d steps: %w", in.ChoreID, err)
 		}
 		items = append(items, item)
