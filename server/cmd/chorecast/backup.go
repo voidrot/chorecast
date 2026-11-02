@@ -40,7 +40,18 @@ func backupCmd(ctx context.Context, args []string, dataDir string, clk clock.Clo
 		return err
 	}
 	defer release()
-	res, err := backup.Write(ctx, dataDir, *path, clk)
+	// With no server running, hold its lock (a server starting meanwhile is refused) and let the
+	// snapshot open the database read-write, so it leaves no -wal/-shm owned by this user behind.
+	var opts backup.WriteOptions
+	serverLock, err := db.LockDataDir(dataDir)
+	switch {
+	case err == nil:
+		defer func() { _ = serverLock.Unlock() }()
+		opts.ServerStopped = true
+	case !errors.Is(err, db.ErrDataDirLocked):
+		return err
+	}
+	res, err := backup.Write(ctx, dataDir, *path, clk, opts)
 	if err != nil {
 		return err
 	}

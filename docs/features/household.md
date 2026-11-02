@@ -161,18 +161,23 @@ the server's single connection. In WAL mode `VACUUM INTO` is a reader: on a 108 
 and concurrent writes stayed under 1 ms. The archive holds `chorecast.db`, then `media/aa/bb/<key>` streamed from
 disk, then `manifest.json` (format, app version and commit, creation time, goose schema version, row count per
 table, media file count and bytes). It is written owner-only (0600) to a temp file next to the target and
-hard-linked into place, so an existing file is never replaced. Work dirs a crashed backup left (`.chorecast-backup-*`)
-are removed by the next backup once they are an hour old. A failed backup is logged, and the job makes up to 3
+hard-linked into place, so an existing file is never replaced. A backup holds a lock inside its work dir
+(`.chorecast-backup-*`) while it runs; the next backup removes work dirs that are over an hour old and unlocked
+(left by a crash). A failed backup is logged, and the job makes up to 3
 attempts. The `problems` notification arrives with notifications. S3 is not built yet.
 
 `chorecast backup [--out PATH]` writes the same archive, by default into `$DATA_DIR/backups`, and is safe while
-the server runs. `chorecast restore [--force] <file>` restores into `CHORECAST_DATA_DIR`. **Restore only archives
-you created**: an archive replaces every account, secret and photo.
+the server runs. With no server running it takes the server's lock for its duration (a server starting meanwhile
+is refused) and opens the database read-write, so closing it removes the `-wal`/`-shm` files instead of leaving
+them behind. `chorecast restore [--force] <file>` restores into `CHORECAST_DATA_DIR`. **Restore only archives
+you created**: an archive replaces every account, secret and photo. **Run backup and restore as the server's
+user** (uid 65532 in the images, which `docker compose run` does): files they create in the data dir would
+otherwise belong to another user, and the server couldn't write them.
 - Locks (`flock`, released by the kernel even after a crash): the server holds `chorecast.lock` exclusively, so
   restore refuses while a server uses the data dir, and a second server is refused too. Restore also holds
   `chorecast-restore.lock` exclusively, which `chorecast admin` and `chorecast backup` take shared: they work beside
-  a running server but not during a restore, and a restore waits for them. In Docker, stop the service and restore
-  with `docker compose run --rm chorecast restore /data/backups/<file>`.
+  a running server but not during a restore, and a restore is refused while they run. In Docker, stop the service
+  and restore with `docker compose run --rm chorecast restore /data/backups/<file>`.
 - It refuses a data dir that already has a database or media, unless `--force`, and one whose `chorecast.db` or
   `media` is a symlink or a mount point (the swap would replace the link with plain files).
 - It extracts into a staging dir (`.restore-*` in the data dir) and accepts only regular files named

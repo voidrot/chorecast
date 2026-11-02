@@ -72,6 +72,48 @@ func TestBackupAndRestoreCommands(t *testing.T) {
 	}
 }
 
+// A CLI backup of a stopped data dir leaves no -wal/-shm behind: run as another user, they would
+// be that user's files, and the server couldn't write its database.
+func TestBackupOfStoppedDataDirLeavesNoWAL(t *testing.T) {
+	dir := t.TempDir()
+	store, err := db.Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateHousehold(t.Context(), sqlc.CreateHouseholdParams{Name: "Test", Timezone: "UTC", DayEnd: "00:00", CreatedAt: "2026-11-04T18:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	walFiles := func() []string {
+		var found []string
+		for _, n := range []string{db.FileName + "-wal", db.FileName + "-shm"} {
+			if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+				found = append(found, n)
+			}
+		}
+		return found
+	}
+	if f := walFiles(); len(f) != 0 {
+		t.Fatalf("a closed database left %v", f)
+	}
+	clk := clock.NewFake(time.Date(2026, 11, 4, 18, 0, 0, 0, time.UTC))
+	var out bytes.Buffer
+	if err := backupCmd(t.Context(), []string{"--out", filepath.Join(t.TempDir(), "b.tar.gz")}, dir, clk, &out); err != nil {
+		t.Fatal(err)
+	}
+	if f := walFiles(); len(f) != 0 {
+		t.Errorf("a backup of a stopped data dir left %v", f)
+	}
+	// The data dir lock was released: a server can start.
+	lock, err := db.LockDataDir(dir)
+	if err != nil {
+		t.Fatalf("data dir lock after backup: %v", err)
+	}
+	_ = lock.Unlock()
+}
+
 // While a restore's marker exists, the server, restore, backup and admin all refuse to open the
 // database, and say where the previous data is.
 func TestRestoreMarkerBlocksCommands(t *testing.T) {

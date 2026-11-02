@@ -63,7 +63,7 @@ func (s *Scheduler) Run(ctx context.Context, at time.Time, log *slog.Logger) err
 		return nil
 	}
 	dir := filepath.Join(s.dataDir, DirName)
-	res, err := Write(ctx, s.dataDir, filepath.Join(dir, FileName(at)), s.clock)
+	res, err := Write(ctx, s.dataDir, filepath.Join(dir, FileName(at)), s.clock, WriteOptions{}) // in the server, which holds the data dir
 	switch {
 	case errors.Is(err, ErrExists):
 		log.Info("backup already taken", "occurrence", at)

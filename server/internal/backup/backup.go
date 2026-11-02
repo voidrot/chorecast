@@ -39,6 +39,7 @@ const (
 	mediaDirName = "media"
 	fileStamp    = "20060102T150405Z"
 	workPrefix   = ".chorecast-backup-"
+	workLockName = ".lock"
 )
 
 // ErrExists means the output file already exists; Write never replaces one.
@@ -71,13 +72,23 @@ func FileName(t time.Time) string { return "chorecast-" + t.UTC().Format(fileSta
 
 var fileNamePattern = regexp.MustCompile(`^chorecast-\d{8}T\d{6}Z\.tar\.gz$`)
 
+// WriteOptions tune Write.
+type WriteOptions struct {
+	// ServerStopped means the caller holds the data dir lock (db.LockDataDir), so no server has
+	// the database open. The snapshot then opens it read-write: closing that last connection
+	// checkpoints and removes the -wal and -shm files, which a read-only connection would leave
+	// behind owned by whoever ran the backup. With a server running they are the server's files,
+	// and a read-only connection is used.
+	ServerStopped bool
+}
+
 // Write archives the database and media in dataDir to out. It writes a temporary file next to out
 // and hard-links it into place, so out is either absent or a complete archive. It returns
 // ErrExists if out already exists, also when another writer creates it first.
 //
 // The snapshot is taken on a connection of its own, so the server's connection is never blocked:
 // in WAL mode VACUUM INTO is a reader, and writers carry on while it runs.
-func Write(ctx context.Context, dataDir, out string, clk clock.Clock) (Result, error) {
+func Write(ctx context.Context, dataDir, out string, clk clock.Clock, opts WriteOptions) (Result, error) {
 	if _, err := os.Stat(filepath.Join(dataDir, db.FileName)); err != nil {
 		return Result{}, fmt.Errorf("backup: no database in %s: %w", dataDir, err)
 	}
@@ -97,13 +108,27 @@ func Write(ctx context.Context, dataDir, out string, clk clock.Clock) (Result, e
 	if err != nil {
 		return Result{}, fmt.Errorf("backup: create work dir: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(work) }()
+	// Held while the backup runs, so another backup's stale-dir cleanup leaves this dir alone
+	// however long it takes.
+	workLock, err := db.LockFile(work, workLockName, true)
+	if err != nil {
+		_ = os.RemoveAll(work)
+		return Result{}, fmt.Errorf("backup: lock work dir: %w", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(work)
+		_ = workLock.Unlock()
+	}()
 
 	res := Result{Path: out}
 	res.Manifest = Manifest{Format: Format, AppVersion: version.Version, Commit: version.Commit, CreatedAt: clk.Now().UTC()}
 	snap := filepath.Join(work, db.FileName)
+	mode := "ro"
+	if opts.ServerStopped {
+		mode = "rw"
+	}
 	start := clk.Now()
-	if err := vacuumInto(ctx, filepath.Join(dataDir, db.FileName), snap); err != nil {
+	if err := vacuumInto(ctx, filepath.Join(dataDir, db.FileName), snap, mode); err != nil {
 		return Result{}, err
 	}
 	res.Snapshot = clk.Now().Sub(start)
@@ -172,7 +197,8 @@ func publish(tmp, out string) error {
 const staleWorkAge = time.Hour
 
 // removeStaleWork deletes work dirs a crashed backup left in dir (each holds a database copy).
-// Failing to is not an error: it only costs disk space until the next try.
+// A dir whose lock is held belongs to a backup still running, and is skipped. Failing to delete
+// is not an error: it only costs disk space until the next try.
 func removeStaleWork(dir string, now time.Time) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -182,17 +208,25 @@ func removeStaleWork(dir string, now time.Time) {
 		if !e.IsDir() || !strings.HasPrefix(e.Name(), workPrefix) {
 			continue
 		}
-		if info, err := e.Info(); err == nil && now.Sub(info.ModTime()) > staleWorkAge {
-			_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+		info, err := e.Info()
+		if err != nil || now.Sub(info.ModTime()) <= staleWorkAge {
+			continue
 		}
+		p := filepath.Join(dir, e.Name())
+		lock, err := db.LockFile(p, workLockName, true)
+		if err != nil {
+			continue
+		}
+		_ = os.RemoveAll(p)
+		_ = lock.Unlock()
 	}
 }
 
-// vacuumInto writes a consistent copy of the database at src to dst, which must not exist. The
-// source is opened read-only: VACUUM INTO only reads it, and still sees WAL content a running
-// server hasn't checkpointed yet.
-func vacuumInto(ctx context.Context, src, dst string) error {
-	conn, err := openFile(src, "ro")
+// vacuumInto writes a consistent copy of the database at src to dst, which must not exist. mode
+// is how src is opened (WriteOptions.ServerStopped); VACUUM INTO only reads it either way, and
+// sees WAL content a running server hasn't checkpointed yet.
+func vacuumInto(ctx context.Context, src, dst, mode string) error {
+	conn, err := openFile(src, mode)
 	if err != nil {
 		return err
 	}

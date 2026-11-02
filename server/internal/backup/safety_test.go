@@ -283,7 +283,7 @@ func TestWritePublishRace(t *testing.T) {
 		}
 		return os.Link(from, to)
 	})
-	if _, err := backup.Write(t.Context(), src, out, clk); !errors.Is(err, backup.ErrExists) {
+	if _, err := backup.Write(t.Context(), src, out, clk, backup.WriteOptions{}); !errors.Is(err, backup.ErrExists) {
 		t.Fatalf("write: %v, want ErrExists", err)
 	}
 	if b, _ := os.ReadFile(out); string(b) != "theirs" { //nolint:gosec // test file
@@ -295,22 +295,29 @@ func TestWritePublishRace(t *testing.T) {
 	}
 }
 
-// Work dirs a crashed backup left behind are removed once they are an hour old.
+// Work dirs a crashed backup left behind are removed once they are an hour old, unless a running
+// backup still holds their lock.
 func TestWriteRemovesStaleWorkDirs(t *testing.T) {
 	clk := clock.NewFake(start)
 	src, _ := newDataDir(t, clk)
 	dir := t.TempDir()
 	stale := filepath.Join(dir, ".chorecast-backup-111")
 	fresh := filepath.Join(dir, ".chorecast-backup-222")
-	for p, age := range map[string]time.Duration{stale: 2 * time.Hour, fresh: 10 * time.Minute} {
-		if err := os.Mkdir(p, 0o700); err != nil {
+	running := filepath.Join(dir, ".chorecast-backup-333") // old, but its backup still holds the lock
+	lock, err := db.LockFile(running, ".lock", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Unlock() }()
+	for p, age := range map[string]time.Duration{stale: 2 * time.Hour, fresh: 10 * time.Minute, running: 3 * time.Hour} {
+		if err := os.MkdirAll(p, 0o700); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Chtimes(p, start.Add(-age), start.Add(-age)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := backup.Write(t.Context(), src, filepath.Join(dir, "b.tar.gz"), clk); err != nil {
+	if _, err := backup.Write(t.Context(), src, filepath.Join(dir, "b.tar.gz"), clk, backup.WriteOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(stale); err == nil {
@@ -318,5 +325,8 @@ func TestWriteRemovesStaleWorkDirs(t *testing.T) {
 	}
 	if _, err := os.Stat(fresh); err != nil {
 		t.Errorf("a recent work dir (maybe a running backup) was removed: %v", err)
+	}
+	if _, err := os.Stat(running); err != nil {
+		t.Errorf("a locked work dir (a backup running over an hour) was removed: %v", err)
 	}
 }

@@ -136,7 +136,7 @@ func mediaHashes(t *testing.T, dir string) map[string]string {
 func writeBackup(t *testing.T, dataDir string, clk clock.Clock) string {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "backup.tar.gz")
-	if _, err := backup.Write(t.Context(), dataDir, out, clk); err != nil {
+	if _, err := backup.Write(t.Context(), dataDir, out, clk, backup.WriteOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	return out
@@ -146,7 +146,7 @@ func TestRoundTrip(t *testing.T) {
 	clk := clock.NewFake(start)
 	src, _ := newDataDir(t, clk)
 	out := filepath.Join(src, backup.DirName, backup.FileName(clk.Now()))
-	res, err := backup.Write(t.Context(), src, out, clk)
+	res, err := backup.Write(t.Context(), src, out, clk, backup.WriteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestWriteRefusesExistingOutput(t *testing.T) {
 	src, _ := newDataDir(t, clk)
 	out := writeBackup(t, src, clk)
 	before, _ := os.ReadFile(out) //nolint:gosec // test file
-	if _, err := backup.Write(t.Context(), src, out, clk); !errors.Is(err, backup.ErrExists) {
+	if _, err := backup.Write(t.Context(), src, out, clk, backup.WriteOptions{}); !errors.Is(err, backup.ErrExists) {
 		t.Fatalf("second write: %v, want ErrExists", err)
 	}
 	if after, _ := os.ReadFile(out); !bytes.Equal(before, after) { //nolint:gosec // test file
@@ -354,7 +354,7 @@ func TestRestoreRefusesDataDirWithData(t *testing.T) {
 	clk := clock.NewFake(start)
 	src, srcStore := newDataDir(t, clk)
 	out := filepath.Join(src, backup.DirName, backup.FileName(clk.Now()))
-	if _, err := backup.Write(t.Context(), src, out, clk); err != nil {
+	if _, err := backup.Write(t.Context(), src, out, clk, backup.WriteOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := srcStore.SQL.ExecContext(t.Context(), `UPDATE household SET name = 'Changed'`); err != nil {

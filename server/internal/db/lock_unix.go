@@ -14,8 +14,9 @@ import (
 // exits, even after a crash, so a stale lock file never blocks anything.
 type DataDirLock struct{ f *os.File }
 
-// lockFile takes the lock on dataDir/name without waiting, creating the dir if needed.
-func lockFile(dataDir, name string, exclusive bool) (*DataDirLock, error) {
+// LockFile takes the lock on dataDir/name without waiting, creating the dir if needed. It returns
+// ErrDataDirLocked when another holder conflicts (any holder if exclusive, an exclusive one if not).
+func LockFile(dataDir, name string, exclusive bool) (*DataDirLock, error) {
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}

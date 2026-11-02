@@ -10,9 +10,9 @@ import (
 // DataDirLock is a no-op outside unix.
 type DataDirLock struct{}
 
-// lockFile only creates the data dir.
+// LockFile only creates the dir.
 // shortcut: no lock outside unix (releases ship for Linux only), add LockFileEx if Windows is supported.
-func lockFile(dataDir, _ string, _ bool) (*DataDirLock, error) {
+func LockFile(dataDir, _ string, _ bool) (*DataDirLock, error) {
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}

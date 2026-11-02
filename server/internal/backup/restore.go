@@ -40,7 +40,9 @@ const (
 	// freeSpaceMargin is left free on the data disk when the restore budget comes from free space.
 	freeSpaceMargin = 256 << 20
 	copyChunk       = 1 << 20
-	stagePrefix     = ".restore-"
+	// maxTrailingBytes is what may follow the tar end marker (record padding) before the gzip end.
+	maxTrailingBytes = 1 << 20
+	stagePrefix      = ".restore-"
 )
 
 // RestoreOptions tune Restore.
@@ -292,9 +294,18 @@ func extract(ctx context.Context, archive, dir string, budget int64) (Manifest, 
 			got.mediaBytes += hdr.Size
 		}
 	}
-	// Read to the end so gzip checks its checksum: a corrupt archive must not pass.
-	if _, err := io.Copy(io.Discard, gz); err != nil { //nolint:gosec // drained to discard, nothing is kept
+	// Read to the end so gzip checks its checksum: a corrupt archive must not pass. A backup has
+	// at most tar padding after its end marker, so anything past maxTrailingBytes is refused
+	// rather than decompressed.
+	if err := ctx.Err(); err != nil {
+		return m, got, err
+	}
+	trailing, err := io.Copy(io.Discard, io.LimitReader(gz, maxTrailingBytes+1))
+	if err != nil {
 		return m, got, invalid("read: %v", err)
+	}
+	if trailing > maxTrailingBytes {
+		return m, got, invalid("more than %d bytes after the end of the archive", maxTrailingBytes)
 	}
 	if !seen[manifestName] || !seen[db.FileName] {
 		return m, got, invalid("missing %s or %s", manifestName, db.FileName)

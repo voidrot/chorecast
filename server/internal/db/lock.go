@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,18 +33,18 @@ const (
 // LockDataDir takes the data dir's exclusive lock without waiting, creating the dir if needed.
 // The server and restore hold it. It returns ErrDataDirLocked when another process holds it.
 func LockDataDir(dataDir string) (*DataDirLock, error) {
-	return lockFile(dataDir, LockFileName, true)
+	return LockFile(dataDir, LockFileName, true)
 }
 
 // LockRestore takes the restore lock exclusively: no admin command runs during a restore.
 func LockRestore(dataDir string) (*DataDirLock, error) {
-	return lockFile(dataDir, RestoreLockFileName, true)
+	return LockFile(dataDir, RestoreLockFileName, true)
 }
 
 // BlockRestore takes the restore lock shared: any number of admin commands at once, and no
 // restore until they finish.
 func BlockRestore(dataDir string) (*DataDirLock, error) {
-	return lockFile(dataDir, RestoreLockFileName, false)
+	return LockFile(dataDir, RestoreLockFileName, false)
 }
 
 // WriteRestoreMarker durably records that a restore is about to move the data dir's data to
@@ -76,7 +77,12 @@ func RemoveRestoreMarker(dataDir string) error {
 	if err := os.Remove(filepath.Join(dataDir, RestoreMarkerName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove restore marker: %w", err)
 	}
-	return syncDir(dataDir)
+	// The swap is complete either way; at worst the marker reappears after a power cut and asks
+	// the operator to check, so a sync failure is only worth a warning.
+	if err := syncDir(dataDir); err != nil {
+		slog.Warn("restore marker removed but not synced to disk", "dir", dataDir, "err", err)
+	}
+	return nil
 }
 
 // CheckRestoreMarker returns ErrRestoreInterrupted, with what to do, if a restore stopped while
