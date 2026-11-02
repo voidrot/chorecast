@@ -854,6 +854,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kids/{kid}/streaks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A kid's daily and per-chore streaks
+         * @description As of the kid's last closed day. Kids can read only their own.
+         */
+        get: operations["getKidStreaks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kids/{kid}/unarchive": {
         parameters: {
             query?: never;
@@ -1346,6 +1366,17 @@ export interface components {
         ChoreInstancesOutputBody: {
             items: components["schemas"]["ChoreInstance"][];
         };
+        ChoreStreak: {
+            /** Format: int64 */
+            best: number;
+            /** Format: int64 */
+            choreId: number;
+            /**
+             * Format: int64
+             * @description The kid's latest occurrences in a row that were approved, submitted or excused
+             */
+            current: number;
+        };
         ChoresOutputBody: {
             items: components["schemas"]["Chore"][];
         };
@@ -1379,6 +1410,20 @@ export interface components {
         CreatePairingInputBody: {
             /** @description Kid id or slug; omit for a shared family device */
             kid?: string;
+        };
+        DailyStreak: {
+            /** Format: int64 */
+            best: number;
+            /**
+             * Format: int64
+             * @description Counted days in a row up to the last evaluated day; days without required chores are skipped
+             */
+            current: number;
+            /**
+             * Format: date
+             * @description The latest closed day evaluated; absent before the first
+             */
+            lastDay?: string;
         };
         DailyWindow: {
             /** @example 07:00 */
@@ -1510,6 +1555,8 @@ export interface components {
              * @enum {string}
              */
             siblingVisibility: "private" | "leaderboard";
+            /** @description Daily-streak lengths that earn a bonus, sorted by days; absent = no streak bonuses */
+            streakMilestones?: components["schemas"]["StreakMilestone"][] | null;
             /** @description IANA timezone */
             timezone: string;
             /** @enum {string} */
@@ -1590,6 +1637,11 @@ export interface components {
             /** @description Kid id or slug */
             kid: string;
             pin?: string;
+        };
+        KidStreaks: {
+            /** @description Recurring chores the kid has had, by chore id */
+            chores: components["schemas"]["ChoreStreak"][] | null;
+            daily: components["schemas"]["DailyStreak"];
         };
         KidsOutputBody: {
             items: components["schemas"]["Kid"][];
@@ -2059,6 +2111,15 @@ export interface components {
             oidc: boolean;
             /** @description True until first-run setup completes */
             required: boolean;
+        };
+        StreakMilestone: {
+            /**
+             * Format: int64
+             * @description Streak length in days; each milestone has its own
+             */
+            days: number;
+            /** Format: int64 */
+            points: number;
         };
         TemporaryPasswordOutputBody: {
             /** @description Temporary password to pass on; shown only now */
@@ -4726,6 +4787,65 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getKidStreaks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KidStreaks"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -66,6 +66,12 @@ type Closer struct {
 	db    *db.DB
 	bus   *events.Bus
 	clock clock.Clock
+
+	// AfterKidDay and AfterShared, when set, run in the kid-day and shared close jobs after the
+	// close, so work on the closed day (streaks) sees its misses. They also run when the close
+	// did nothing. An error fails the job, which retries; the close itself is idempotent.
+	AfterKidDay func(ctx context.Context, kidID int64, day caltime.Date) error
+	AfterShared func(ctx context.Context, day caltime.Date) error
 }
 
 func New(d *db.DB, bus *events.Bus, c clock.Clock) *Closer {
@@ -94,7 +100,7 @@ func (c *Closer) closeKid(ctx context.Context, kidID int64, day caltime.Date, fl
 	if err != nil {
 		return Result{}, fmt.Errorf("load kid %d: %w", kidID, err)
 	}
-	return c.close(ctx, kidID, closeInstant(cal, day, flexible, dayEnd(cal, kid.DayEndOverride)), flexible)
+	return c.close(ctx, kidID, closeInstant(cal, day, flexible, KidDayEnd(cal, kid.DayEndOverride)), flexible)
 }
 
 // CloseShared closes the shared instances, flexible ones included, due by the household close
@@ -240,7 +246,7 @@ func ClosesAt(ctx context.Context, q *sqlc.Queries, inst sqlc.ChoreInstance) (ti
 		if err != nil {
 			return time.Time{}, fmt.Errorf("load kid %d: %w", inst.KidID.Int64, err)
 		}
-		end = dayEnd(cal, kid.DayEndOverride)
+		end = KidDayEnd(cal, kid.DayEndOverride)
 	}
 	flexible := inst.Flexible == 1
 	at := closeInstant(cal, date, flexible, end)
@@ -276,7 +282,11 @@ func (c *Closer) Register(runner *jobs.Runner, sched *jobs.Scheduler, log *slog.
 		if err != nil {
 			return Result{}, err
 		}
-		return c.CloseKidDay(ctx, p.KidID, p.Date)
+		res, err := c.CloseKidDay(ctx, p.KidID, p.Date)
+		if err == nil && c.AfterKidDay != nil {
+			err = c.AfterKidDay(ctx, p.KidID, p.Date)
+		}
+		return res, err
 	}), jobs.KindOptions{})
 	runner.Register(KindKidWeek, handle("week close", func(ctx context.Context, j jobs.Job) (Result, error) {
 		p, err := jobs.Decode[jobs.KidDayPayload](j)
@@ -290,7 +300,11 @@ func (c *Closer) Register(runner *jobs.Runner, sched *jobs.Scheduler, log *slog.
 		if err != nil {
 			return Result{}, err
 		}
-		return c.CloseShared(ctx, p.Date)
+		res, err := c.CloseShared(ctx, p.Date)
+		if err == nil && c.AfterShared != nil {
+			err = c.AfterShared(ctx, p.Date)
+		}
+		return res, err
 	}), jobs.KindOptions{})
 
 	cal := func(ctx context.Context) (caltime.Household, error) { return household.Calendar(ctx, c.db.Queries) }
@@ -324,7 +338,7 @@ func Kids(ctx context.Context, q *sqlc.Queries) ([]jobs.Kid, error) {
 	for _, u := range users {
 		k := jobs.Kid{ID: u.ID}
 		if u.DayEndOverride.Valid {
-			end := dayEnd(cal, u.DayEndOverride)
+			end := KidDayEnd(cal, u.DayEndOverride)
 			k.DayEnd = &end
 		}
 		out = append(out, k)
@@ -332,9 +346,9 @@ func Kids(ctx context.Context, q *sqlc.Queries) ([]jobs.Kid, error) {
 	return out, nil
 }
 
-// dayEnd is a kid's effective day end. An unreadable override, or one after the household's,
+// KidDayEnd is a kid's effective day end. An unreadable override, or one after the household's,
 // falls back to the household's, as in the horizon.
-func dayEnd(cal caltime.Household, override sql.NullString) caltime.TimeOfDay {
+func KidDayEnd(cal caltime.Household, override sql.NullString) caltime.TimeOfDay {
 	if !override.Valid {
 		return cal.DayEnd
 	}

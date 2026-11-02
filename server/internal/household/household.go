@@ -1,12 +1,13 @@
 // Package household holds the household's settings: name, calendar (timezone, day end, week start)
 // and the policies other features read (negative balances, sibling visibility, media retention,
-// auto-approve timeout, offline grace). Changing the calendar emits household.calendar_changed so
+// auto-approve timeout, offline grace, streak milestones). Changing the calendar emits household.calendar_changed so
 // the horizon generator can regenerate untouched instances. See docs/features/household.md.
 package household
 
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
@@ -37,6 +38,15 @@ type HouseholdSettings struct {
 	AutoApproveHours     *int   `json:"autoApproveHours,omitempty" minimum:"1" maximum:"720" doc:"Approve submitted chores after this many hours; absent = never"`
 	OfflineGraceMinutes  int    `json:"offlineGraceMinutes" minimum:"0" maximum:"1440" doc:"Completions made offline count if done within this long after day close"`
 	DefaultChoreMinutes  int    `json:"defaultChoreMinutes" minimum:"1" maximum:"240" doc:"Fair auto-pick counts a chore without an estimate as this many minutes"`
+	// A new household starts with 3, 7 and 30 days. Left out of a PUT = cleared, like every
+	// optional field.
+	StreakMilestones []StreakMilestone `json:"streakMilestones,omitempty" maxItems:"20" doc:"Daily-streak lengths that earn a bonus, sorted by days; absent = no streak bonuses"`
+}
+
+// StreakMilestone is a daily-streak length that earns a streak_bonus entry when a streak reaches it.
+type StreakMilestone struct {
+	Days   int `json:"days" minimum:"1" maximum:"3650" doc:"Streak length in days; each milestone has its own"`
+	Points int `json:"points" minimum:"1" maximum:"100000"`
 }
 
 // CalendarChanged is emitted when the timezone, day end or week start changes.
@@ -56,18 +66,31 @@ type Service struct {
 
 func New(d *db.DB, bus *events.Bus) *Service { return &Service{db: d, bus: bus} }
 
-func toSettings(h sqlc.Household) HouseholdSettings {
+func toSettings(h sqlc.Household) (HouseholdSettings, error) {
+	milestones, err := Milestones(h)
+	if err != nil {
+		return HouseholdSettings{}, err
+	}
 	s := HouseholdSettings{
 		Name: h.Name, Timezone: h.Timezone, DayEnd: h.DayEnd, WeekStart: Weekdays[h.WeekStart%7],
 		AllowNegativeBalance: h.AllowNegativeBalance == 1, SiblingVisibility: h.SiblingVisibility,
 		MediaRetentionDays: int(h.MediaRetentionDays), OfflineGraceMinutes: int(h.OfflineGraceMinutes),
-		DefaultChoreMinutes: int(h.DefaultChoreMinutes),
+		DefaultChoreMinutes: int(h.DefaultChoreMinutes), StreakMilestones: milestones,
 	}
 	if h.AutoApproveHours.Valid {
 		v := int(h.AutoApproveHours.Int64)
 		s.AutoApproveHours = &v
 	}
-	return s
+	return s, nil
+}
+
+// Milestones are the household's streak milestones, sorted by days.
+func Milestones(h sqlc.Household) ([]StreakMilestone, error) {
+	var out []StreakMilestone
+	if err := json.Unmarshal([]byte(h.StreakMilestones), &out); err != nil {
+		return nil, fmt.Errorf("household streak milestones: %w", err)
+	}
+	return out, nil
 }
 
 func (s *Service) Get(ctx context.Context) (HouseholdSettings, error) {
@@ -75,7 +98,7 @@ func (s *Service) Get(ctx context.Context) (HouseholdSettings, error) {
 	if err != nil {
 		return HouseholdSettings{}, fmt.Errorf("load household: %w", err)
 	}
-	return toSettings(h), nil
+	return toSettings(h)
 }
 
 // Calendar returns the household's calendar for date arithmetic.
@@ -107,6 +130,12 @@ func (s *Service) Update(ctx context.Context, in HouseholdSettings) (HouseholdSe
 		bad("dayEnd", err.Error(), in.DayEnd)
 	}
 	weekStart := slices.Index(Weekdays, in.WeekStart)
+	slices.SortStableFunc(in.StreakMilestones, func(a, b StreakMilestone) int { return a.Days - b.Days })
+	for i := 1; i < len(in.StreakMilestones); i++ {
+		if in.StreakMilestones[i].Days == in.StreakMilestones[i-1].Days {
+			bad(fmt.Sprintf("streakMilestones[%d].days", i), "each milestone needs its own number of days", in.StreakMilestones[i].Days)
+		}
+	}
 	if in.Timezone == "Local" {
 		bad("timezone", "use an IANA timezone name such as Europe/Berlin", in.Timezone)
 	} else if _, err := time.LoadLocation(in.Timezone); err != nil {
@@ -124,6 +153,13 @@ func (s *Service) Update(ctx context.Context, in HouseholdSettings) (HouseholdSe
 	if in.AllowNegativeBalance {
 		negative = 1
 	}
+	if in.StreakMilestones == nil {
+		in.StreakMilestones = []StreakMilestone{} // stored as [], never null
+	}
+	milestones, err := json.Marshal(in.StreakMilestones)
+	if err != nil {
+		return HouseholdSettings{}, err
+	}
 	write := func(ctx context.Context, q *sqlc.Queries, emit func(events.Event) error) error {
 		before, err := q.GetHousehold(ctx)
 		if err != nil {
@@ -137,6 +173,7 @@ func (s *Service) Update(ctx context.Context, in HouseholdSettings) (HouseholdSe
 			AllowNegativeBalance: negative, SiblingVisibility: in.SiblingVisibility,
 			MediaRetentionDays: int64(in.MediaRetentionDays), AutoApproveHours: autoApprove,
 			OfflineGraceMinutes: int64(in.OfflineGraceMinutes), DefaultChoreMinutes: int64(in.DefaultChoreMinutes),
+			StreakMilestones: string(milestones),
 		}); err != nil {
 			return err
 		}

@@ -21,6 +21,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/jobs"
 	"github.com/voidrot/chorecast/server/internal/kids"
 	"github.com/voidrot/chorecast/server/internal/parents"
+	"github.com/voidrot/chorecast/server/internal/streaks"
 )
 
 const (
@@ -104,7 +105,13 @@ func newBackground(store *db.DB, clk clock.Clock, log *slog.Logger) (*jobs.Runne
 	}
 
 	// Day and week closes: open instances whose day has closed become missed, with their penalty.
-	dayclose.New(store, bus, clk).Register(runner, sched, log)
+	// Streaks evaluate each closed day after its misses are marked: at the kid's day close, and
+	// again at the household day end, when shared instances and late slots are due too.
+	closer := dayclose.New(store, bus, clk)
+	streakSvc := streaks.New(store, bus, clk)
+	closer.AfterKidDay = streakSvc.EvaluateKidDay
+	closer.AfterShared = streakSvc.EvaluateDay
+	closer.Register(runner, sched, log)
 
 	return runner, sched, bus
 }

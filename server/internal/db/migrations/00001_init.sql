@@ -13,6 +13,9 @@ CREATE TABLE household (
     auto_approve_hours     INTEGER CHECK (auto_approve_hours BETWEEN 1 AND 720), -- NULL = never
     offline_grace_minutes  INTEGER NOT NULL DEFAULT 120 CHECK (offline_grace_minutes BETWEEN 0 AND 1440),
     default_chore_minutes  INTEGER NOT NULL DEFAULT 10 CHECK (default_chore_minutes BETWEEN 1 AND 240), -- fair auto-pick load for chores without an estimate
+    -- JSON [{"days": N, "points": P}] sorted by days, distinct days; [] = no streak bonuses (internal/streaks)
+    streak_milestones      TEXT    NOT NULL DEFAULT '[{"days":3,"points":5},{"days":7,"points":15},{"days":30,"points":50}]'
+                                   CHECK (json_valid(streak_milestones)),
     created_at TEXT    NOT NULL
 );
 
@@ -343,7 +346,39 @@ CREATE TABLE media_hashes (
 -- Closes look up the open instances already due (internal/dayclose).
 CREATE INDEX chore_instances_open_due ON chore_instances (due_at) WHERE status = 'open';
 
+-- ==== Streaks (#30) ====
+-- Each kid's evaluated days (internal/streaks): counted (every required chore approved, submitted
+-- or excused), broken, or none (no required chores: neither breaks nor extends). A counted day is
+-- final; the others are re-checked at the kid's next closes, so a late completion or an excuse
+-- repairs them.
+CREATE TABLE streak_days (
+    kid_id  INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    day     TEXT    NOT NULL, -- YYYY-MM-DD
+    outcome TEXT    NOT NULL CHECK (outcome IN ('counted', 'broken', 'none')),
+    PRIMARY KEY (kid_id, day)
+);
+
+-- The daily streak derived from streak_days, kept so reads are cheap.
+CREATE TABLE kid_streaks (
+    kid_id   INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    current  INTEGER NOT NULL,
+    best     INTEGER NOT NULL,
+    last_day TEXT    NOT NULL -- YYYY-MM-DD: the latest day evaluated
+);
+
+-- Per-chore streaks (display only), recomputed from instance history at each evaluation.
+CREATE TABLE kid_chore_streaks (
+    kid_id   INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    chore_id INTEGER NOT NULL REFERENCES chores (id) ON DELETE CASCADE,
+    current  INTEGER NOT NULL,
+    best     INTEGER NOT NULL,
+    PRIMARY KEY (kid_id, chore_id)
+);
+
 -- +goose Down
+DROP TABLE kid_chore_streaks;
+DROP TABLE kid_streaks;
+DROP TABLE streak_days;
 DROP TABLE chore_instance_members;
 DROP TABLE chore_instances;
 DROP TABLE media_hashes;
