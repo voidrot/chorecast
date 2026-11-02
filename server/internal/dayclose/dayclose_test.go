@@ -1,7 +1,9 @@
 package dayclose_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"slices"
@@ -693,5 +695,48 @@ func TestClosesAt(t *testing.T) {
 		if !got.Equal(local(tc.want)) {
 			t.Errorf("%s: closes at %s, want %s", tc.name, got.In(chicago), tc.want)
 		}
+	}
+}
+
+// The kid-day hook runs after the close has marked the day's misses, and a hook error fails the
+// job, so it retries.
+func TestAfterKidDayRunsAfterTheClose(t *testing.T) {
+	f := newFixture(t)
+	c := f.chore(daily("Dishes", 2))
+	f.generate()
+	f.run()
+	inst := f.instance(c.ID, f.ben, "2026-11-04")
+	var seen []string
+	fail := true
+	f.closer.AfterKidDay = func(_ context.Context, kid int64, day caltime.Date) error {
+		if kid != f.ben || day != date("2026-11-04") {
+			return nil
+		}
+		seen = append(seen, f.status(inst.ID))
+		if fail {
+			return errors.New("hook failed")
+		}
+		return nil
+	}
+
+	f.clock.Set(local("2026-11-04 19:00"))
+	if _, err := f.sched.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.runner.RunDue(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var failed int
+	if err := f.db.SQL.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM jobs WHERE kind = ? AND last_error LIKE '%hook failed%'`,
+		dayclose.KindKidDay).Scan(&failed); err != nil || failed != 1 {
+		t.Fatalf("%d failed jobs, %v; want Ben's", failed, err)
+	}
+	fail = false
+	f.clock.Advance(time.Hour) // past the retry backoff
+	if _, err := f.runner.RunDue(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(seen, []string{horizon.StatusMissed, horizon.StatusMissed}) {
+		t.Fatalf("hook saw %v, want missed on the first run and on the retry", seen)
 	}
 }
