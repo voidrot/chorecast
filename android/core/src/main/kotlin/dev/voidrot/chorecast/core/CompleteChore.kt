@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 import kotlinx.io.write
@@ -83,7 +84,7 @@ class ChoreCompleter(
             } else {
                 val problem = resp.problem()
                 val error = completionError(resp.status, problem.code, problem.errors.orEmpty().mapNotNull { it.location })
-                failed(current.afterInvalid(error), error)
+                failed(current.afterInvalid(url, token, error), error)
             }
         } catch (e: CancellationException) {
             throw e
@@ -120,7 +121,8 @@ class ChoreCompleter(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: IOException) {
-                // network failure: try again
+                // network failure: try again after a pause
+                delay(DISCARD_RETRY_DELAY_MS)
             } catch (_: Exception) {
                 return
             }
@@ -132,12 +134,15 @@ class ChoreCompleter(
      * same way; dropping it also changes the body, so the next submit gets a new key. A photo whose
      * upload the server refuses (expired, already used) is uploaded again.
      */
-    private fun CompletionDraft.afterInvalid(error: CompleteError): CompletionDraft {
+    private fun CompletionDraft.afterInvalid(url: ServerUrl, token: String, error: CompleteError): CompletionDraft {
         if (error !is CompleteError.Invalid) return this
         val ids = { indexes: Set<Int> -> indexes.mapNotNull { photos.getOrNull(it)?.captureId }.toSet() }
         val retake = ids(error.retake)
+        val reupload = ids(error.photoIssues - error.retake)
         retake.forEach(captures::delete)
-        return withoutMedia(ids(error.photoIssues - error.retake)).let { d ->
+        // The ids forgotten here may still hold pending slots (a rejected photo stays unattached), so free them.
+        discard(url, token, photos.filter { it.captureId in retake + reupload }.mapNotNull { it.mediaId })
+        return withoutMedia(reupload).let { d ->
             d.copy(photos = d.photos.filterNot { it.captureId in retake })
         }
     }
@@ -181,3 +186,4 @@ class ChoreCompleter(
 }
 
 private const val DISCARD_ATTEMPTS = 2
+private const val DISCARD_RETRY_DELAY_MS = 1_500L

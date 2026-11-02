@@ -319,6 +319,7 @@ class TodayViewModel(
             // A photo the server will never take: drop it so the kid takes another.
             is CompleteError.BadPhoto -> {
                 captures.delete(error.captureId)
+                _state.value.drafts[id]?.let { completer.discardRemoved(url, token, it, error.captureId) }
                 editDraft(id) { it.removePhoto(error.captureId) }
                 _state.update { it.copy(completeError = error) }
             }

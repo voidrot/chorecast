@@ -7,7 +7,11 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -134,7 +138,9 @@ class CompleteChoreTest {
     fun photoWithRefusedCaptureTimeIsDroppedSoTheKeyChanges() = runTest {
         val keys = mutableListOf<String?>()
         val engine = MockEngine { req ->
-            if (req.url.encodedPath.endsWith("/media/photos")) {
+            if (req.method.value == "DELETE") {
+                respond("", HttpStatusCode.NoContent)
+            } else if (req.url.encodedPath.endsWith("/media/photos")) {
                 respond(media, HttpStatusCode.Created, json)
             } else {
                 keys += req.headers["Idempotency-Key"]
@@ -265,5 +271,39 @@ class CompleteChoreTest {
         ChoreCompleter(Files(), engine = engine, scope = backgroundScope)
             .discardDropped(url, "tok", uploaded("c1" to 41L)).join()
         assertEquals(2, calls)
+    }
+
+    @Test
+    fun serverErrorMakesOneCallAndEndsQuietly() = runTest {
+        val calls = mutableListOf<String>()
+        discarding(HttpStatusCode.InternalServerError, calls).discardDropped(url, "tok", uploaded("c1" to 41L)).join()
+        assertEquals(1, calls.size)
+    }
+
+    @Test
+    fun photosTheServerRefusesAreDiscardedToo() = runTest {
+        val deletes = mutableListOf<String>()
+        val deleted = CompletableDeferred<Unit>()
+        val engine = MockEngine { req ->
+            val path = req.url.encodedPath
+            when {
+                req.method.value == "DELETE" -> {
+                    deletes += path
+                    deleted.complete(Unit)
+                    respond("", HttpStatusCode.NoContent)
+                }
+                path.endsWith("/media/photos") -> respond(media, HttpStatusCode.Created, json)
+                else -> respond(
+                    """{"code":"validation_failed","errors":[{"location":"body.photos[0].capturedAt","message":"too early"}]}""",
+                    HttpStatusCode.UnprocessableEntity,
+                    problem,
+                )
+            }
+        }
+        val out = ChoreCompleter(Files("c1"), engine = engine, scope = backgroundScope).submit(url, "tok", needs, draft())
+        assertTrue(out.draft.photos.isEmpty())
+        // The engine answers on its own threads, so wait in real time.
+        withContext(Dispatchers.Default) { withTimeout(5_000) { deleted.await() } }
+        assertEquals(listOf("/api/v1/media/photos/41"), deletes)
     }
 }
