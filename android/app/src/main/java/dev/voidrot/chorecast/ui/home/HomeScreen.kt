@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.core.KidOverview
+import dev.voidrot.chorecast.ui.inbox.InboxViewModel
 
 /** Parent home: each kid's progress today, balance, streak and waiting reviews, and the way into the queue. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,12 +38,14 @@ import dev.voidrot.chorecast.core.KidOverview
 fun HomeScreen(
     viewModel: HomeViewModel,
     overviewViewModel: OverviewViewModel,
+    inboxViewModel: InboxViewModel,
     serverUrl: String,
     recoveryCodesLeft: Long?,
     onSignedOut: () -> Unit,
     onChangeServer: () -> Unit,
     onDevices: () -> Unit,
     onReview: () -> Unit,
+    onInbox: () -> Unit,
     onKid: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -50,8 +53,10 @@ fun HomeScreen(
     val overview by overviewViewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.signedOut) { if (state.signedOut) onSignedOut() }
     LaunchedEffect(overview.signedOut) { if (overview.signedOut) onSignedOut() }
+    val inbox by inboxViewModel.state.collectAsStateWithLifecycle()
     LifecycleResumeEffect(overviewViewModel) {
         overviewViewModel.onResume()
+        inboxViewModel.onResume()
         onPauseOrDispose {}
     }
 
@@ -80,6 +85,13 @@ fun HomeScreen(
                 }
             }
             overviewItems(overview, onReview, onKid, onRetry = overviewViewModel::refresh)
+            item {
+                OutlinedButton(onClick = onInbox, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        if (inbox.unread > 0) stringResource(R.string.inbox_button_unread, inbox.unread.toInt()) else stringResource(R.string.inbox_button),
+                    )
+                }
+            }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDevices) { Text(stringResource(R.string.devices_title)) }

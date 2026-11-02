@@ -28,6 +28,8 @@ import dev.voidrot.chorecast.ui.connect.ConnectViewModel
 import dev.voidrot.chorecast.ui.home.HomeScreen
 import dev.voidrot.chorecast.ui.home.HomeViewModel
 import dev.voidrot.chorecast.ui.home.OverviewViewModel
+import dev.voidrot.chorecast.ui.inbox.InboxScreen
+import dev.voidrot.chorecast.ui.inbox.InboxViewModel
 import dev.voidrot.chorecast.ui.kid.KidScreen
 import dev.voidrot.chorecast.ui.kid.KidViewModel
 import dev.voidrot.chorecast.ui.review.ReviewScreen
@@ -93,6 +95,7 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     kid = { store, kidId -> KidViewModel(currentUrl(), kidId, store.review, container.householdInfo, store.tokens) },
                 ),
                 avatarPhotos = container.avatarPhotos,
+                inboxViewModel = { kid -> InboxViewModel(currentUrl(), container.inboxClient, token = { kid.token }) },
                 onUnpaired = {
                     container.settings.mode = null
                     nav.reset(WelcomeRoute)
@@ -128,12 +131,17 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 overviewViewModel = viewModel {
                     OverviewViewModel(currentUrl(), container.parentReview, container.tokenStore)
                 },
+                // Only the unread count is shown on the home, so one item is enough.
+                inboxViewModel = viewModel {
+                    InboxViewModel(currentUrl(), container.inboxClient, container.tokenStore::read, container.tokenStore::clear, pageSize = 1)
+                },
                 serverUrl = route.serverUrl,
                 recoveryCodesLeft = route.recoveryCodesLeft,
                 onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
                 onChangeServer = { nav.navigate(ConnectRoute) },
                 onDevices = { nav.navigate(DevicesRoute(route.serverUrl)) },
                 onReview = { nav.navigate(ReviewRoute(route.serverUrl)) },
+                onInbox = { nav.navigate(InboxRoute(route.serverUrl)) },
                 onKid = { nav.navigate(KidRoute(route.serverUrl, it)) },
             )
         }
@@ -144,6 +152,18 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     KidViewModel(currentUrl(), route.kidId, container.parentReview, container.householdInfo, container.tokenStore)
                 },
                 onBack = { nav.popBackStack() },
+                onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
+            )
+        }
+        composable<InboxRoute> { entry ->
+            val route = entry.toRoute<InboxRoute>()
+            InboxScreen(
+                viewModel = viewModel {
+                    InboxViewModel(currentUrl(), container.inboxClient, container.tokenStore::read, container.tokenStore::clear)
+                },
+                onBack = { nav.popBackStack() },
+                // A parent's items are new submissions, so any chore item opens the review queue.
+                onOpen = { if (it.instanceId != null) nav.navigate(ReviewRoute(route.serverUrl)) },
                 onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
             )
         }

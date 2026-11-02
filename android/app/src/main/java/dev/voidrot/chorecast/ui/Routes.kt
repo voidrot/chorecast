@@ -48,3 +48,7 @@ data class KidRoute(val serverUrl: String, val kidId: Long)
 /** A parent creates a pairing code and shows it as a QR code. */
 @Serializable
 data class PairDeviceRoute(val serverUrl: String)
+
+/** The parent's inbox. */
+@Serializable
+data class InboxRoute(val serverUrl: String)
