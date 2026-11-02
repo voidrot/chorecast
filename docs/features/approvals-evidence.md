@@ -211,6 +211,22 @@ Built (#75, `internal/media`): the photo half of the pipeline, local storage onl
 - Android notification for each submission (or batched if several) with **Approve** and **Reject** actions.
   Reject opens a quick-reason sheet. The actions call the API with the parent's app token from a background worker.
 
+Built (#28, `internal/reviewqueue`, server only; the web screen is #34, the Android one #32). The AI verdict
+chip, the "AI says done" filter and near-duplicate flags wait for Phase 3.
+
+- `GET /review-queue` (`chores:review`, so parents only) is a flat, cursor-paged list of `submitted` instances,
+  oldest submission first (ties by id). Clients group by `kidName` / `instance.completedBy`; a grouped response
+  would make the cursor depend on the grouping. Each item has the instance (chore name, kid, due time,
+  `completedAt`, `rejectionCount`, `lastRejection`), the chore's checklist `steps` with `done` for those the latest
+  submission ticked, and that `submission` (note, `submittedAt`, photos with signed thumbnails or `expired`).
+  Filters: `kidId` (a shared chore matches its members), `choreId`, `media=with|without` (the latest submission has
+  photos or not), validated in the handler. A page takes a fixed number of queries.
+- `POST /review-queue/approvals {instanceIds}` (1 to 100) approves each distinct id through `instances.Approve` in
+  its own transaction and returns `results` in request order: `approved`, or a `code` such as
+  `instance_not_submitted` or `instance_not_found`. Rejection stays single (`POST /instances/{id}/rejection`)
+  because it needs feedback per chore; its `reason` quick picks are a fixed list (`not_done`, `not_finished`,
+  `needs_redo`, `evidence_unclear`) validated by `instances.Reject`.
+
 ## Configuration (env)
 
 | Variable | Default |
