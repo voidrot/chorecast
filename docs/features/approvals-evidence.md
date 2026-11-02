@@ -36,8 +36,8 @@ Status: accepted (planning session, 2026-10-30). Builds on [points.md](points.md
    verdict is `not_yet`. The ledger entry is marked `created_by = system` with an "auto-approved" note.
 
 Built (#25, `internal/instances`; evidence is #27). Steps 3 and 4 are `instances.Complete`, `Approve` and `Reject`
-(see points.md, "Chore instance lifecycle", for the API and the ledger rules). Evidence isn't validated yet:
-`Complete` calls a `checkEvidence` hook where #27 adds it. A rejection needs a quick-pick `reason` (`not_done`,
+(see points.md, "Chore instance lifecycle", for the API and the ledger rules). `Complete` checks and attaches
+the evidence (`checkEvidence`; see "Built (#27)" below). A rejection needs a quick-pick `reason` (`not_done`,
 `not_finished`, `needs_redo` or `evidence_unclear`), a `text` of up to 500 characters, or both (422 otherwise).
 Every rejection is kept in `chore_instance_rejections` (reason, text, the rejected completer, the parent, when),
 and the instance carries `rejection_count`; the API returns `rejectionCount` and `lastRejection`. A rejection
@@ -57,6 +57,46 @@ re-reads each instance inside its transaction and skips one that was decided, or
 so repeated or concurrent runs are no-ops. `blocked()` is the seam for Phase 3 blockers (an AI `not_yet`
 verdict, a near-duplicate flag); it returns false today. A partial index `chore_instances_submitted` on
 `completed_at` serves the listing.
+
+Built (#27, `internal/evidence`, server only; Android capture is #31, the review queue #28).
+- **Submitting.** `POST /instances/{id}/completion` takes `checklist` (indexes of the ticked steps), `note`
+  (≤500 characters) and `photos` (≤5: `mediaId` of a pending upload, `role` `before`/`after`, and for a kid's photo
+  the `capturedAt` device time and `captureId` the app recorded at the shutter). `evidence.Attach` runs inside the
+  completing transaction and answers 422 `validation_failed` with the field's location when a rule fails: an
+  unticked step or an unknown index (`body.checklist[i]`), a blank required note, fewer photos than the chore asks
+  for, no `before` and `after` when it asks for both, a photo listed twice, or a photo that isn't attachable. A photo
+  is attachable when it is pending, still within its 24 h, and was uploaded by the completing kid or by the parent
+  completing for them; anyone else's is answered as "no such photo". Nothing is written when a rule fails.
+- **Capture window** (rule 2): a kid's photo must be captured at or after `dayclose.OpensAt`, the close of the day
+  before the instance's day (for its kid's effective day end, or the household's for a shared instance), or before
+  its week for a flexible chore. Parents' photos are exempt (rule 5). The device time is trusted as sent; the
+  offline clock-skew flag (#35) is to widen or flag the window at `OpensAt`.
+- **Video** (Phase 3): a chore that asks for a video can't be completed yet (422 `video_evidence_unsupported`), for
+  kids and parents alike. Parents can still set the requirement; such a chore is missed at day close and can be
+  excused.
+- **Records.** Each completion adds a `chore_instance_evidence` row (`attempt` 1, 2, … per instance, the kid, who
+  submitted it, the ticks, the note), so a resubmission after a rejection keeps the earlier set. Its photos move to
+  `owner_kind = 'evidence'` with `owner_id` = that row, and `chore_instance_evidence_photos` keeps each one's
+  order, role, capture time and capture id. A photo can be attached once, and its picture can't be uploaded by a kid
+  again (409 `duplicate_media`), so the same photo can't serve two instances. An instance with evidence counts as
+  touched for the horizon and for deleting its chore.
+- **Reading.** `GET /instances/{id}/evidence` (`chores:read`) returns every submission, oldest first, to parents
+  and the instance's kids (its assignee, or a shared instance's members); anyone else gets 403. Photos carry signed
+  `url` and `thumbUrl` links (10 minutes), or `expired: true` and no links once retention deleted them. In Go,
+  `evidence.CanRead(principal, instance)` then `evidence.List(ctx, q, instanceID, signer)` is the same read, for the
+  review queue. Attached photos aren't readable through `GET /media/{id}` by kids; this endpoint is their path.
+- **Retention.** When an instance resolves (approved, also on completion when no approval is needed; missed;
+  excused) its evidence photos get `expires_at` = then + `media_retention_days`, unless `keep` is set; a reversed
+  approval clears it, and a later resolution restarts it. Pending uploads get `expires_at` = upload + 24 h
+  (`media.PendingTTL`), cleared when attached. The daily job `media.retention` (`media.Expire`) deletes the photo
+  and thumbnail files of every ready item past `expires_at` and not kept, and of evidence whose record is gone (its
+  instance was deleted with its kid), then marks the row `expired`. Files go first, so a run that stops halfway is
+  finished by the next; re-runs find nothing. Hashes stay in `media_hashes`, so reuse is still caught, except for
+  abandoned pending uploads, which were never evidence: their hash is dropped so the kid may upload that photo
+  again. Nothing sets `keep` yet; the favorite toggle comes with the review screens.
+- **Uploads** (follow-ups from #75): a kid repeating their own upload that is still pending (an offline retry that
+  lost its response) gets that photo back with 201 instead of 409. A kid may hold 20 attachable pending uploads
+  (`media.MaxPendingUploads`); more is 429 `rate_limited`. Parents aren't capped.
 
 ## Fresh-evidence rules (no reusing old photos)
 
@@ -130,8 +170,9 @@ Built (#75, `internal/media`): the photo half of the pipeline, local storage onl
 - SHA-256 is of the decoded pixels (dimensions, then RGBA rows), so re-saving a photo with other metadata doesn't
   change it; dHash is stored for later near-duplicate flagging. A kid's upload that matches `media_hashes` is 409
   `duplicate_media`, answered after decoding but before encoding; kid uploads are recorded there, which outlives
-  the `media` row. Parents' uploads are neither checked nor recorded.
-- New media is `owner_kind = 'pending'` (no owner id) until #27 attaches it. `GET /media/{id}` returns it with fresh
+  the `media` row. Parents' uploads are neither checked nor recorded. (#27 returns a kid's own pending upload on
+  a repeat instead; see above.)
+- New media is `owner_kind = 'pending'` (no owner id) until a completion attaches it (#27). `GET /media/{id}` returns it with fresh
   signed links to the photo and thumbnail: parents see all media, a kid only pending media they uploaded, anyone
   else gets 404 `media_not_found`.
 - Signed links (`GET /media/files/{key}?exp&sig`, public: the signature is the credential) last 10 minutes; a link
