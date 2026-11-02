@@ -20,6 +20,7 @@ const (
 	ScopePointsRead      Scope = "points:read"
 	ScopePointsManage    Scope = "points:manage"
 	ScopeAccountManage   Scope = "account:manage" // a parent's own password, 2FA, PIN and sessions
+	ScopeInboxUse        Scope = "inbox:use"      // read and mark read the caller's own notifications
 	ScopeParentsManage   Scope = "parents:manage" // owner only: invite, promote/demote, remove, reset other parents
 )
 
@@ -38,12 +39,12 @@ var (
 	parentScopes = []Scope{
 		ScopeHouseholdRead, ScopeHouseholdManage, ScopeDevicesManage, ScopeProfilesSelect,
 		ScopeChoresRead, ScopeChoresManage, ScopeChoresComplete, ScopeChoresReview,
-		ScopePointsRead, ScopePointsManage, ScopeAccountManage,
+		ScopePointsRead, ScopePointsManage, ScopeAccountManage, ScopeInboxUse,
 	}
 	ownerScopes = append(append([]Scope{}, parentScopes...), ScopeServerManage, ScopeParentsManage)
 	// A parent elevated on a device with their PIN: everything daily, nothing about accounts.
 	elevatedParentScopes = slices.DeleteFunc(slices.Clone(parentScopes), func(s Scope) bool { return s == ScopeAccountManage })
-	kidScopes            = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopeChoresComplete, ScopePointsRead}
+	kidScopes            = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopeChoresComplete, ScopePointsRead, ScopeInboxUse}
 	sharedDeviceScopes   = []Scope{ScopeHouseholdRead, ScopeProfilesSelect}
 	displayScopes        = []Scope{ScopeHouseholdRead, ScopeChoresRead, ScopePointsRead}
 )

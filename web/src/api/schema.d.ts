@@ -634,6 +634,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's notifications, newest delivered first
+         * @description Parents see their own (new submissions to review); a kid, on their own device or picked on a shared tablet, sees theirs (approved, rejected with the reason, missed, excused, streak milestones). Each item has a `kind`, what it refers to (`refKind` and `refId`) and `data` to render the text from; the server stores no display text. Order is by delivery (id), so a late-delivered event can sit above an older-looking one; `createdAt` is when the event happened and `data.choreName` is the chore's name at delivery. `unreadCount` counts all unread, not just this page. Notifications are purged after 90 days.
+         */
+        get: operations["listInbox"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/inbox/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark every notification read */
+        post: operations["markAllInboxRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/inbox/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark one notification read
+         * @description Marking a read notification again changes nothing. Someone else's notification is 404.
+         */
+        post: operations["markInboxRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances": {
         parameters: {
             query?: never;
@@ -1854,6 +1911,62 @@ export interface components {
             timezone: string;
             /** @enum {string} */
             weekStart: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
+        };
+        InboxData: {
+            /** @description chore_approved: the system approved it after the review timeout */
+            auto?: boolean;
+            /** @description The chore's name when the notification was written (at delivery), not its current name */
+            choreName?: string;
+            /**
+             * Format: int64
+             * @description streak_milestone: the streak length reached
+             */
+            days?: number;
+            /**
+             * Format: int64
+             * @description streak_milestone: the bonus points; present even when 0, absent for other kinds
+             */
+            points?: number;
+            /** @description chore_rejected: the quick-pick reason (not_done, not_finished, needs_redo or evidence_unclear) */
+            reasonCode?: string;
+            /** @description chore_rejected: the parent's feedback */
+            reasonText?: string;
+        };
+        InboxItem: {
+            /**
+             * Format: date-time
+             * @description When the event happened
+             */
+            createdAt: string;
+            data: components["schemas"]["InboxData"];
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description The kid it is about
+             */
+            kidId?: number;
+            /** @enum {string} */
+            kind: "chore_submitted" | "chore_approved" | "chore_rejected" | "chore_missed" | "chore_excused" | "streak_milestone";
+            /** Format: date-time */
+            readAt?: string;
+            /** Format: int64 */
+            refId: number;
+            /**
+             * @description What refId is: a chore instance or a points ledger entry
+             * @enum {string}
+             */
+            refKind: "instance" | "points_entry";
+        };
+        InboxPage: {
+            items: components["schemas"]["InboxItem"][];
+            /** @description Pass as cursor to fetch the next page. Absent on the last page. */
+            nextCursor?: string;
+            /**
+             * Format: int64
+             * @description All the caller's unread notifications, not only this page's
+             */
+            unreadCount: number;
         };
         InstanceEvidence: {
             /**
@@ -4429,6 +4542,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdSettings"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listInbox: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from a previous page's nextCursor. Omit for the first page. */
+                cursor?: string;
+                /** @description Maximum number of items to return. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    markAllInboxRead: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    markInboxRead: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Unprocessable Entity */

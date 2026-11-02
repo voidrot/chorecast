@@ -23,6 +23,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/horizon"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
+	"github.com/voidrot/chorecast/server/internal/inbox"
 	"github.com/voidrot/chorecast/server/internal/instances"
 	"github.com/voidrot/chorecast/server/internal/kids"
 	"github.com/voidrot/chorecast/server/internal/ledger"
@@ -91,7 +92,7 @@ func New(r chi.Router, deps Deps) huma.API {
 		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock, deps.Bus),
 		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock), horizon: horizon.New(deps.DB, deps.Clock),
 		streaks: streaks.New(deps.DB, deps.Bus, deps.Clock), instances: instances.New(deps.DB, deps.Bus, deps.Clock),
-		clock: deps.Clock}
+		clock: deps.Clock, inbox: inbox.New(deps.DB, deps.Clock)}
 	signer := media.NewSigner(queries, deps.Clock)
 	h.media = media.New(deps.DB, deps.Clock, media.NewLocal(deps.Config.DataDir, Prefix+mediaFilesPath, signer), signer)
 	huma.Register(hapi, huma.Operation{
@@ -122,6 +123,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerStreaks(hapi, h)
 	registerInstances(hapi, h)
 	registerReviewQueue(hapi, h)
+	registerInbox(hapi, h)
 	registerMedia(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
@@ -156,6 +158,7 @@ type handlers struct {
 	streaks   *streaks.Service
 	clock     clock.Clock
 	instances *instances.Service
+	inbox     *inbox.Service
 }
 
 type HealthOutput struct {

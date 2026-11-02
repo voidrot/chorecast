@@ -149,7 +149,7 @@ Implemented in `internal/auth`:
 - **Principals** are resolved by one Huma middleware: a `Bearer` token (app, device, display, API key) or the
   `chorecast_session` cookie (web sessions only; a session token is not accepted as a bearer and vice versa).
 - **Scope sets per principal kind** (`scope.go`): parent; owner = parent + `server:manage`; kid (read own data,
-  complete chores); shared device (read profiles, pick a kid); display (read-only); API key (no scopes until
+  complete chores, own inbox); shared device (read profiles, pick a kid); display (read-only); API key (no scopes until
   per-key grants exist post-v1).
 - **Data scoping** is separate from scopes: a handler that serves one kid's data must call `Principal.CanAccessKid(id)`.
   Parents and displays cover every kid; a kid only themselves; shared devices and API keys none. The points
@@ -270,8 +270,8 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   later on the same date still fires.
 - Kinds and schedules are wired in `cmd/chorecast/background.go` (`newBackground`) and the packages it calls
   `Register` on. Today:
-  - `maintenance.daily`: purges finished jobs, expired tokens and idempotency keys, dispatched events, invites and
-    pairing codes.
+  - `maintenance.daily`: purges finished jobs, expired tokens and idempotency keys, dispatched events, invites,
+    pairing codes and notifications older than 90 days.
   - `media.retention` (daily): deletes evidence files of resolved instances after `media_retention_days`, and
     pending uploads never attached.
   - `horizon.generate`: regenerates the rolling 7-day horizon. Enqueued at startup, at each household day end, and
@@ -300,7 +300,8 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   `event:<id>:<subscriber>`) and marks it dispatched. Each subscriber therefore retries independently with job
   backoff, and a crash mid-dispatch can't duplicate deliveries.
 - Delivery is at-least-once; subscribers must be idempotent (use `Envelope.ID`). Subscribers are registered in
-  `cmd/chorecast/background.go` with `bus.Subscribe`; today the horizon generator subscribes to the calendar, chore and kid events. Dispatched
+  `cmd/chorecast/background.go` with `bus.Subscribe`; the horizon generator subscribes to the calendar, chore and kid events, and the inbox
+  (`internal/inbox`) to the instance transitions, `instance.missed` and `points.entry_posted`. Dispatched
   events are purged after 30 days by daily maintenance.
 
 ## Push notifications

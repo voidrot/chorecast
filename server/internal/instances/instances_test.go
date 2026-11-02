@@ -692,7 +692,7 @@ func TestEventsCarryTheTransition(t *testing.T) {
 	want := []string{
 		fmt.Sprintf(`instance.reassigned {"instanceId":%d,"kidIds":[%d],"from":"open","to":"open","by":%d,"fromKidId":%d}`, id, f.ada, f.mom, f.sam),
 		fmt.Sprintf(`instance.completed {"instanceId":%d,"kidIds":[%d],"from":"open","to":"submitted","by":%d,"completedBy":%d}`, id, f.ada, f.ada, f.ada),
-		fmt.Sprintf(`instance.rejected {"instanceId":%d,"kidIds":[%d],"from":"submitted","to":"open","by":%d}`, id, f.ada, f.mom),
+		fmt.Sprintf(`instance.rejected {"instanceId":%d,"kidIds":[%d],"from":"submitted","to":"open","by":%d,"reasonText":"Again"}`, id, f.ada, f.mom),
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("events:\n got %q\nwant %q", got, want)

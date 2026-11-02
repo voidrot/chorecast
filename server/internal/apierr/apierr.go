@@ -76,6 +76,7 @@ const (
 	CodeInstanceTaken        = "instance_taken"             // reassign: the kid already has this occurrence (409)
 	CodeInstanceClosed       = "instance_closed"            // complete: the instance's day (or week) has closed; day close takes it as missed (409)
 	CodeVideoUnsupported     = "video_evidence_unsupported" // complete: the chore asks for a video, which the server can't take yet (422)
+	CodeNotificationNotFound = "notification_not_found"     // (404)
 )
 
 var defaultCodes = map[int]string{

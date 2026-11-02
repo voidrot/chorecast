@@ -97,6 +97,37 @@ review, points earned and lost, balance, streak; plus household items needing ac
 Sent at week close. Per kid: completion rate vs previous week, points in and out, streaks, goals met, badges earned;
 plus the optional AI insight (see [reporting.md](reporting.md)).
 
+## In-app inbox (built, #98)
+
+Built (#98, `internal/inbox`, server only; the app screen is #99). The planner, preferences, quiet hours, batching
+and delivery channels above are not built; the inbox is the part every channel will share. `notifications` holds
+one row per recipient with a `kind`, what it refers to (`refKind` `instance` or `points_entry`, and `refId`), a
+`data` object to render from and `readAt`. No display text is stored. Kinds, written from the domain events:
+
+| Kind | Recipient | Event |
+|---|---|---|
+| `chore_submitted` | every parent except the one who acted | `instance.completed` that went to `submitted` |
+| `chore_approved` | the instance's kids (`data.auto` when the system approved it) | `instance.approved` |
+| `chore_rejected` | the instance's kids, with `data.reasonCode` / `reasonText` | `instance.rejected` |
+| `chore_missed` | the instance's kids | `instance.missed` |
+| `chore_excused` | the instance's kids | `instance.excused` |
+| `streak_milestone` | the kid, with `data.days` and `data.points` | `points.entry_posted` of kind `streak_bonus` |
+
+A shared chore's members each get one. Each event is written at most once per recipient (the unique key includes
+the event id), so redelivery is harmless. Auto-approvals don't notify parents; the daily summary will cover them.
+Archived kids and removed parents get nothing. Rows are purged after 90 days by `maintenance.daily` (the spec named
+no period).
+
+API (scope `inbox:use`, held by parents and kids; a shared tablet with a kid profile picked is that kid, and a
+parent elevated on a tablet with their PIN reads their own inbox, not the kid's; a bare tablet, display or API key has
+no inbox and gets 403 `insufficient_scope`): `GET /inbox` (cursor-paged, newest delivered first, with `unreadCount`),
+`POST /inbox/{id}/read` and `POST /inbox/read-all` (both 204; another recipient's id is 404). The caller's own user
+id is the recipient, so there is no `kidId` parameter.
+
+The list is ordered by row id (delivery order), not by `createdAt`, which is when the event happened; a late-delivered
+event can therefore sit above one that looks newer. `data.choreName` is the chore's name when the notification was
+written (at delivery), not its current name. `data.points` is present, 0 included, on `streak_milestone` items only.
+
 ## Open questions
 
 - Webhook event catalog and payload schema versioning: define alongside the API implementation.

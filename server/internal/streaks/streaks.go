@@ -282,6 +282,9 @@ func postBonus(ctx context.Context, tx *events.Tx, clk clock.Clock, kidID int64,
 	return nil
 }
 
+// MilestoneDays is the streak length a MilestoneSource id stands for.
+func MilestoneDays(sourceID int64) int { return int(sourceID % 10000) }
+
 // MilestoneSource is the ledger source of the bonus for reaching a days-long streak on d.
 func MilestoneSource(d caltime.Date, days int) ledger.Source {
 	ymd := int64(d.Year)*10000 + int64(d.Month)*100 + int64(d.Day)

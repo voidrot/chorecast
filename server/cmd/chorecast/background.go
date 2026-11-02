@@ -19,6 +19,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/horizon"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
+	"github.com/voidrot/chorecast/server/internal/inbox"
 	"github.com/voidrot/chorecast/server/internal/jobs"
 	"github.com/voidrot/chorecast/server/internal/kids"
 	"github.com/voidrot/chorecast/server/internal/media"
@@ -47,6 +48,7 @@ func newBackground(store *db.DB, clk clock.Clock, files media.Storage, log *slog
 	tokens := auth.NewStore(store.Queries, clk)
 	parentsSvc := parents.New(store, clk)
 	pairing := devices.New(store, clk)
+	inboxSvc := inbox.New(store, clk)
 	runner.Register(kindMaintenance, func(ctx context.Context, _ jobs.Job) error {
 		now := clk.Now()
 		purgedJobs, err := runner.PurgeFinished(ctx, now.Add(-keepDoneJobs), now.Add(-keepFailedJobs))
@@ -73,9 +75,13 @@ func newBackground(store *db.DB, clk clock.Clock, files media.Storage, log *slog
 		if err != nil {
 			return err
 		}
+		purgedNotifications, err := inboxSvc.Purge(ctx, now.Add(-inbox.Keep))
+		if err != nil {
+			return err
+		}
 		log.Info("maintenance", "purged_jobs", purgedJobs, "purged_tokens", purgedTokens,
 			"purged_idempotency_keys", purgedKeys, "purged_events", purgedEvents, "purged_invites", purgedInvites,
-			"purged_pairing_codes", purgedCodes)
+			"purged_pairing_codes", purgedCodes, "purged_notifications", purgedNotifications)
 		return nil
 	}, jobs.KindOptions{MaxAttempts: 3})
 	sched.Add(jobs.Every("maintenance", kindMaintenance, 24*time.Hour))
@@ -132,6 +138,9 @@ func newBackground(store *db.DB, clk clock.Clock, files media.Storage, log *slog
 
 	// Submitted instances nobody reviewed within their timeout are approved by the system.
 	autoapprove.New(store, bus, clk).Register(runner, sched, log)
+
+	// In-app inbox rows are written from the domain events above.
+	inboxSvc.Register(bus)
 
 	return runner, sched, bus
 }
