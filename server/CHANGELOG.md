@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/voidrot/chorecast/compare/server-v0.2.0...server-v0.3.0) (2026-11-02)
+
+
+### Features
+
+* **server:** add points ledger with reversals, adjustments and balances ([cf2910b](https://github.com/voidrot/chorecast/commit/cf2910b8335ce5169101fe11e2de36bade301239))
+* **server:** add the chore instance state machine with approvals, rejections, excuses and reassignment ([#84](https://github.com/voidrot/chorecast/issues/84)) ([8248235](https://github.com/voidrot/chorecast/commit/82482359b382e56bc71f901c0e7cd6450789a1ff)), closes [#25](https://github.com/voidrot/chorecast/issues/25)
+* **server:** auto-approve submitted chores after the household or per-chore timeout ([#86](https://github.com/voidrot/chorecast/issues/86)) ([75518cd](https://github.com/voidrot/chorecast/commit/75518cd25d83450b85ef7ff76902ab3225e9dfc8)), closes [#29](https://github.com/voidrot/chorecast/issues/29)
+* **server:** close kids' days and weeks, marking open chores missed with their penalty ([#82](https://github.com/voidrot/chorecast/issues/82)) ([f10dce0](https://github.com/voidrot/chorecast/commit/f10dce09974544694cec36ecdf0f9fef840cbef8)), closes [#24](https://github.com/voidrot/chorecast/issues/24)
+* **server:** generate chore instances for a rolling 7-day horizon ([#77](https://github.com/voidrot/chorecast/issues/77)) ([6f881e5](https://github.com/voidrot/chorecast/commit/6f881e5fead7dc71f7e266734886340f6f2481da)), closes [#23](https://github.com/voidrot/chorecast/issues/23)
+* **server:** track daily and per-chore streaks with milestone bonuses ([#85](https://github.com/voidrot/chorecast/issues/85)) ([1f4535e](https://github.com/voidrot/chorecast/commit/1f4535eb6ea9131f49fca11cbcb2daa8462e5481)), closes [#30](https://github.com/voidrot/chorecast/issues/30)
+* **server:** upload photos with duplicate detection and signed media URLs ([#78](https://github.com/voidrot/chorecast/issues/78)) ([0d3027c](https://github.com/voidrot/chorecast/commit/0d3027c2e7addab11b7c55f29524bc0316f3edcb)), closes [#75](https://github.com/voidrot/chorecast/issues/75)
+
+
+### Bug Fixes
+
+* **server:** date ledger reversals to the entry they undo ([#79](https://github.com/voidrot/chorecast/issues/79)) ([98d0378](https://github.com/voidrot/chorecast/commit/98d037886301a2e9f34108845389355f41f8728f)), closes [#26](https://github.com/voidrot/chorecast/issues/26)
+* **server:** read points balance and available in one transaction ([98d0378](https://github.com/voidrot/chorecast/commit/98d037886301a2e9f34108845389355f41f8728f))
+
 ## [0.2.0](https://github.com/voidrot/chorecast/compare/server-v0.1.0...server-v0.2.0) (2026-11-01)
 
 
