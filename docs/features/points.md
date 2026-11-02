@@ -190,7 +190,8 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
   instance. An instance dated after today can't be completed (409 `instance_planned`), nor one whose close has
   passed (`dayclose.ClosesAt`) while day close hasn't taken it yet, after downtime or a lagging job (409
   `instance_closed`, nothing written): day close takes it as missed. Accepting an offline completion made before
-  the close, within a grace margin, is #35's job. Evidence (#27) hooks into `Complete` (`checkEvidence`).
+  the close, within a grace margin, is #35's job. `Complete` checks and attaches the evidence (`checkEvidence`,
+  #27; see approvals-evidence.md).
 - **Reassign** moves an open single-kid instance to another active kid and sets `manually_reassigned` (clearing
   `auto_assigned`). It records the kid it was planned for in `reassigned_from` (the first, across several
   reassignments), and the horizon counts the instance as that kid's occurrence, so a fixed or everyone chore

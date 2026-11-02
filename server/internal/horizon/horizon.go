@@ -110,9 +110,9 @@ func (e existing) covers(kid int64) bool {
 
 // untouched: nothing has happened to it yet. A reassignment (or swap) sets manually_reassigned,
 // and a completion stays recorded after a rejection or an approval reversal sends it back to open.
-// Evidence (#27) will touch an instance too.
+// Submitted evidence touches it too (it comes with a completion, but is checked on its own).
 func (e existing) untouched() bool {
-	return e.Status == StatusOpen && e.ManuallyReassigned == 0 && !e.CompletedAt.Valid
+	return e.Status == StatusOpen && e.ManuallyReassigned == 0 && !e.CompletedAt.Valid && !e.HasEvidence
 }
 
 type desired struct {

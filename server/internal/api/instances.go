@@ -11,6 +11,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/caltime"
+	"github.com/voidrot/chorecast/server/internal/evidence"
 	"github.com/voidrot/chorecast/server/internal/horizon"
 	"github.com/voidrot/chorecast/server/internal/instances"
 )
@@ -44,8 +45,24 @@ func registerInstances(hapi huma.API, h *handlers) {
 			"when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a "+
 			"member of); a parent completes for a kid and names the kid for a shared instance. An instance dated "+
 			"after today can't be completed yet (409 `instance_planned`), nor one whose day (or week) has closed "+
-			"(409 `instance_closed`): day close counts it as missed.",
+			"(409 `instance_closed`): day close counts it as missed.\n\n"+
+			"The evidence comes with it and is checked against the chore's rules (422 `validation_failed`, with the "+
+			"field's location): every step ticked when it has a checklist, a note when it asks for one, at least its "+
+			"number of photos, with a `before` and an `after` when it asks for both. Each photo is a pending upload by "+
+			"the kid, or by the parent completing for them, not used before. A kid's photo carries its `capturedAt` "+
+			"and `captureId` and must be taken after the instance's day (or a flexible chore's week) began. A chore "+
+			"that asks for a video can't be completed yet (422 `video_evidence_unsupported`). Every submission is "+
+			"kept, so resubmitting after a rejection adds one.",
 		auth.Require(auth.ScopeChoresComplete), http.StatusForbidden, http.StatusUnprocessableEntity), h.completeInstance)
+	huma.Register(hapi, huma.Operation{
+		OperationID: "getChoreInstanceEvidence", Method: http.MethodGet, Path: "/instances/{instance}/evidence",
+		Summary: "A chore's submitted evidence",
+		Description: "Every submission's checklist, note and photos, oldest first, for parents and the instance's kids " +
+			"(its assignee, or a shared instance's members). Photo links are signed and work for 10 minutes; once " +
+			"retention has deleted a photo it is marked `expired` and has no links.",
+		Tags: []string{"instances"}, Security: auth.Require(auth.ScopeChoresRead),
+		Errors: []int{http.StatusForbidden, http.StatusNotFound},
+	}, h.instanceEvidence)
 	huma.Register(hapi, transition("approveChoreInstance", "approval", "Approve a submitted chore",
 		"Credits the points: to the assignee, or for a shared chore to the completer or split evenly across "+
 			"the group. Re-approving after a reversal restores the earlier credit with its amount: the current "+
@@ -140,15 +157,20 @@ type ChoreInstanceRefInput struct {
 type CompleteChoreInstanceInput struct {
 	Instance int64 `path:"instance" doc:"Instance id"`
 	Body     *struct {
-		KidID int64 `json:"kidId,omitempty" doc:"Parents: the kid who did it (required for a shared instance). Kids complete as themselves."`
+		KidID     int64                         `json:"kidId,omitempty" doc:"Parents: the kid who did it (required for a shared instance). Kids complete as themselves."`
+		Checklist []int                         `json:"checklist,omitempty" maxItems:"20" doc:"Indexes (0-based) of the chore's steps that were ticked"`
+		Note      string                        `json:"note,omitempty" maxLength:"500" doc:"The kid's note"`
+		Photos    []evidence.EvidencePhotoInput `json:"photos,omitempty" maxItems:"5" doc:"Photos uploaded with POST /media/photos"`
 	}
 }
 
 func (h *handlers) completeInstance(ctx context.Context, in *CompleteChoreInstanceInput) (*ChoreInstanceOutput, error) {
 	p, _ := auth.PrincipalFrom(ctx)
 	kid := int64(0)
+	var sub evidence.Submission
 	if in.Body != nil {
 		kid = in.Body.KidID
+		sub = evidence.Submission{Checklist: in.Body.Checklist, Note: in.Body.Note, Photos: in.Body.Photos}
 	}
 	inst, err := h.instances.Get(ctx, in.Instance)
 	if err != nil {
@@ -168,7 +190,31 @@ func (h *handlers) completeInstance(ctx context.Context, in *CompleteChoreInstan
 	if target != 0 && !p.CanAccessKid(target) {
 		return nil, apierr.New(http.StatusForbidden, apierr.CodeForbidden, "you can't complete this kid's chores")
 	}
-	return instanceOutput(h.instances.Complete(ctx, in.Instance, instances.Completion{KidID: target, By: p.UserID}))
+	return instanceOutput(h.instances.Complete(ctx, in.Instance, instances.Completion{KidID: target, By: p.UserID, Evidence: sub}))
+}
+
+type InstanceEvidenceOutput struct {
+	Body struct {
+		Items []evidence.InstanceEvidence `json:"items" nullable:"false" doc:"Every submission, oldest first"`
+	}
+}
+
+func (h *handlers) instanceEvidence(ctx context.Context, in *ChoreInstanceRefInput) (*InstanceEvidenceOutput, error) {
+	p, _ := auth.PrincipalFrom(ctx)
+	inst, err := h.instances.Get(ctx, in.Instance)
+	if err != nil {
+		return nil, err
+	}
+	if !evidence.CanRead(p, inst) {
+		return nil, apierr.New(http.StatusForbidden, apierr.CodeForbidden, "you can't see this chore's evidence")
+	}
+	items, err := evidence.List(ctx, h.db.Queries, in.Instance, h.signedURLs)
+	if err != nil {
+		return nil, err
+	}
+	out := &InstanceEvidenceOutput{}
+	out.Body.Items = items
+	return out, nil
 }
 
 func (h *handlers) approveInstance(ctx context.Context, in *ChoreInstanceRefInput) (*ChoreInstanceOutput, error) {

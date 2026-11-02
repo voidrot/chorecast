@@ -33,9 +33,24 @@ const URLTTL = 10 * time.Minute
 // Owner kinds (media.owner_kind). Uploads start as OwnerPending, with no owner id, until they
 // are attached to evidence, a rejection, a chore or equipment.
 const (
-	OwnerPending = "pending"
-	KindPhoto    = "photo"
-	MimeWebP     = "image/webp"
+	OwnerPending  = "pending"
+	OwnerEvidence = "evidence"
+	KindPhoto     = "photo"
+	MimeWebP      = "image/webp"
+)
+
+// Media statuses (media.status). Retention deletes an expired item's files; its row stays.
+const (
+	StatusReady   = "ready"
+	StatusExpired = "expired"
+)
+
+// PendingTTL is how long an upload stays pending: media not attached by then is abandoned, and
+// the retention job (Expire) deletes it. MaxPendingUploads is how many attachable pending
+// uploads one kid may hold; more is 429 rate_limited, so a kid's device can't fill the disk.
+const (
+	PendingTTL        = 24 * time.Hour
+	MaxPendingUploads = 20
 )
 
 var (
@@ -52,7 +67,9 @@ var (
 		"the image needs too much memory to process; save it as an ordinary JPEG and try again")
 	errAnimated = apierr.New(http.StatusUnsupportedMediaType, apierr.CodeUnsupportedMedia,
 		"animated images aren't supported; upload a still photo")
-	errInvalidImage = apierr.New(http.StatusUnprocessableEntity, apierr.CodeInvalidImage, "the image is damaged or can't be read")
+	errInvalidImage   = apierr.New(http.StatusUnprocessableEntity, apierr.CodeInvalidImage, "the image is damaged or can't be read")
+	errTooManyPending = apierr.New(http.StatusTooManyRequests, apierr.CodeRateLimited,
+		fmt.Sprintf("%d photos are already waiting to be used; complete a chore with them first", MaxPendingUploads))
 )
 
 // Service uploads, scopes and serves media.
@@ -126,35 +143,44 @@ func NewKey() (string, error) {
 }
 
 // UploadPhoto reads a photo of at most limit bytes from r, processes it and stores it as pending
-// media uploaded by p. It reads r only once it holds the processing slot, so waiting uploads
-// don't hold their photos in memory; when MaxQueuedUploads are already waiting it fails at once
-// with 503 media_busy. A kid's photo whose pixels exactly match earlier kid evidence in the
-// household is rejected (409 duplicate_media) before it is encoded, and its hash is recorded so
-// later reuse is caught, even after the media is deleted. Parents' uploads are neither checked
-// nor recorded (fresh-evidence rule 5).
-func (s *Service) UploadPhoto(ctx context.Context, p *auth.Principal, r io.Reader, limit int64) (sqlc.Medium, error) {
-	photo, err := s.process(ctx, p, r, limit)
+// media uploaded by p, which expires after PendingTTL unless it is attached. It reads r only once
+// it holds the processing slot, so waiting uploads don't hold their photos in memory; when
+// MaxQueuedUploads are already waiting it fails at once with 503 media_busy.
+//
+// A kid's photo whose pixels exactly match earlier kid evidence in the household is rejected
+// (409 duplicate_media) before it is encoded, and its hash is recorded so later reuse is caught,
+// even after the media is deleted. The exception is the same kid repeating an upload that is
+// still pending (an offline retry that lost the response): that returns the existing media, with
+// retried true. A kid already holding MaxPendingUploads gets 429 rate_limited. Parents' uploads
+// are neither checked nor recorded (fresh-evidence rule 5).
+func (s *Service) UploadPhoto(ctx context.Context, p *auth.Principal, r io.Reader, limit int64) (m sqlc.Medium, retried bool, err error) {
+	photo, prior, err := s.process(ctx, p, r, limit)
 	if err != nil {
-		return sqlc.Medium{}, err
+		return sqlc.Medium{}, false, err
+	}
+	if prior != nil {
+		return *prior, true, nil
 	}
 	key, err := NewKey()
 	if err != nil {
-		return sqlc.Medium{}, err
+		return sqlc.Medium{}, false, err
 	}
 	thumbKey := ThumbKey(key)
 	if err := s.store.Put(ctx, key, bytes.NewReader(photo.WebP)); err != nil {
-		return sqlc.Medium{}, err
+		return sqlc.Medium{}, false, err
 	}
 	if err := s.store.Put(ctx, thumbKey, bytes.NewReader(photo.Thumb)); err != nil {
 		s.removeFiles(key, thumbKey)
-		return sqlc.Medium{}, err
+		return sqlc.Medium{}, false, err
 	}
-	m, err := s.insert(ctx, p, p.Kind == auth.KindKid, key, thumbKey, photo)
-	if err != nil {
+	m, retried, err = s.insert(ctx, p, p.Kind == auth.KindKid, key, thumbKey, photo)
+	if err != nil || retried { // a retry that raced its first upload keeps that one's files
 		s.removeFiles(key, thumbKey)
-		return sqlc.Medium{}, err
 	}
-	return m, nil
+	if err != nil {
+		return sqlc.Medium{}, false, err
+	}
+	return m, retried, nil
 }
 
 // TooLarge is the 413 for an upload over limit bytes.
@@ -171,54 +197,102 @@ var errTooManyOwn = huma.ErrorWithHeaders(
 	apierr.New(http.StatusTooManyRequests, apierr.CodeRateLimited, "wait for your other photo uploads to finish"),
 	http.Header{"Retry-After": {"5"}})
 
-// process reads, decodes and encodes the photo while holding the processing slot.
-func (s *Service) process(ctx context.Context, p *auth.Principal, r io.Reader, limit int64) (*Photo, error) {
+// process reads, decodes and encodes the photo while holding the processing slot. For a kid's
+// repeated upload it returns the pending media it repeats (prior) instead of encoding again.
+func (s *Service) process(ctx context.Context, p *auth.Principal, r io.Reader, limit int64) (photo *Photo, prior *sqlc.Medium, err error) {
 	leave, ok := s.enter(p)
 	if !ok {
-		return nil, errTooManyOwn
+		return nil, nil, errTooManyOwn
 	}
 	defer leave()
 	select {
 	case s.queue <- struct{}{}:
 		defer func() { <-s.queue }()
 	default:
-		return nil, errBusy
+		return nil, nil, errBusy
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	select {
 	case s.sem <- struct{}{}:
 		defer func() { <-s.sem }()
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 	data, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, TooLarge(limit)
+		return nil, nil, TooLarge(limit)
 	}
 	d, err := DecodePhoto(ctx, data)
 	if err != nil {
-		return nil, photoError(err)
+		return nil, nil, photoError(err)
 	}
 	if p.Kind == auth.KindKid {
-		// Answer before paying for the encode; the insert in the transaction is what guarantees it.
-		dup, err := s.db.MediaHashExists(ctx, d.SHA256[:])
-		if err != nil {
-			return nil, err
+		// Answer before paying for the encode; insert repeats both checks in its transaction,
+		// which is what guarantees them. A retry is recognized first, so the cap doesn't refuse it.
+		if prior, err := s.repeated(ctx, s.db.Queries, p.UserID, d.SHA256[:]); err != nil || prior != nil {
+			return nil, prior, err
 		}
-		if dup {
-			return nil, errDuplicate
+		if err := s.checkPendingCap(ctx, s.db.Queries, p.UserID); err != nil {
+			return nil, nil, err
 		}
 	}
-	photo, err := d.Encode(ctx)
+	photo, err = d.Encode(ctx)
 	if err != nil {
-		return nil, photoError(err)
+		return nil, nil, photoError(err)
 	}
-	return photo, nil
+	return photo, nil, nil
+}
+
+// repeated looks up a kid photo's hash. A photo seen before is 409 duplicate_media, unless it is
+// the kid's own upload and still attachable: then that media is returned for the retry to reuse.
+func (s *Service) repeated(ctx context.Context, q *sqlc.Queries, kid int64, sha []byte) (*sqlc.Medium, error) {
+	h, err := q.GetMediaHash(ctx, sha)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("look up media hash: %w", err)
+	}
+	if !h.KidID.Valid || h.KidID.Int64 != kid || !h.MediaID.Valid {
+		return nil, errDuplicate
+	}
+	m, err := q.GetMedia(ctx, h.MediaID.Int64)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errDuplicate
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load media %d: %w", h.MediaID.Int64, err)
+	}
+	if !Attachable(m, s.clock.Now()) || !m.UploadedBy.Valid || m.UploadedBy.Int64 != kid {
+		return nil, errDuplicate
+	}
+	return &m, nil
+}
+
+// checkPendingCap refuses a new upload by kid once they hold MaxPendingUploads.
+func (s *Service) checkPendingCap(ctx context.Context, q *sqlc.Queries, kid int64) error {
+	n, err := q.CountPendingUploads(ctx, sqlc.CountPendingUploadsParams{
+		UploadedBy: sql.NullInt64{Int64: kid, Valid: true},
+		Now:        sql.NullString{String: db.Timestamp(s.clock.Now()), Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("count pending uploads: %w", err)
+	}
+	if n >= MaxPendingUploads {
+		return errTooManyPending
+	}
+	return nil
+}
+
+// Attachable reports whether m is pending media that can still be attached at now: ready and
+// within its PendingTTL.
+func Attachable(m sqlc.Medium, now time.Time) bool {
+	return m.OwnerKind == OwnerPending && m.Status == StatusReady && m.ExpiresAt.Valid && m.ExpiresAt.String > db.Timestamp(now)
 }
 
 func photoError(err error) error {
@@ -240,14 +314,29 @@ func photoError(err error) error {
 	}
 }
 
-func (s *Service) insert(ctx context.Context, p *auth.Principal, kid bool, key, thumbKey string, photo *Photo) (sqlc.Medium, error) {
-	now := db.Timestamp(s.clock.Now())
+// insert records the stored photo. For a kid it repeats the duplicate and cap checks in the
+// transaction; a retry that raced its first upload gets that upload back (retried true).
+func (s *Service) insert(ctx context.Context, p *auth.Principal, kid bool, key, thumbKey string, photo *Photo) (sqlc.Medium, bool, error) {
+	at := s.clock.Now()
+	now := db.Timestamp(at)
 	tx, err := s.db.SQL.BeginTx(ctx, nil)
 	if err != nil {
-		return sqlc.Medium{}, err
+		return sqlc.Medium{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	q := s.db.WithTx(tx)
+	if kid {
+		prior, err := s.repeated(ctx, q, p.UserID, photo.SHA256[:])
+		if err != nil {
+			return sqlc.Medium{}, false, err
+		}
+		if prior != nil {
+			return *prior, true, nil
+		}
+		if err := s.checkPendingCap(ctx, q, p.UserID); err != nil {
+			return sqlc.Medium{}, false, err
+		}
+	}
 	dhash := int64(photo.DHash) //nolint:gosec // stored bit-for-bit; SQLite has no unsigned integers
 	m, err := q.CreateMedia(ctx, sqlc.CreateMediaParams{
 		UploadedBy: sql.NullInt64{Int64: p.UserID, Valid: p.UserID != 0},
@@ -257,9 +346,10 @@ func (s *Service) insert(ctx context.Context, p *auth.Principal, kid bool, key, 
 		ThumbWidth:  sql.NullInt64{Int64: int64(photo.ThumbWidth), Valid: true},
 		ThumbHeight: sql.NullInt64{Int64: int64(photo.ThumbHeight), Valid: true},
 		Sha256:      photo.SHA256[:], Dhash: dhash, CreatedAt: now,
+		ExpiresAt: sql.NullString{String: db.Timestamp(at.Add(PendingTTL)), Valid: true},
 	})
 	if err != nil {
-		return sqlc.Medium{}, fmt.Errorf("create media: %w", err)
+		return sqlc.Medium{}, false, fmt.Errorf("create media: %w", err)
 	}
 	if kid {
 		_, err := q.RecordMediaHash(ctx, sqlc.RecordMediaHashParams{
@@ -269,16 +359,16 @@ func (s *Service) insert(ctx context.Context, p *auth.Principal, kid bool, key, 
 			CreatedAt: now,
 		})
 		if errors.Is(err, sql.ErrNoRows) { // the hash was already there
-			return sqlc.Medium{}, errDuplicate
+			return sqlc.Medium{}, false, errDuplicate
 		}
 		if err != nil {
-			return sqlc.Medium{}, fmt.Errorf("record media hash: %w", err)
+			return sqlc.Medium{}, false, fmt.Errorf("record media hash: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return sqlc.Medium{}, err
+		return sqlc.Medium{}, false, err
 	}
-	return m, nil
+	return m, false, nil
 }
 
 // removeFiles cleans up after a failed upload. It runs without the request's context, which may
@@ -290,8 +380,9 @@ func (s *Service) removeFiles(keys ...string) {
 }
 
 // CanAccess reports whether p may see m. Parents see all media. A kid sees pending media they
-// uploaded. Media attached to an owner is visible to parents only until its owner kind defines
-// more (evidence: the instance's kid, #27).
+// uploaded. Media attached to an owner is visible here to parents only: kids read their
+// evidence photos through the instance's evidence (internal/evidence, GET
+// /instances/{id}/evidence), which checks the instance's kids.
 func CanAccess(p *auth.Principal, m sqlc.Medium) bool {
 	switch {
 	case p.Kind == auth.KindParent:
@@ -365,7 +456,7 @@ func (s *Service) Open(ctx context.Context, key, exp, sig string) (File, error) 
 		return File{}, errInvalidURL
 	}
 	m, err := s.db.GetMediaByKey(ctx, key)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && m.Status != "ready") {
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && m.Status != StatusReady) {
 		return File{}, errExpired
 	}
 	if err != nil {

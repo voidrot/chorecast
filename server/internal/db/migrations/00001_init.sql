@@ -334,7 +334,7 @@ CREATE TABLE media (
     status       TEXT    NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'expired')),
     keep         INTEGER NOT NULL DEFAULT 0 CHECK (keep IN (0, 1)),
     created_at   TEXT    NOT NULL,
-    expires_at   TEXT,                         -- NULL = never (set when the owning instance resolves)
+    expires_at   TEXT,                         -- NULL = never; pending: upload + media.PendingTTL; evidence: set when the instance resolves
     CHECK ((owner_kind = 'pending') = (owner_id IS NULL))
 );
 
@@ -398,7 +398,40 @@ CREATE INDEX chore_instance_rejections_by_instance ON chore_instance_rejections 
 -- The auto-approve job lists submitted instances by when they were submitted (internal/autoapprove).
 CREATE INDEX chore_instances_submitted ON chore_instances (completed_at) WHERE status = 'submitted';
 
+-- ==== Evidence (#27) ====
+-- What came with each completion of an instance (internal/evidence): one row per submission, so a
+-- resubmission after a rejection keeps the earlier one. Its photos are media rows with
+-- owner_kind = 'evidence' and owner_id = the evidence row; chore_instance_evidence_photos keeps
+-- what the app recorded at the shutter. Records stay after retention deletes the files.
+CREATE TABLE chore_instance_evidence (
+    id           INTEGER PRIMARY KEY,
+    instance_id  INTEGER NOT NULL REFERENCES chore_instances (id) ON DELETE CASCADE,
+    attempt      INTEGER NOT NULL CHECK (attempt >= 1), -- 1 = the first submission
+    kid_id       INTEGER REFERENCES users (id) ON DELETE SET NULL, -- the completer
+    submitted_by INTEGER REFERENCES users (id) ON DELETE SET NULL, -- the kid, or a parent for them
+    checklist    TEXT    NOT NULL DEFAULT '[]', -- JSON array of the ticked step indexes
+    note         TEXT    NOT NULL DEFAULT '',
+    created_at   TEXT    NOT NULL,
+    UNIQUE (instance_id, attempt)
+);
+
+CREATE TABLE chore_instance_evidence_photos (
+    media_id    INTEGER PRIMARY KEY REFERENCES media (id), -- a photo is evidence once
+    evidence_id INTEGER NOT NULL REFERENCES chore_instance_evidence (id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL, -- order in the submission
+    role        TEXT    NOT NULL DEFAULT '' CHECK (role IN ('', 'before', 'after')),
+    captured_at TEXT,             -- device time at the shutter; NULL for a parent's upload
+    capture_id  TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX chore_instance_evidence_photos_by_evidence ON chore_instance_evidence_photos (evidence_id, position);
+
+-- Retention (media.Expire) and the per-kid pending upload cap.
+CREATE INDEX media_expiring ON media (expires_at) WHERE status = 'ready';
+CREATE INDEX media_pending_by_uploader ON media (uploaded_by) WHERE owner_kind = 'pending';
+
 -- +goose Down
+DROP TABLE chore_instance_evidence_photos;
+DROP TABLE chore_instance_evidence;
 DROP TABLE kid_chore_streaks;
 DROP TABLE kid_streaks;
 DROP TABLE streak_days;

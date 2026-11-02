@@ -64,7 +64,11 @@ func TestCompleteChecksKidAccessWithoutKidID(t *testing.T) {
 		t.Errorf("after the refusal: %+v, %v", inst, err)
 	}
 
-	parent := auth.WithPrincipal(ctx, &auth.Principal{Kind: auth.KindParent, UserID: 99})
+	mom, err := d.CreateUser(ctx, sqlc.CreateUserParams{DisplayName: "Mom", Role: "parent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := auth.WithPrincipal(ctx, &auth.Principal{Kind: auth.KindParent, UserID: mom.ID})
 	if out, err := h.completeInstance(parent, &CompleteChoreInstanceInput{Instance: id}); err != nil || out.Body.CompletedBy != kid.ID {
 		t.Errorf("a parent completes for the assignee: %+v, %v", out, err)
 	}

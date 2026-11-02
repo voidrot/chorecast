@@ -653,10 +653,34 @@
       "CompleteChoreInstanceInputBody": {
         "additionalProperties": false,
         "properties": {
+          "checklist": {
+            "description": "Indexes (0-based) of the chore's steps that were ticked",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "maxItems": 20,
+            "nullable": true,
+            "type": "array"
+          },
           "kidId": {
             "description": "Parents: the kid who did it (required for a shared instance). Kids complete as themselves.",
             "format": "int64",
             "type": "integer"
+          },
+          "note": {
+            "description": "The kid's note",
+            "maxLength": 500,
+            "type": "string"
+          },
+          "photos": {
+            "description": "Photos uploaded with POST /media/photos",
+            "items": {
+              "$ref": "#/components/schemas/EvidencePhotoInput"
+            },
+            "maxItems": 5,
+            "nullable": true,
+            "type": "array"
           }
         },
         "type": "object"
@@ -967,6 +991,93 @@
         },
         "type": "object"
       },
+      "EvidencePhoto": {
+        "additionalProperties": false,
+        "properties": {
+          "captureId": {
+            "type": "string"
+          },
+          "capturedAt": {
+            "description": "Device time at the shutter (kids' photos)",
+            "format": "date-time",
+            "type": "string"
+          },
+          "expired": {
+            "description": "Retention deleted the file: there are no links",
+            "type": "boolean"
+          },
+          "height": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mediaId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "before",
+              "after"
+            ],
+            "type": "string"
+          },
+          "thumbUrl": {
+            "description": "Signed link to the thumbnail, valid until urlExpiresAt",
+            "format": "uri",
+            "type": "string"
+          },
+          "url": {
+            "description": "Signed link, valid until urlExpiresAt",
+            "format": "uri",
+            "type": "string"
+          },
+          "urlExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "width": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mediaId"
+        ],
+        "type": "object"
+      },
+      "EvidencePhotoInput": {
+        "additionalProperties": false,
+        "properties": {
+          "captureId": {
+            "description": "The app's id for the capture; required for a kid's photo",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "capturedAt": {
+            "description": "Device time at the shutter; required for a kid's photo",
+            "format": "date-time",
+            "type": "string"
+          },
+          "mediaId": {
+            "description": "A pending photo from POST /media/photos",
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "role": {
+            "description": "Before or after the chore; the chore may require one of each",
+            "enum": [
+              "before",
+              "after"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mediaId"
+        ],
+        "type": "object"
+      },
       "EvidenceRules": {
         "additionalProperties": false,
         "properties": {
@@ -1149,6 +1260,70 @@
           "mediaRetentionDays",
           "offlineGraceMinutes",
           "defaultChoreMinutes"
+        ],
+        "type": "object"
+      },
+      "InstanceEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "description": "Which submission of the instance this is; 1 = the first",
+            "format": "int64",
+            "type": "integer"
+          },
+          "checklist": {
+            "description": "Indexes of the ticked steps",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "kidId": {
+            "description": "The kid who did it",
+            "format": "int64",
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "photos": {
+            "items": {
+              "$ref": "#/components/schemas/EvidencePhoto"
+            },
+            "type": "array"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "submittedBy": {
+            "description": "Who submitted it: the kid, or a parent for them",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempt",
+          "submittedAt",
+          "checklist",
+          "photos"
+        ],
+        "type": "object"
+      },
+      "InstanceEvidenceOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "Every submission, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/InstanceEvidence"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -5946,7 +6121,7 @@
     },
     "/instances/{instance}/completion": {
       "post": {
-        "description": "Marks an open instance done: `submitted` for a parent to approve, or `approved` with points credited when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a member of); a parent completes for a kid and names the kid for a shared instance. An instance dated after today can't be completed yet (409 `instance_planned`), nor one whose day (or week) has closed (409 `instance_closed`): day close counts it as missed. Returns the updated instance.",
+        "description": "Marks an open instance done: `submitted` for a parent to approve, or `approved` with points credited when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a member of); a parent completes for a kid and names the kid for a shared instance. An instance dated after today can't be completed yet (409 `instance_planned`), nor one whose day (or week) has closed (409 `instance_closed`): day close counts it as missed.\n\nThe evidence comes with it and is checked against the chore's rules (422 `validation_failed`, with the field's location): every step ticked when it has a checklist, a note when it asks for one, at least its number of photos, with a `before` and an `after` when it asks for both. Each photo is a pending upload by the kid, or by the parent completing for them, not used before. A kid's photo carries its `capturedAt` and `captureId` and must be taken after the instance's day (or a flexible chore's week) began. A chore that asks for a video can't be completed yet (422 `video_evidence_unsupported`). Every submission is kept, so resubmitting after a rejection adds one. Returns the updated instance.",
         "operationId": "completeChoreInstance",
         "parameters": [
           {
@@ -6055,6 +6230,93 @@
           }
         ],
         "summary": "Complete a chore",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/instances/{instance}/evidence": {
+      "get": {
+        "description": "Every submission's checklist, note and photos, oldest first, for parents and the instance's kids (its assignee, or a shared instance's members). Photo links are signed and work for 10 minutes; once retention has deleted a photo it is marked `expired` and has no links.",
+        "operationId": "getChoreInstanceEvidence",
+        "parameters": [
+          {
+            "description": "Instance id",
+            "in": "path",
+            "name": "instance",
+            "required": true,
+            "schema": {
+              "description": "Instance id",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceEvidenceOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "chores:read"
+            ]
+          },
+          {
+            "session": [
+              "chores:read"
+            ]
+          }
+        ],
+        "summary": "A chore's submitted evidence",
         "tags": [
           "instances"
         ]
@@ -8051,7 +8313,7 @@
     },
     "/media/photos": {
       "post": {
-        "description": "A multipart form with the image in `file` (JPEG, PNG or WebP, recognized by its content, not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any metadata (EXIF, GPS). The photo is pending until it is attached to evidence. A kid's photo that exactly matches earlier kid evidence is rejected with 409 `duplicate_media`. Images over 24 MP or 12,000 px on a side, or that would need too much memory to decode, get 413; animated images get 415. Photos are processed one at a time; when several uploads are already waiting the answer is 503 `media_busy`, and a caller with two uploads in progress gets 429 `rate_limited`, both with Retry-After.",
+        "description": "A multipart form with the image in `file` (JPEG, PNG or WebP, recognized by its content, not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any metadata (EXIF, GPS). The photo is pending until a completion attaches it as evidence; one not attached within 24 hours is deleted. A kid's photo that exactly matches earlier kid evidence is rejected with 409 `duplicate_media`, except that a kid repeating their own upload that is still pending (an offline retry) gets that photo back. A kid may hold 20 pending photos; more is 429 `rate_limited`. Images over 24 MP or 12,000 px on a side, or that would need too much memory to decode, get 413; animated images get 415. Photos are processed one at a time; when several uploads are already waiting the answer is 503 `media_busy`, and a caller with two uploads in progress gets 429 `rate_limited`, both with Retry-After.",
         "operationId": "uploadPhoto",
         "requestBody": {
           "content": {
