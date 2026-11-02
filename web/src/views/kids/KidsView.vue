@@ -52,7 +52,13 @@ watch(showArchived, () => kids.run())
       >
         <NCard hoverable :class="{ 'opacity-60': k.archivedAt }">
           <div class="flex items-center gap-4">
-            <KidAvatar :name="k.displayName" :color="k.color" :avatar="k.avatar" :size="56" />
+            <KidAvatar
+              :name="k.displayName"
+              :color="k.color"
+              :avatar="k.avatar"
+              :photo-url="k.avatarPhotoUrl"
+              :size="56"
+            />
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2 text-lg font-medium">
                 {{ k.displayName }}

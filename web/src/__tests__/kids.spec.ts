@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { ageOn, emptyForm, formFromKid, initials, inputFromForm, type Kid } from '@/kids/form'
+import {
+  ageOn,
+  avatarFormData,
+  emptyForm,
+  formFromKid,
+  initials,
+  inputFromForm,
+  type Kid,
+} from '@/kids/form'
 
 const kid: Kid = {
   id: 3,
@@ -49,5 +57,19 @@ describe('kid form', () => {
     expect(ageOn('2018-04-02', '2026-04-02')).toBe(8)
     expect(ageOn('', '2026-04-02')).toBeUndefined()
     expect(initials(' mary  jane watson ')).toBe('MJ')
+  })
+
+  it('keeps the photo link out of the profile it saves', () => {
+    const withPhoto: Kid = {
+      ...kid,
+      avatarPhotoUrl: 'http://x/y.webp',
+      avatarPhotoExpiresAt: '2026-01-01T00:00:00Z',
+    }
+    expect(inputFromForm(formFromKid(withPhoto))).toEqual(inputFromForm(formFromKid(kid)))
+  })
+
+  it('sends the avatar photo as the multipart file part', () => {
+    const body = avatarFormData(new Blob(['x'], { type: 'image/png' }))
+    expect(body.get('file')).toBeInstanceOf(Blob)
   })
 })

@@ -979,6 +979,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kids/{kid}/avatar/photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a kid's photo avatar
+         * @description A multipart form with the image in `file`, processed like any photo upload (same size and pixel limits, EXIF and GPS stripped). It replaces any earlier photo, which is deleted, and is shown instead of the bundled avatar until removed. It never expires. The kid-evidence rules don't apply.
+         */
+        put: operations["setKidAvatarPhoto"];
+        post?: never;
+        /**
+         * Remove a kid's photo avatar
+         * @description The kid goes back to the bundled avatar. Removing when there is no photo does nothing.
+         */
+        delete: operations["removeKidAvatarPhoto"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kids/{kid}/pin": {
         parameters: {
             query?: never;
@@ -2158,6 +2182,13 @@ export interface components {
             archivedAt?: string;
             /** @description Built-in avatar id; the image is /avatars/<id>.svg */
             avatar?: string;
+            /** Format: date-time */
+            avatarPhotoExpiresAt?: string;
+            /**
+             * Format: uri
+             * @description Signed link to the kid's photo avatar (shown instead of the bundled avatar), valid until avatarPhotoExpiresAt; refetch the kid for a new one. Absent when there is no photo.
+             */
+            avatarPhotoUrl?: string;
             /** Format: date */
             birthDate?: string;
             color: string;
@@ -5779,6 +5810,152 @@ export interface operations {
                 /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
                 "Idempotency-Key"?: string;
             };
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    setKidAvatarPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Kid id or slug */
+                kid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description The image: JPEG, PNG or WebP
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    removeKidAvatarPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
             path: {
                 /** @description Kid id or slug */
                 kid: string;
