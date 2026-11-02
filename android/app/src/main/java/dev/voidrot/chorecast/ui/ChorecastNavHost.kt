@@ -95,7 +95,7 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     kid = { store, kidId -> KidViewModel(currentUrl(), kidId, store.review, container.householdInfo, store.tokens) },
                 ),
                 avatarPhotos = container.avatarPhotos,
-                inboxViewModel = { kid -> InboxViewModel(currentUrl(), container.inboxClient) { kid.token } },
+                inboxViewModel = { kid -> InboxViewModel(currentUrl(), container.inboxClient, token = { kid.token }) },
                 onUnpaired = {
                     container.settings.mode = null
                     nav.reset(WelcomeRoute)
