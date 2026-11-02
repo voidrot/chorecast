@@ -162,7 +162,7 @@ class TodayViewModel(
 
     fun openHistory() {
         _state.update { it.copy(history = it.history.copy(open = true)) }
-        if (_state.value.history.history == null && _state.value.history.error == null) loadHistory()
+        refreshHistory()
     }
 
     fun closeHistory() {
@@ -171,12 +171,21 @@ class TodayViewModel(
     }
 
     /** Retry after a failed first page. */
-    fun retryHistory() = loadHistory()
+    fun retryHistory() = refreshHistory()
 
-    /** Loads the first page, or the one before the oldest loaded. A load that is running is left alone. */
-    fun loadHistory() {
-        if (historyJob?.isActive == true) return
-        val loaded = _state.value.history.history
+    /**
+     * Reloads the newest page, replacing what was loaded (paging starts over). The old list stays
+     * visible while it loads, and stays if the load fails.
+     */
+    fun refreshHistory() = fetchHistory(older = false)
+
+    /** Loads the page before the oldest loaded one. A load that is running is left alone. */
+    fun loadHistory() = fetchHistory(older = true)
+
+    private fun fetchHistory(older: Boolean) {
+        if (older && historyJob?.isActive == true) return
+        historyJob?.cancel()
+        val loaded = _state.value.history.history.takeIf { older }
         val range = loaded?.oldest?.older() ?: latestHistoryRange(today())
         _state.update { it.copy(history = it.history.copy(loading = true, error = null)) }
         historyJob = viewModelScope.launch {
@@ -284,7 +293,11 @@ class TodayViewModel(
             _state.update { st -> st.copy(submitting = false, drafts = st.drafts + (id to outcome.draft)) }
             when (val r = outcome.result) {
                 is SubmitOutcome.Result.Completed -> {
-                    _state.update { st -> st.copy(drafts = st.drafts - id, completing = false, selected = null) }
+                    // The new submission belongs in history: drop what was loaded so the next open reads it.
+                    historyJob?.cancel()
+                    _state.update { st ->
+                        st.copy(drafts = st.drafts - id, completing = false, selected = null, history = HistoryState())
+                    }
                     refresh()
                 }
                 is SubmitOutcome.Result.Failed -> failed(id, r.error)

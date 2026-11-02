@@ -19,6 +19,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -116,7 +120,8 @@ private fun HistoryRow(instance: ChoreInstance, onOpen: (ChoreInstance) -> Unit)
                 Text(instance.choreName, style = MaterialTheme.typography.titleMedium)
                 StatusLabel(status)
             }
-            if (status == ChoreStatusView.APPROVED) instance.points?.let { PointsLabel(it) }
+            // A shared chore (no assignee) is credited to whoever completed it, so the full value would mislead.
+            if (status == ChoreStatusView.APPROVED && instance.kidId != null) instance.points?.let { PointsLabel(it) }
         }
         HorizontalDivider()
     }
@@ -149,6 +154,7 @@ private fun HistoryChoreScreen(instance: ChoreInstance, load: EvidenceLoad, onBa
 @Composable
 private fun EvidenceSection(view: EvidenceView) {
     val uri = LocalUriHandler.current
+    var unavailable by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(stringResource(R.string.kid_history_evidence_title), style = MaterialTheme.typography.titleMedium)
         view.note?.let {
@@ -168,6 +174,9 @@ private fun EvidenceSection(view: EvidenceView) {
         if (view.photos.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(R.string.kid_history_photos), style = MaterialTheme.typography.titleSmall)
+                if (unavailable) {
+                    Text(stringResource(R.string.kid_history_photo_unavailable), color = MaterialTheme.colorScheme.error)
+                }
                 view.photos.forEachIndexed { i, photo ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -177,7 +186,13 @@ private fun EvidenceSection(view: EvidenceView) {
                             }
                         }
                         if (photo is PhotoView.Available) {
-                            TextButton(onClick = { uri.openUri(photo.url) }) { Text(stringResource(R.string.kid_history_photo_view)) }
+                            TextButton(onClick = {
+                                try {
+                                    uri.openUri(photo.url)
+                                } catch (_: IllegalArgumentException) {
+                                    unavailable = true
+                                }
+                            }) { Text(stringResource(R.string.kid_history_photo_view)) }
                         }
                     }
                 }

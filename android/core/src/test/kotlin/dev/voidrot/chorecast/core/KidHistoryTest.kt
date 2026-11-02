@@ -80,7 +80,8 @@ class KidHistoryTest {
     @Test
     fun rangesPageBackwardsWithoutGapOrOverlapWithinTheServerLimit() {
         val first = latestHistoryRange(today)
-        assertEquals(today, first.to)
+        // Reaches a day past the device date, which may trail the household's.
+        assertEquals(today.plusDays(1), first.to)
         assertEquals(HISTORY_PAGE_DAYS - 1L, ChronoUnit.DAYS.between(first.from, first.to))
         val second = first.older()
         assertEquals(first.from.minusDays(1), second.to)

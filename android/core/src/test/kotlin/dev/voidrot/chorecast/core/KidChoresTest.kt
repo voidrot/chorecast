@@ -98,8 +98,8 @@ class KidChoresTest {
         val engine = MockEngine { req ->
             assertEquals("/api/v1/instances", req.url.encodedPath)
             assertEquals("5", req.url.parameters["kidId"])
-            assertEquals("2026-03-04", req.url.parameters["from"])
-            assertEquals("2026-05-04", req.url.parameters["to"])
+            assertEquals("2026-03-05", req.url.parameters["from"])
+            assertEquals("2026-05-05", req.url.parameters["to"])
             ok(instances)
         }
         val range = latestHistoryRange(LocalDate.of(2026, 5, 4))

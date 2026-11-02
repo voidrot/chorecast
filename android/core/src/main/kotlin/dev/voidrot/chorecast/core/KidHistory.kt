@@ -18,8 +18,15 @@ data class DateRange(val from: LocalDate, val to: LocalDate) {
     fun older(): DateRange = DateRange(from.minusDays(HISTORY_PAGE_DAYS.toLong()), from.minusDays(1))
 }
 
-/** The newest history page: the [HISTORY_PAGE_DAYS] days ending [today]. */
-fun latestHistoryRange(today: LocalDate): DateRange = DateRange(today.minusDays(HISTORY_PAGE_DAYS - 1L), today)
+/**
+ * The newest history page: the [HISTORY_PAGE_DAYS] days ending tomorrow. The device's date can be a
+ * day behind the household's, so the range reaches one day past [today]; planned days are filtered out
+ * by [isHistory], so nothing in the future shows.
+ */
+fun latestHistoryRange(today: LocalDate): DateRange {
+    val to = today.plusDays(1)
+    return DateRange(to.minusDays(HISTORY_PAGE_DAYS - 1L), to)
+}
 
 /** Chores that have happened, as opposed to ones still to do (`open`, which includes sent back) or planned. */
 fun ChoreInstance.isHistory(): Boolean = !planned && status != ChoreInstance.Status.OPEN
@@ -89,6 +96,8 @@ fun EvidencePhoto.view(): PhotoView {
  */
 fun List<InstanceEvidence>.latestView(steps: List<String>): EvidenceView? {
     val last = maxByOrNull { it.attempt } ?: return null
+    // shortcut: ticks are indexes into the chore's current steps, so editing the steps after a
+    // submission can mislabel old ticks. Fix when the server snapshots the steps with the evidence.
     val ticked = last.checklist.map { it.toInt() }.toSet()
     return EvidenceView(
         note = last.note?.trim()?.takeIf { it.isNotEmpty() },

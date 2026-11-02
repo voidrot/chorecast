@@ -142,6 +142,7 @@
     <string name="kid_history_step_done">Done: %1$s</string>
     <string name="kid_history_step_skipped">Not ticked: %1$s</string>
     <string name="kid_history_photo_view">Open photo</string>
+    <string name="kid_history_photo_unavailable">Couldn\'t open the photo on this device.</string>
     <string name="kid_history_photo_expired">This photo has expired and was removed.</string>
 
     <string name="devices_title">Devices</string>
