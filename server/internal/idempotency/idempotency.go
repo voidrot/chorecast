@@ -223,6 +223,9 @@ type recorder struct {
 
 func (r *recorder) BodyReader() io.Reader { return r.body }
 
+// Unwrap lets adapter helpers such as humachi.Unwrap see through the recorder to the real context.
+func (r *recorder) Unwrap() huma.Context { return r.base }
+
 func (r *recorder) SetHeader(name, value string) {
 	if strings.EqualFold(name, "Content-Type") {
 		r.contentType = value
