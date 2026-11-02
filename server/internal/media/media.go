@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"sync"
@@ -438,7 +439,7 @@ func (s *Service) Get(ctx context.Context, p *auth.Principal, id int64) (sqlc.Me
 // attaching the same photo meanwhile either wins (409 media_attached) or finds it gone. The files
 // are then deleted; if that fails the row stays deleting and the retention job retries.
 // Someone else's photo and an unknown id are both 404 media_not_found. Discarding an already
-// discarded or expired photo is a no-op, so a repeated DELETE is 204 too.
+// discarded or expired pending photo is a no-op, so a repeated DELETE is 204 too.
 func (s *Service) Discard(ctx context.Context, p *auth.Principal, id int64) error {
 	tx, err := s.db.SQL.BeginTx(ctx, nil)
 	if err != nil {
@@ -465,7 +466,14 @@ func (s *Service) Discard(ctx context.Context, p *auth.Principal, id int64) erro
 	if err != nil {
 		return fmt.Errorf("discard media %d: %w", id, err)
 	}
-	if n == 0 { // already discarded or expired
+	if n == 0 { // not ready any more: discarded or expired already, or attached meanwhile
+		cur, err := q.GetMedia(ctx, id)
+		if err != nil {
+			return fmt.Errorf("reload media %d: %w", id, err)
+		}
+		if cur.OwnerKind != OwnerPending {
+			return errAttached
+		}
 		return nil
 	}
 	if err := q.DeleteMediaHashOf(ctx, sql.NullInt64{Int64: id, Valid: true}); err != nil {
@@ -475,7 +483,9 @@ func (s *Service) Discard(ctx context.Context, p *auth.Principal, id int64) erro
 		return err
 	}
 	if err := deleteFiles(ctx, s.store, m); err != nil {
-		return nil // claimed, so it is already gone for readers; retention retries the files
+		// Claimed, so it is already gone for readers and the slot is free; retention retries the files.
+		slog.Warn("discard photo: can't delete the files; retention retries", "media", id, "err", err)
+		return nil
 	}
 	return s.db.MarkMediaExpired(ctx, id)
 }

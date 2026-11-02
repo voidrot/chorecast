@@ -64,7 +64,7 @@ func registerMedia(hapi huma.API, h *handlers) {
 		Path:        "/media/photos/{id}",
 		Summary:     "Discard a pending photo",
 		Description: "Deletes the caller's own photo that no submission has attached yet, and frees its pending slot. " +
-			"Repeating the call for a photo already discarded is 204 too. Another user's photo, and an unknown id, are 404 " +
+			"Repeating the call for a pending photo already discarded or expired is 204 too. Another user's photo, and an unknown id, are 404 " +
 			"`media_not_found`; a photo already attached to a submission is 409 `media_attached`.",
 		Tags:          []string{"media"},
 		Security:      auth.Require(auth.ScopeChoresComplete),

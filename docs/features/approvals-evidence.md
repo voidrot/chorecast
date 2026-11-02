@@ -223,7 +223,7 @@ conditional UPDATE on `owner_kind = 'pending' AND status = 'ready'`, so a comple
 discard can't both win. It then deletes the files and marks the row `expired`; a file that can't be deleted leaves the
 row `deleting` for the retention job. The answer is 204. Another user's photo (a parent included) and an unknown id
 are both 404 `media_not_found`; a photo attached to a submission is 409 `media_attached`. Repeating the call for a
-photo already discarded or expired is 204 again.
+pending photo already discarded or expired is 204 again.
 
 ## Review queue (parent)
 
