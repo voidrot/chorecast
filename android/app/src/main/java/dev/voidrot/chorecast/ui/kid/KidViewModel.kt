@@ -100,7 +100,13 @@ class KidViewModel(
         job?.cancel()
         _state.update { it.copy(loading = it.data == null, refreshing = it.data != null) }
         job = viewModelScope.launch {
-            val settings = household.get(url, token)
+            val found = household.fetch(url, token)
+            if (found == Fetch.Unauthorized) {
+                tokens.clear()
+                _state.update { it.copy(loading = false, refreshing = false, signedOut = true) }
+                return@launch
+            }
+            val settings = (found as? Fetch.Ok)?.value
             val zone = settings?.let { runCatching { ZoneId.of(it.timezone) }.getOrNull() }
             if (settings == null || zone == null) {
                 // Without the household's day there is no telling which days to ask for.

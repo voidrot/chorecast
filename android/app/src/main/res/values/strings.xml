@@ -36,7 +36,11 @@
     <string name="device_which_parent">Which parent?</string>
     <string name="device_pin_kid">%1$s\'s PIN</string>
     <string name="device_pin_parent">%1$s\'s parent PIN</string>
-    <string name="device_pin">PIN</string>
+    <string name="device_pin_backspace">Delete last digit</string>
+    <plurals name="device_pin_entered">
+        <item quantity="one">%d digit entered</item>
+        <item quantity="other">%d digits entered</item>
+    </plurals>
     <string name="device_pin_wrong">Wrong PIN.</string>
     <plurals name="device_pin_locked">
         <item quantity="one">Too many wrong PINs. Try again in %d minute.</item>
@@ -46,7 +50,6 @@
     <string name="device_done">I\'m done</string>
     <string name="device_parent_mode">Parent mode: %1$s</string>
     <string name="device_parent_left">Locks in %1$d:%2$02d</string>
-    <string name="device_parent_soon">Reviews and quick actions will show up here soon.</string>
     <string name="device_lock">Lock</string>
 
     <string name="kid_balance_label">Points</string>

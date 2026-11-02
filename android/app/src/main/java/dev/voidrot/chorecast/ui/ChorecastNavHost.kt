@@ -1,6 +1,7 @@
 package dev.voidrot.chorecast.ui
 
 import android.os.Build
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -14,6 +15,7 @@ import dev.voidrot.chorecast.BuildConfig
 import dev.voidrot.chorecast.ui.connect.ConnectScreen
 import dev.voidrot.chorecast.ui.device.DeviceScreen
 import dev.voidrot.chorecast.ui.device.DeviceViewModel
+import dev.voidrot.chorecast.ui.device.ParentModels
 import dev.voidrot.chorecast.ui.device.TodayViewModel
 import dev.voidrot.chorecast.ui.devices.DevicesScreen
 import dev.voidrot.chorecast.ui.devices.DevicesViewModel
@@ -75,9 +77,20 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
         composable<DeviceRoute> {
             DeviceScreen(
                 viewModel = viewModel {
-                    DeviceViewModel(currentUrl(), container.deviceClient, container.parentAuth, container.tokenStore, BuildConfig.VERSION_NAME)
+                    DeviceViewModel(
+                        currentUrl(), container.deviceClient, container.parentAuth, container.tokenStore, BuildConfig.VERSION_NAME,
+                        container::elevatedParentReview,
+                        elapsedNanos = SystemClock::elapsedRealtimeNanos,
+                    )
                 },
                 todayViewModel = { kid -> TodayViewModel(currentUrl(), container.kidChores, container.choreCompleter(), container.captures, kid.kidId, kid.token) },
+                // The parent screens of an elevated tablet ask with the elevated token and their own ParentReview, never the pairing token.
+                parentModels = ParentModels(
+                    overview = { OverviewViewModel(currentUrl(), it.review, it.tokens) },
+                    review = { ReviewViewModel(currentUrl(), it.review, it.tokens) },
+                    kid = { store, kidId -> KidViewModel(currentUrl(), kidId, store.review, container.householdInfo, store.tokens) },
+                ),
+                avatarPhotos = container.avatarPhotos,
                 onUnpaired = {
                     container.settings.mode = null
                     nav.reset(WelcomeRoute)

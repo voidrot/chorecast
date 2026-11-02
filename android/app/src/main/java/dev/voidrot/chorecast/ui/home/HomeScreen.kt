@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
@@ -78,34 +79,7 @@ fun HomeScreen(
                     }
                 }
             }
-            item {
-                val data = overview.overview
-                Button(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        when {
-                            data == null || data.pendingTotal == 0 -> stringResource(R.string.home_review)
-                            data.pendingMore -> stringResource(R.string.home_review_pending_more, data.pendingTotal)
-                            else -> stringResource(R.string.home_review_pending, data.pendingTotal)
-                        },
-                    )
-                }
-            }
-            overview.error?.let { code ->
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            if (overview.overview == null) stringResource(R.string.home_load_failed, code) else stringResource(R.string.home_refresh_failed),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        OutlinedButton(onClick = overviewViewModel::refresh) { Text(stringResource(R.string.action_retry)) }
-                    }
-                }
-            }
-            val kids = overview.overview?.kids.orEmpty()
-            if (overview.overview != null && kids.isEmpty()) {
-                item { Text(stringResource(R.string.home_no_kids)) }
-            }
-            items(kids, key = { it.kid.id }) { KidCard(it, onClick = { onKid(it.kid.id) }) }
+            overviewItems(overview, onReview, onKid, onRetry = overviewViewModel::refresh)
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDevices) { Text(stringResource(R.string.devices_title)) }
@@ -117,6 +91,43 @@ fun HomeScreen(
             }
         }
     }
+}
+
+/** The review button, a load banner and each kid's card: the part of the parent home that tablets reuse. */
+internal fun LazyListScope.overviewItems(
+    overview: OverviewState,
+    onReview: () -> Unit,
+    onKid: (Long) -> Unit,
+    onRetry: () -> Unit,
+) {
+    item {
+        val data = overview.overview
+        Button(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                when {
+                    data == null || data.pendingTotal == 0 -> stringResource(R.string.home_review)
+                    data.pendingMore -> stringResource(R.string.home_review_pending_more, data.pendingTotal)
+                    else -> stringResource(R.string.home_review_pending, data.pendingTotal)
+                },
+            )
+        }
+    }
+    overview.error?.let { code ->
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (overview.overview == null) stringResource(R.string.home_load_failed, code) else stringResource(R.string.home_refresh_failed),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                OutlinedButton(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
+            }
+        }
+    }
+    val kids = overview.overview?.kids.orEmpty()
+    if (overview.overview != null && kids.isEmpty()) {
+        item { Text(stringResource(R.string.home_no_kids)) }
+    }
+    items(kids, key = { it.kid.id }) { KidCard(it, onClick = { onKid(it.kid.id) }) }
 }
 
 @Composable

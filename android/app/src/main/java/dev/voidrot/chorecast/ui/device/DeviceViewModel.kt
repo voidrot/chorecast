@@ -7,11 +7,19 @@ import androidx.lifecycle.viewModelScope
 import dev.voidrot.chorecast.api.models.DevicePicker
 import dev.voidrot.chorecast.api.models.KidProfile
 import dev.voidrot.chorecast.api.models.ParentProfile
+import dev.voidrot.chorecast.core.ActiveSession
 import dev.voidrot.chorecast.core.DeviceClient
 import dev.voidrot.chorecast.core.DeviceSessionToken
+import dev.voidrot.chorecast.core.Heartbeat
+import dev.voidrot.chorecast.core.HeartbeatStep
+import dev.voidrot.chorecast.core.InMemoryTokenStore
 import dev.voidrot.chorecast.core.ParentAuth
-import dev.voidrot.chorecast.core.ServerUrl
+import dev.voidrot.chorecast.core.ParentPage
+import dev.voidrot.chorecast.core.ParentReview
+import dev.voidrot.chorecast.core.PinError
 import dev.voidrot.chorecast.core.SessionCheck
+import dev.voidrot.chorecast.core.SessionLock
+import dev.voidrot.chorecast.core.ServerUrl
 import dev.voidrot.chorecast.core.SessionResult
 import dev.voidrot.chorecast.core.TokenStore
 import kotlinx.coroutines.Job
@@ -23,29 +31,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.Instant
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 /** Who a PIN is being asked for. */
 sealed interface PinTarget {
     data class Kid(val kid: KidProfile) : PinTarget
     data class Parent(val parent: ParentProfile) : PinTarget
-}
-
-sealed interface PinError {
-    data object Wrong : PinError
-    data class Locked(val minutes: Long) : PinError
-    data class Failed(val reason: String) : PinError
-}
-
-/** A session open on this device. */
-sealed interface ActiveSession {
-    val token: String
-
-    data class Kid(val kid: KidProfile, override val token: String) : ActiveSession
-    data class Parent(val parent: ParentProfile, override val token: String, val expiresAt: Instant) : ActiveSession
 }
 
 /** A kid looking at their chores, with the token to ask the API with (their session, or their own device's). */
@@ -54,6 +44,17 @@ data class KidAccess(val kidId: Long, val name: String, val token: String)
 /** Holds the view models of one kid's session, so they survive rotation but not the session. */
 class KidSessionStore(val access: KidAccess) : ViewModelStoreOwner {
     override val viewModelStore = ViewModelStore()
+}
+
+/**
+ * Holds the view models of one parent elevation, so they survive rotation but not the elevation. The
+ * parent screens read the elevated token from [tokens], an in-memory store of their own: when the
+ * server refuses it they clear that store, never the device's pairing token. [review] is new for each
+ * elevation, so the idempotency keys of its writes die with it.
+ */
+class ParentSessionStore(val session: ActiveSession.Parent, val review: ParentReview) : ViewModelStoreOwner {
+    override val viewModelStore = ViewModelStore()
+    val tokens = InMemoryTokenStore(session.token)
 }
 
 data class DeviceState(
@@ -69,11 +70,15 @@ data class DeviceState(
     val pinError: PinError? = null,
     val busy: Boolean = false,
     val active: ActiveSession? = null,
+    /** Which parent screen shows while a parent is elevated. */
+    val parentPage: ParentPage = ParentPage.Overview,
+    /** Where the open elevation's parent screens keep their view models; set and cleared with [active]. */
+    val parentStore: ParentSessionStore? = null,
 )
 
 /**
  * A paired device: a kid's own device, or a shared tablet with a profile picker. Kid sessions lock
- * back to the picker after [KID_IDLE] without a touch; parent elevations end when they expire.
+ * back to the picker after [SessionLock.KID_IDLE] without a touch; parent elevations end when they expire.
  */
 class DeviceViewModel(
     private val url: ServerUrl,
@@ -81,12 +86,16 @@ class DeviceViewModel(
     private val auth: ParentAuth,
     private val tokens: TokenStore,
     private val appVersion: String,
-    private val now: () -> Instant = Instant::now,
+    private val newParentReview: () -> ParentReview,
+    now: () -> Instant = Instant::now,
+    elapsedNanos: () -> Long = System::nanoTime,
 ) : ViewModel() {
     private val _state = MutableStateFlow(DeviceState())
     val state: StateFlow<DeviceState> = _state.asStateFlow()
     private var lockJob: Job? = null
     private var kidSession: KidSessionStore? = null
+    private var parentSession: ParentSessionStore? = null
+    private val sessionLock = SessionLock(now, elapsedNanos)
 
     /** The device token the kid home already re-checked after a 401, so a persistent 401 can't loop. */
     private var recheckedToken: String? = null
@@ -96,20 +105,17 @@ class DeviceViewModel(
         heartbeat()
     }
 
-    /**
-     * Until push exists (Phase 3), the device notices remote changes by checking in: every 30 s
-     * while a session is open (a parent's remote lock ends it), every 60 s at the picker (new kids,
-     * or the device was unpaired).
-     */
+    /** See [Heartbeat.step]: a parent's remote lock or a revoked device ends up here. */
     private fun heartbeat() = viewModelScope.launch {
         var ticks = 0
         while (true) {
-            delay(HEARTBEAT)
+            delay(Heartbeat.INTERVAL)
             ticks++
             val active = _state.value.active
-            when {
-                active != null -> if (auth.check(url, active.token) is SessionCheck.SignedOut) endLocally(active)
-                ticks % 2 == 0 && !_state.value.loading -> refreshPicker()
+            when (Heartbeat.step(ticks, active != null, _state.value.loading)) {
+                HeartbeatStep.CheckSession -> if (active != null && Heartbeat.sessionEnded(auth.check(url, active.token))) endLocally(active)
+                HeartbeatStep.RefreshPicker -> refreshPicker()
+                HeartbeatStep.Nothing -> Unit
             }
         }
     }
@@ -146,13 +152,26 @@ class DeviceViewModel(
         kidSession = null
     }
 
-    override fun onCleared() = clearKidStore()
+    private fun clearParentStore() {
+        parentSession?.viewModelStore?.clear()
+        parentSession = null
+    }
+
+    private fun clearSessionStores() {
+        clearKidStore()
+        clearParentStore()
+    }
+
+    override fun onCleared() = clearSessionStores()
+
+    fun openParentPage(page: ParentPage) = _state.update { it.copy(parentPage = page) }
 
     private fun endLocally(active: ActiveSession) {
         if (_state.value.active != active) return
+        sessionLock.close()
         lockJob?.cancel()
-        _state.update { it.copy(active = null) }
-        clearKidStore()
+        _state.update { it.copy(active = null, parentPage = ParentPage.Overview, parentStore = null) }
+        clearSessionStores()
     }
 
     private suspend fun refreshPicker() {
@@ -162,7 +181,7 @@ class DeviceViewModel(
             if (picker == null) {
                 tokens.clear()
                 _state.update { it.copy(unpaired = true) }
-                clearKidStore()
+                clearSessionStores()
             } else {
                 _state.update { it.copy(picker = picker, offline = null) }
             }
@@ -174,7 +193,7 @@ class DeviceViewModel(
     fun load() {
         val token = tokens.read() ?: return _state.update { it.copy(loading = false, unpaired = true) }
         // The kid home is replaced by the spinner, so its view models start over when it comes back.
-        clearKidStore()
+        clearSessionStores()
         _state.update { it.copy(loading = true, offline = null) }
         viewModelScope.launch {
             try {
@@ -234,40 +253,36 @@ class DeviceViewModel(
         _state.update { it.copy(busy = true, pinError = null) }
         viewModelScope.launch {
             val result = call(token)
+            val started = (result as? SessionResult.Started)?.let { toActive(it.session) }
+            if (started != null) sessionLock.open(started)
+            // A new elevation gets a fresh store, so no parent screen state outlives the elevation it was loaded under.
+            clearParentStore()
+            val store = (started as? ActiveSession.Parent)?.let { ParentSessionStore(it, newParentReview()) }
+            parentSession = store
+            if (result is SessionResult.Unpaired) tokens.clear()
             _state.update {
                 val idle = it.copy(busy = false)
-                when (result) {
-                    is SessionResult.Started -> idle.copy(pinTarget = null, active = toActive(result.session))
-                    SessionResult.WrongPin -> idle.copy(pinError = PinError.Wrong)
-                    is SessionResult.Locked -> idle.copy(pinError = PinError.Locked(((result.retryAfterSeconds ?: 900) + 59) / 60))
-                    SessionResult.Unpaired -> {
-                        tokens.clear()
-                        idle.copy(unpaired = true)
-                    }
-                    is SessionResult.Unreachable -> idle.copy(pinError = PinError.Failed(result.reason))
-                    is SessionResult.Failed -> idle.copy(pinError = PinError.Failed(result.code))
+                when {
+                    started != null -> idle.copy(pinTarget = null, active = started, parentPage = ParentPage.Overview, parentStore = store)
+                    result is SessionResult.Unpaired -> idle.copy(unpaired = true)
+                    else -> idle.copy(pinError = PinError.from(result))
                 }
             }
-            if (result is SessionResult.Unpaired) clearKidStore()
+            if (result is SessionResult.Unpaired) clearSessionStores()
             scheduleLock()
         }
     }
 
-    /** Any touch while a kid session is open pushes the auto-lock back. */
-    fun onInteraction() {
-        if (_state.value.active is ActiveSession.Kid) scheduleLock()
-    }
+    /** Any touch while a kid session is open pushes the auto-lock back; a parent elevation is not extended. */
+    fun onInteraction() = sessionLock.touch()
 
+    /** Waits until the session is due, then locks. A touch moves the due time, so it checks again on waking. */
     private fun scheduleLock() {
         lockJob?.cancel()
-        val wait: Duration = when (val a = _state.value.active) {
-            is ActiveSession.Kid -> KID_IDLE
-            is ActiveSession.Parent -> (a.expiresAt.toEpochMilli() - now().toEpochMilli()).coerceAtLeast(0).milliseconds
-            null -> return
-        }
+        val wait = sessionLock.remaining() ?: return
         lockJob = viewModelScope.launch {
             delay(wait)
-            lock()
+            if (sessionLock.due()) lock() else scheduleLock()
         }
     }
 
@@ -275,13 +290,9 @@ class DeviceViewModel(
     fun lock() {
         lockJob?.cancel()
         val active = _state.value.active ?: return
-        _state.update { it.copy(active = null) }
-        clearKidStore()
+        sessionLock.close()
+        _state.update { it.copy(active = null, parentPage = ParentPage.Overview, parentStore = null) }
+        clearSessionStores()
         viewModelScope.launch { client.lock(url, active.token) }
-    }
-
-    companion object {
-        val KID_IDLE = 2.minutes
-        val HEARTBEAT = 30.seconds
     }
 }

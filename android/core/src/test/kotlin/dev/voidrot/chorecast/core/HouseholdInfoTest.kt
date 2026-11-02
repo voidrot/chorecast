@@ -36,5 +36,12 @@ class HouseholdInfoTest {
     fun nullWhenRefused() = runTest {
         val engine = MockEngine { respond("{}", HttpStatusCode.Unauthorized) }
         assertNull(HouseholdInfo(engine).get(url, "tok"))
+        assertEquals(Fetch.Unauthorized, HouseholdInfo(engine).fetch(url, "tok"))
+    }
+
+    @Test
+    fun otherFailuresAreNotUnauthorized() = runTest {
+        val engine = MockEngine { respond("{}", HttpStatusCode.InternalServerError) }
+        assertEquals(Fetch.Failed("http_500"), HouseholdInfo(engine).fetch(url, "tok"))
     }
 }

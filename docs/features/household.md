@@ -130,6 +130,11 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
   (ends sessions). Until push (Phase 3) the app checks in every 30 s while a session is open and every 60 s at
   the picker, so a remote lock or revoke applies within about a minute. The app reports its version with each
   picker request. Parents get the list in the web admin and the parent app.
+- Built (#33, Android): the shared tablet's picker shows each kid's photo avatar (signed link from the picker),
+  else their bundled avatar, else initials. PINs (kid and parent, 4 to 8 digits) are typed on a large numeric pad.
+  A parent elevated with their PIN gets the overview, review queue and per-kid actions on the tablet using the
+  2-minute elevation token; touches do not extend it, and when it expires or the device is locked remotely the
+  tablet returns to the picker and drops the parent screens' state.
 - **Kiosk mode** (shared devices): parent enables it on the device itself after PIN elevation. The app calls
   `startLockTask()` (screen pinning; no device-owner setup needed). Leaving requires parent PIN elevation.
   Optional "keep screen on" schedule (e.g. 06:30–20:30), applied via a window flag while in the foreground.

@@ -1,6 +1,7 @@
 package dev.voidrot.chorecast
 
 import android.content.Context
+import dev.voidrot.chorecast.core.AvatarPhotos
 import dev.voidrot.chorecast.core.ChoreCompleter
 import dev.voidrot.chorecast.core.DeviceClient
 import dev.voidrot.chorecast.core.HouseholdInfo
@@ -34,9 +35,13 @@ class AppContainer(context: Context) {
 
     /** One instance for the app's life, so a retry keeps its Idempotency-Key after a screen is recreated. */
     val parentReview = ParentReview(engine)
+    val avatarPhotos = AvatarPhotos(engine)
     val sso = SsoBridge()
     // Photos of a completion that was never sent (the process died) are not kept for the next run.
     val captures = FileCaptureStore(File(context.filesDir, "captures")).also { it.clearAll() }
+
+    /** One per parent elevation on a shared tablet, so the idempotency keys of its writes end with the elevation. */
+    fun elevatedParentReview() = ParentReview(engine)
 
     /** One per kid session: it holds the idempotency key of the submit in progress. */
     fun choreCompleter() = ChoreCompleter(captures, engine = engine)
