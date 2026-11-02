@@ -335,7 +335,7 @@ infrastructure.
 
 1. **Feature specs** are in [features/](features/); sequencing is in [roadmap.md](roadmap.md).
 2. **Google Play after v1** (v1 ships GitHub Release APKs). Before Play: Families policy review, data-safety form, privacy policy, no ads SDKs.
-3. Trusted-proxy handling for client IPs (explicit `CHORECAST_TRUSTED_PROXIES`, not blanket `X-Forwarded-For`).
+3. Trusted-proxy handling for client IPs (planned: explicit `CHORECAST_TRUSTED_PROXIES`, not blanket `X-Forwarded-For`; no code reads it yet, and roadmap.md has no phase for it).
 4. Helm chart in `deploy/helm` **after v1** (single replica + PVC; SQLite means no horizontal scaling).
 5. Backups: built in #36 (`docs/features/household.md`, Backups & export). S3 upload comes with S3 storage.
 6. `applicationId` is **`dev.voidrot.chorecast`** (owner controls voidrot.dev). Permanent once on Play.

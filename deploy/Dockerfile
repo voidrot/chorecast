@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 # Multi-arch build (linux/amd64, linux/arm64). Build context is the repo root.
-# Targets: runtime (default, distroless, published as :<version>) and media (adds ffmpeg for video
-# transcoding, published as :<version>-media). Both run as uid 65532 so a /data volume works with
-# either.
+# Targets: runtime (default, distroless, published as :<version>) and media (published as :<version>-media).
+# The media target installs ffmpeg for the planned video evidence (Phase 3); the server doesn't run it yet.
+# Both run as uid 65532 so a /data volume works with either.
 
 FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 RUN corepack enable

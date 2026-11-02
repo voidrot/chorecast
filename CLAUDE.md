@@ -82,7 +82,7 @@ and `fix` bumps patch. `docs/releasing.md` covers the rest, including signing.
 
 **Image variants.** Both variants run as uid 65532, so one `/data` volume works with either.
 - `runtime` (default): distroless static, published as `ghcr.io/voidrot/chorecast:X.Y.Z`, `:X.Y`, `:latest`.
-- `media`: Alpine with ffmpeg for video transcoding, published with the same tags plus `-media`.
+- `media`: Alpine with ffmpeg, published with the same tags plus `-media`. ffmpeg is installed for the planned video evidence (Phase 3); the server doesn't run it yet.
 
 Android ships two flavors, `play` and `foss`. Its `versionCode` is derived from `versionName`
 (`android/app/build.gradle.kts`).

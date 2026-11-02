@@ -27,14 +27,14 @@ Status: accepted (planning session, 2026-10-30). Auth mechanics live in [../arch
    The token is single-use, stored hashed, and regenerated on each restart until setup completes.
 2. Wizard steps (web):
    1. **Household**: name, timezone (browser-detected default), day end (default 00:00), week start (Monday).
-   2. **First owner**: display name, username, password (+ optional TOTP); or "sign in with SSO" if OIDC env is set.
+   2. **First owner**: display name, username, password (+ optional TOTP). SSO isn't offered in the wizard; the owner links it from the account page after setup.
    3. **Kids** (skippable): nickname, birth date, avatar/color, PIN on/off.
    4. **Starter content** (skippable): example chores, behavior presets, rewards. All editable and deletable.
    5. **Connect devices**: shows a pairing QR and a link to the Android app (GitHub Releases / Play).
 3. Completing the wizard creates everything in one transaction and invalidates the token.
 
 Built so far (#12): household, owner (password), kids (name, birth date, color, PIN on/off), and an app download
-link. The remaining parts arrive with their features: TOTP enrolment in the owner step (#13), SSO owner (#14),
+link. The remaining parts arrive with their features: TOTP enrolment in the owner step (#13),
 kid avatars (#16), the pairing QR (#18), and starter chores (#20; behavior presets and rewards in Phase 2).
 
 ## Roles & permissions

@@ -23,7 +23,7 @@ on `main` (`.github/workflows/release.yml`, config in `release-please-config.jso
   | Image | Tags | Contents |
   |---|---|---|
   | `ghcr.io/voidrot/chorecast` | `1.2.3`, `1.2`, `latest` | distroless, static binary (default) |
-  | `ghcr.io/voidrot/chorecast` | `1.2.3-media`, `1.2-media`, `latest-media` | Alpine + ffmpeg for video transcoding |
+  | `ghcr.io/voidrot/chorecast` | `1.2.3-media`, `1.2-media`, `latest-media` | Alpine + ffmpeg (for planned video evidence, Phase 3; not used yet) |
 
   Both run as uid 65532, so switching variants keeps the `/data` volume readable.
 - **Android release** → signed `chorecast-play-1.2.3.apk` and `chorecast-foss-1.2.3.apk` attached to the
