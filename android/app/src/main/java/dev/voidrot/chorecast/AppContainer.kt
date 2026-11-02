@@ -5,6 +5,7 @@ import dev.voidrot.chorecast.core.AvatarPhotos
 import dev.voidrot.chorecast.core.ChoreCompleter
 import dev.voidrot.chorecast.core.DeviceClient
 import dev.voidrot.chorecast.core.HouseholdInfo
+import dev.voidrot.chorecast.core.InboxClient
 import dev.voidrot.chorecast.core.KidChores
 import dev.voidrot.chorecast.core.ParentAuth
 import dev.voidrot.chorecast.core.ParentReview
@@ -34,6 +35,7 @@ class AppContainer(context: Context) {
     val deviceClient = DeviceClient(engine)
     val kidChores = KidChores(engine)
     val reminderScheduler = ReminderScheduler(context)
+    val inboxClient = InboxClient(engine)
 
     /** One instance for the app's life, so a retry keeps its Idempotency-Key after a screen is recreated. */
     val parentReview = ParentReview(engine)

@@ -58,6 +58,8 @@ fun KidHomeScreen(
     onParent: (() -> Unit)?,
     onUnauthorized: () -> Unit,
     modifier: Modifier = Modifier,
+    inboxUnread: Long = 0,
+    onInbox: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     BackHandler(enabled = state.selected != null || state.history.open) {
@@ -125,7 +127,7 @@ fun KidHomeScreen(
             modifier = modifier,
         )
     } else {
-        TodayContent(state, name, viewModel::refresh, viewModel::open, viewModel::openHistory, onLock, onParent, modifier)
+        TodayContent(state, name, viewModel::refresh, viewModel::open, viewModel::openHistory, onLock, onParent, inboxUnread, onInbox, modifier)
     }
 }
 
@@ -139,6 +141,8 @@ private fun TodayContent(
     onHistory: () -> Unit,
     onLock: (() -> Unit)?,
     onParent: (() -> Unit)?,
+    inboxUnread: Long,
+    onInbox: (() -> Unit)?,
     modifier: Modifier,
 ) {
     Column(modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -146,6 +150,11 @@ private fun TodayContent(
             Text(stringResource(R.string.device_hi, name), style = MaterialTheme.typography.headlineMedium)
             TextButton(onClick = onHistory) { Text(stringResource(R.string.kid_history_open)) }
             onLock?.let { OutlinedButton(onClick = it) { Text(stringResource(R.string.device_done)) } }
+            onInbox?.let {
+                TextButton(onClick = it) {
+                    Text(if (inboxUnread > 0) stringResource(R.string.inbox_button_unread, inboxUnread.toInt()) else stringResource(R.string.inbox_button))
+                }
+            }
             onParent?.let { TextButton(onClick = it) { Text(stringResource(R.string.device_parent)) } }
         }
         state.today?.let { ScoreRow(it) }

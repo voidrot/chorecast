@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,12 +33,15 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.core.ActiveSession
 import dev.voidrot.chorecast.core.AvatarPhotos
 import dev.voidrot.chorecast.core.PinError
+import dev.voidrot.chorecast.ui.inbox.InboxScreen
+import dev.voidrot.chorecast.ui.inbox.InboxViewModel
 import kotlinx.coroutines.delay
 import java.time.Instant
 
@@ -47,6 +51,7 @@ fun DeviceScreen(
     todayViewModel: (KidAccess) -> TodayViewModel,
     parentModels: ParentModels,
     avatarPhotos: AvatarPhotos,
+    inboxViewModel: (KidAccess) -> InboxViewModel,
     onUnpaired: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -79,6 +84,7 @@ fun DeviceScreen(
                     access,
                     viewModel.kidStore(access),
                     todayViewModel,
+                    inboxViewModel,
                     onLock = viewModel::lock,
                     onParent = null,
                     onUnauthorized = viewModel::sessionRefused,
@@ -98,6 +104,7 @@ fun DeviceScreen(
                 ownKid,
                 viewModel.kidStore(ownKid),
                 todayViewModel,
+                inboxViewModel,
                 onLock = null,
                 onParent = if (picker?.parents.isNullOrEmpty()) null else ({ viewModel.chooseParent(true) }),
                 // Checks the device token with the picker once, which unpairs the device if it was revoked.
@@ -171,12 +178,36 @@ private fun KidHome(
     access: KidAccess,
     store: ViewModelStoreOwner,
     todayViewModel: (KidAccess) -> TodayViewModel,
+    inboxViewModel: (KidAccess) -> InboxViewModel,
     onLock: (() -> Unit)?,
     onParent: (() -> Unit)?,
     onUnauthorized: () -> Unit,
 ) {
     val vm = viewModel<TodayViewModel>(viewModelStoreOwner = store) { todayViewModel(access) }
-    KidHomeScreen(vm, access.name, onLock, onParent, onUnauthorized)
+    val inbox = viewModel<InboxViewModel>(viewModelStoreOwner = store) { inboxViewModel(access) }
+    val inboxState by inbox.state.collectAsStateWithLifecycle()
+    var inboxOpen by rememberSaveable { mutableStateOf(false) }
+    LifecycleResumeEffect(inbox) {
+        inbox.refresh()
+        onPauseOrDispose {}
+    }
+    if (inboxOpen) {
+        InboxScreen(
+            viewModel = inbox,
+            onBack = { inboxOpen = false },
+            onOpen = { entry ->
+                // Only a chore on today's list opens; anything else just stays marked read.
+                val id = entry.instanceId
+                if (id != null) {
+                    inboxOpen = false
+                    vm.open(id)
+                }
+            },
+            onSignedOut = onUnauthorized,
+        )
+    } else {
+        KidHomeScreen(vm, access.name, onLock, onParent, onUnauthorized, inboxUnread = inboxState.unread, onInbox = { inboxOpen = true })
+    }
 }
 
 @Composable

@@ -115,7 +115,7 @@ plus the optional AI insight (see [reporting.md](reporting.md)).
 
 ## In-app inbox (built, #98)
 
-Built (#98, `internal/inbox`, server only; the app screen is #99). The planner, preferences, quiet hours, batching
+Built (#98, `internal/inbox`; the Android inbox screen is #99, below). The planner, preferences, quiet hours, batching
 and delivery channels above are not built; the inbox is the part every channel will share. `notifications` holds
 one row per recipient with a `kind`, what it refers to (`refKind` `instance` or `points_entry`, and `refId`), a
 `data` object to render from and `readAt`. No display text is stored. Kinds, written from the domain events:
@@ -143,6 +143,11 @@ id is the recipient, so there is no `kidId` parameter.
 The list is ordered by row id (delivery order), not by `createdAt`, which is when the event happened; a late-delivered
 event can therefore sit above one that looks newer. `data.choreName` is the chore's name when the notification was
 written (at delivery), not its current name. `data.points` is present, 0 included, on `streak_milestone` items only.
+
+Built (#99, Android inbox screen). `InboxClient` and `Inbox.kt` in `:core` list, merge pages and mark read; the app
+renders each kind from strings. Kids reach it from their home (kid-bound device and tablet kid session), parents from the
+parent home, each with an unread count. A tap marks the item read and opens the chore (kid) or the review queue
+(parent). Periodic sync and local reminders are not built yet.
 
 ## Open questions
 

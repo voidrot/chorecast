@@ -334,4 +334,23 @@
         <item quantity="one">%2$s is on your list today.</item>
         <item quantity="other">%1$d chores are on your list today, starting with %2$s.</item>
     </plurals>
+    <string name="inbox_title">Inbox</string>
+    <string name="inbox_button">Inbox</string>
+    <string name="inbox_button_unread">Inbox (%1$d)</string>
+    <string name="inbox_empty">Nothing here yet.</string>
+    <string name="inbox_mark_all_read">Mark all read</string>
+    <string name="inbox_load_more">Load more</string>
+    <string name="inbox_load_failed">Couldn\'t load the inbox (%1$s).</string>
+    <string name="inbox_refresh_failed">Couldn\'t refresh. Showing what we had.</string>
+    <string name="inbox_submitted">%1$s was submitted for review.</string>
+    <string name="inbox_approved">%1$s was approved.</string>
+    <string name="inbox_approved_auto">%1$s was approved automatically.</string>
+    <string name="inbox_rejected">%1$s needs another try.</string>
+    <string name="inbox_missed">%1$s was missed.</string>
+    <string name="inbox_excused">%1$s was excused.</string>
+    <string name="inbox_other">New notification</string>
+    <plurals name="inbox_streak">
+        <item quantity="one">You reached a streak of %d day!</item>
+        <item quantity="other">You reached a streak of %d days!</item>
+    </plurals>
 </resources>
