@@ -725,7 +725,7 @@ export interface paths {
         };
         /**
          * A chore's submitted evidence
-         * @description Every submission's checklist, note and photos, oldest first, for parents and the instance's kids (its assignee, or a shared instance's members). Photo links are signed and work for 10 minutes; once retention has deleted a photo it is marked `expired` and has no links.
+         * @description The submissions' checklists, notes and photos, oldest first. Parents see every submission, the members of a shared instance the group's, and any other kid only their own (the assignee gets an empty list before submitting; a kid with no submission who isn't the assignee gets 403). Photo links are signed and work for 10 minutes; once retention has deleted a photo it is marked `expired` and has no links.
          */
         get: operations["getChoreInstanceEvidence"];
         put?: never;
@@ -1751,7 +1751,7 @@ export interface components {
              * @description Minimum number of photos (taken in the app)
              */
             photos: number;
-            /** @description A short video is required */
+            /** @description A short video is required. Not available yet: true is refused with 422 video_evidence_unsupported */
             video?: boolean;
         };
         ExchangeOIDCInputBody: {
