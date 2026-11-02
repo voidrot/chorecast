@@ -147,7 +147,7 @@ written (at delivery), not its current name. `data.points` is present, 0 include
 Built (#99, Android inbox screen). `InboxClient` and `Inbox.kt` in `:core` list, merge pages and mark read; the app
 renders each kind from strings. Kids reach it from their home (kid-bound device and tablet kid session), parents from the
 parent home, each with an unread count. A tap marks the item read and opens the chore (kid) or the review queue
-(parent). Periodic sync and local reminders are not built yet.
+(parent).
 
 ## Open questions
 
