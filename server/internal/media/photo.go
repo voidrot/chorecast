@@ -320,40 +320,57 @@ func (i jpegInfo) rgb() bool {
 	return len(i.comps) == 3 && i.comps[0].id == 'R' && i.comps[1].id == 'G' && i.comps[2].id == 'B'
 }
 
-// jpegHeader reads the segments before the first scan: the start of frame (progressive, each
-// component's id and sampling factors) and the JFIF and Adobe markers. It returns no components
-// if there is no valid SOF.
+// jpegHeader walks the file's markers up to the end of image the way the stdlib decoder's marker
+// loop does, since it decides RGB from the JFIF and Adobe markers it has seen by then, wherever
+// they are: bytes before a 0xFF are skipped, as is "\xff\x00", and runs of 0xFF are fill bytes.
+// Entropy-coded data after a start of scan holds no markers but restarts and "\xff\x00", so
+// walking through it finds the marker the decoder reads next. It records the start of frame
+// (progressive, each component's id and sampling factors) and the last JFIF (APP0) and Adobe
+// (APP14) values. It stops where the decoder would fail, which then never converts to RGB, and
+// returns no components if there is no valid SOF.
 func jpegHeader(data []byte) jpegInfo {
 	var info jpegInfo
 	sof := false
 	i := 2
-	for i+4 <= len(data) {
-		if data[i] != 0xFF {
-			break
+	for {
+		ff := bytes.IndexByte(data[i:], 0xFF)
+		if ff < 0 || i+ff+1 >= len(data) {
+			return info
 		}
-		m := data[i+1]
-		if m == 0xFF {
+		i += ff + 1
+		m := data[i]
+		i++
+		if m == 0x00 {
+			continue
+		}
+		for m == 0xFF {
+			if i >= len(data) {
+				return info
+			}
+			m = data[i]
 			i++
+		}
+		if m == 0xD9 { // end of image
+			return info
+		}
+		if m >= 0xD0 && m <= 0xD7 { // a restart marker has no length
 			continue
 		}
-		if m == 0xD9 || m == 0xDA {
-			break
+		if i+2 > len(data) {
+			return info
 		}
-		if m == 0x01 || (m >= 0xD0 && m <= 0xD7) {
-			i += 2
-			continue
+		n := int(binary.BigEndian.Uint16(data[i:i+2])) - 2
+		i += 2
+		if n < 0 || n > len(data)-i {
+			return info
 		}
-		n := int(binary.BigEndian.Uint16(data[i+2 : i+4]))
-		if n < 2 || n > len(data)-i-2 {
-			break
-		}
-		seg := data[i+4 : i+2+n]
-		switch {
-		case m == 0xE0 && bytes.HasPrefix(seg, []byte("JFIF\x00")):
-			info.jfif = true
-		case m == 0xEE && len(seg) >= 12 && bytes.HasPrefix(seg, []byte("Adobe")):
-			info.adobe, info.adobeTransform = true, seg[11]
-		case !sof && m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC:
+		seg := data[i : i+n]
+		i += n
+		switch m {
+		case 0xC0, 0xC1, 0xC2: // baseline, extended and progressive start of frame
+			if sof {
+				return info // the decoder refuses a second SOF
+			}
 			sof = true
 			if len(seg) < 6 {
 				return jpegInfo{}
@@ -370,11 +387,26 @@ func jpegHeader(data []byte) jpegInfo {
 				}
 				info.comps = append(info.comps, jpegComponent{seg[6+3*k], h, v})
 			}
-			info.progressive = m == 0xC2 || m == 0xC6 || m == 0xCA || m == 0xCE
+			info.progressive = m == 0xC2
+		case 0xDA: // start of scan
+			if !sof {
+				return info
+			}
+		case 0xC4, 0xDB, 0xDD, 0xFE: // DHT, DQT, DRI, COM
+		case 0xE0:
+			if len(seg) >= 5 {
+				info.jfif = bytes.HasPrefix(seg, []byte("JFIF\x00"))
+			}
+		case 0xEE:
+			if len(seg) >= 12 && bytes.HasPrefix(seg, []byte("Adobe")) {
+				info.adobe, info.adobeTransform = true, seg[11]
+			}
+		default:
+			if m < 0xE1 || m > 0xEF {
+				return info // the decoder refuses any other marker
+			}
 		}
-		i += 2 + n
 	}
-	return info
 }
 
 // pngDecodeCost is the decoded image's size from the IHDR bit depth and color type (gray with

@@ -1,10 +1,16 @@
 package media
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"hash/crc32"
+	"image"
+	"image/jpeg"
+	"slices"
 	"testing"
+
+	"github.com/voidrot/chorecast/server/internal/media/mediatest"
 )
 
 func pngWith(w, h uint32, depth, colorType byte, trns bool) []byte {
@@ -92,4 +98,101 @@ func TestDecodeCostCountsPromotions(t *testing.T) {
 			t.Errorf("%s: err = %v, want too complex = %v", name, err, tc.complex_)
 		}
 	}
+}
+
+// Segments for splicing into JPEGs: an Adobe APP14 with the given color transform (0 makes the
+// stdlib decode three components as RGB), a JFIF APP0 and an APP0 that is not JFIF.
+var (
+	jpegJFIF  = []byte{0xFF, 0xE0, 0, 16, 'J', 'F', 'I', 'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0}
+	jpegAPP0  = []byte{0xFF, 0xE0, 0, 7, 'X', 'X', 'X', 'X', 0}
+	jpegEOI   = []byte{0xFF, 0xD9}
+	jpegJunk  = []byte{0x12, 0x34, 0x56}
+	jpegStuff = []byte{0xFF, 0x00} // a stuffed 0xFF, which the decoder skips between segments
+	jpegFill  = []byte{0xFF, 0xFF, 0xFF}
+)
+
+func jpegAdobe(transform byte) []byte {
+	return []byte{0xFF, 0xEE, 0, 14, 'A', 'd', 'o', 'b', 'e', 0, 100, 0, 0, 0, 0, transform}
+}
+
+// splice returns data with parts inserted at offset at.
+func splice(data []byte, at int, parts ...[]byte) []byte {
+	return slices.Concat(data[:at:at], slices.Concat(parts...), data[at:])
+}
+
+// The stdlib decoder skips stray bytes, "\xff\x00" and fill bytes between segments, and reads
+// segments after the scan up to the end of image, so an Adobe marker anywhere it reads still
+// makes the image RGB and counts towards the budget.
+func TestDecodeCostFindsMarkersTheDecoderReads(t *testing.T) {
+	y, cb, cr := comp{1, 0x11}, comp{2, 0x11}, comp{3, 0x11}
+	ycbcr := jpegWith(0xC0, 4000, 4000, false, -1, y, cb, cr) // 48 MB as YCbCr, 112 MB as RGB
+	jfif := jpegWith(0xC0, 4000, 4000, true, -1, y, cb, cr)
+	sos := len(ycbcr) - 4                                    // jpegWith ends with a 4-byte start of scan
+	scan := []byte{0x55, 0xFF, 0x00, 0xAA, 0xFF, 0xD0, 0x01} // entropy data with a stuffed byte and a restart
+	for name, tc := range map[string]struct {
+		data     []byte
+		complex_ bool
+	}{
+		"Adobe RGB after stray bytes":      {splice(ycbcr, sos, jpegJunk, jpegAdobe(0)), true},
+		"Adobe RGB after a stuffed 0xFF":   {splice(ycbcr, sos, jpegStuff, jpegAdobe(0)), true},
+		"Adobe RGB after fill bytes":       {splice(ycbcr, sos, jpegFill, jpegAdobe(0)), true},
+		"Adobe RGB after the scan":         {slices.Concat(ycbcr, scan, jpegJunk, jpegAdobe(0), jpegEOI), true},
+		"JFIF replaced by a later APP0":    {splice(jfif, len(jfif)-4, jpegAPP0, jpegAdobe(0)), true},
+		"Adobe YCbCr after stray bytes":    {splice(ycbcr, sos, jpegJunk, jpegAdobe(1)), false},
+		"JFIF after Adobe RGB":             {splice(ycbcr, sos, jpegJunk, jpegAdobe(0), jpegJFIF), false},
+		"Adobe RGB after the end of image": {slices.Concat(ycbcr, scan, jpegEOI, jpegAdobe(0)), false},
+	} {
+		_, err := checkHeader(FormatJPEG, tc.data)
+		if got := errors.Is(err, ErrTooComplex); got != tc.complex_ || (!got && err != nil) {
+			t.Errorf("%s: err = %v, want too complex = %v", name, err, tc.complex_)
+		}
+	}
+}
+
+// jpegHeader agrees with the stdlib decoder on whether real JPEGs, with markers spliced in where
+// the decoder skips or still reads them, decode as RGB.
+func TestJPEGHeaderMatchesDecoder(t *testing.T) {
+	base := mediatest.JPEG(t, mediatest.Halves(16, 16)) // SOI, DQT, SOF0, DHT, SOS, data, EOI; no APP0
+	afterSOF := segmentEnd(t, base, 0xC0)
+	eoi := len(base) - 2
+	for name, tc := range map[string]struct {
+		data []byte
+		rgb  bool
+	}{
+		"unchanged":                        {base, false},
+		"Adobe RGB after stray bytes":      {splice(base, afterSOF, jpegJunk, jpegAdobe(0)), true},
+		"Adobe RGB after a stuffed 0xFF":   {splice(base, afterSOF, jpegStuff, jpegAdobe(0)), true},
+		"Adobe RGB after fill bytes":       {splice(base, afterSOF, jpegFill, jpegAdobe(0)), true},
+		"Adobe RGB after the scan":         {splice(base, eoi, jpegJunk, jpegAdobe(0)), true},
+		"Adobe RGB after a restart":        {splice(base, eoi, []byte{0xFF, 0xD3}, jpegAdobe(0)), true},
+		"JFIF replaced by a later APP0":    {splice(base, afterSOF, jpegJFIF, jpegAPP0, jpegAdobe(0)), true},
+		"Adobe YCbCr after stray bytes":    {splice(base, afterSOF, jpegJunk, jpegAdobe(1)), false},
+		"JFIF after Adobe RGB":             {splice(base, afterSOF, jpegAdobe(0), jpegJunk, jpegJFIF), false},
+		"Adobe RGB after the end of image": {slices.Concat(base, jpegAdobe(0)), false},
+	} {
+		img, err := jpeg.Decode(bytes.NewReader(tc.data))
+		if err != nil {
+			t.Fatalf("%s: decode: %v", name, err)
+		}
+		if _, rgb := img.(*image.RGBA); rgb != tc.rgb {
+			t.Fatalf("%s: the decoder returned %T, want RGB = %v", name, img, tc.rgb)
+		}
+		if got := jpegHeader(tc.data).rgb(); got != tc.rgb {
+			t.Errorf("%s: jpegHeader RGB = %v, want %v", name, got, tc.rgb)
+		}
+	}
+}
+
+// segmentEnd is the offset just past the first marker segment of a well-formed JPEG.
+func segmentEnd(t *testing.T, data []byte, marker byte) int {
+	t.Helper()
+	for i := 2; i+4 <= len(data) && data[i] == 0xFF; {
+		end := i + 2 + int(binary.BigEndian.Uint16(data[i+2:i+4]))
+		if data[i+1] == marker {
+			return end
+		}
+		i = end
+	}
+	t.Fatalf("no segment with marker %#x", marker)
+	return 0
 }
