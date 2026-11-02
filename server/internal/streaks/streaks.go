@@ -35,7 +35,9 @@ import (
 )
 
 // RecheckDays is how many days, up to the one being evaluated, a day that didn't count is
-// re-checked for: a late completion or an excuse within a week repairs the streak.
+// re-checked for. Within that window an excuse repairs the streak, and so does a completion made
+// while the instance's close is still ahead (shared chores and slots after an early day end);
+// once the close has passed, completing is 409 instance_closed.
 const RecheckDays = 7
 
 // SourceMilestone is the ledger source of a streak bonus. Its id is the milestone day as

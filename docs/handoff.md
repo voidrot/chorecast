@@ -1,34 +1,53 @@
 # Handoff: state of Phase 1 and how to keep going
 
-Written 2026-11-01 for the next agent (or person) picking up Phase 1 (#2). Read this, then
+Written 2026-11-02 for the next agent (or person) picking up Phase 1 (#2). Read this, then
 `docs/architecture.md`, `docs/roadmap.md` and the feature spec named in the issue you're working on.
 
 ## Where things stand
 
-The issues are worked through in order with one PR each. The owner merges the PRs.
+The server side of the chore loop is built. What is left is the clients, plus reminders, backups, the audit
+log and the install docs. Issues are worked one PR each and PRs are squash-merged. This session's arrangement
+was that agents may merge a PR when CI is green and review has passed. Coding subagents only commit; the
+orchestrating session pushes and opens the PRs (see "Environment gotchas").
 
-| Issue | What | State |
+**Merged** (each feature spec in `docs/features/` has a "Built (#N)" paragraph describing the package):
+
+| Issue | What | PR |
 |---|---|---|
-| #12 | First-run token + web setup wizard | merged (#46) |
-| #13 | Parent login, TOTP, recovery codes, sessions | merged |
-| #14 | Optional OIDC (web + app) | merged |
-| #15 | Invites, roles, admin CLI (`admin reset-password\|disable-2fa`) | merged |
-| #16 | Kid profiles | merged; issue stays open for **uploaded photo avatars** (deferred to #27, needs the media pipeline) |
-| #17 | Household settings | merged |
-| #18 | Device pairing, picker, parent PIN elevation | merged; issue open only because the end-to-end check on a real device hasn't been done (no device or emulator here) |
-| #19 | Devices page: revoke, remote lock | merged (#54) |
-| #20 | Chore definitions + location/equipment catalogs | merged (#55); the schedule editor it was waiting on landed in #56, so **#20 can be closed** |
-| #21 | Schedule rules, validation, occurrence preview | merged (#56) |
-| #22 | Assignment modes | **PR #57 open, CI green, waiting for review** (this doc rides on that PR's branch) |
+| #12-#15, #17, #19, #21, #22 | Setup wizard, parent auth/TOTP/OIDC, invites and admin CLI, household settings, devices page, schedules, assignment modes | #46, #54, #56, #57 and earlier |
+| #20 | Chore definitions and catalogs (issue closed) | #55 |
+| #23 | Rolling 7-day horizon generator (`internal/horizon`) | #77 |
+| #75 | Media pipeline: photo upload, duplicate detection, signed URLs (split out of #27) | #78 |
+| #26 | Points ledger (`internal/ledger`; issue closed). The first commit, cf2910b, was pushed straight to main by mistake with no PR, and the owner chose to keep it | cf2910b, #79 |
+| #24 | Day and week close (`internal/dayclose`) | #82 |
+| #25 | Instance state machine (`internal/instances`) | #84 |
+| #30 | Streaks with milestone bonuses (`internal/streaks`) | #85 |
+| #29 | Auto-approve (`internal/autoapprove`) | #86 |
+| #27 | Chore evidence (`internal/evidence`) | #87 |
+| (fix) | Keyed POSTs no longer panic after their handler ran | #91 |
+| #28 | Review queue API: list submitted chores, approve in bulk (`internal/reviewqueue`) | #90 |
 
-**Next up: #23, the rolling 7-day horizon generator.** After that come #24 (day/week close), #26
-(ledger), #25 (instance state machine), #27 (evidence), #28 (review queue), #29 (auto-approve) and
-#30 (streaks). Then the Android screens (#31–#33), the web admin polish (#34), reminders (#35),
-backups (#36), the audit log (#37) and docs (#38). Check each issue's "Depends on" line; #25 needs
-the ledger (#26) first.
+**Still open, in the order to take them:**
 
-`docs/roadmap.md` checkboxes have **not** been ticked as things merged. Go by the issue and PR state,
-not the boxes.
+1. **#31, #32, #33: Android** (kid experience, parent experience, shared tablet mode).
+2. **#34: web admin.** Screens for chores, kids, devices, review queue, ledger and settings. It also owns the
+   chore **assignment editor** (the chore form only passes the assignment through today), the review-queue and
+   ledger screens, and the video-evidence checkbox.
+3. **#35: reminders without push** (polling sync, local reminders, in-app inbox). It owns offline
+   capture-time skew and the offline grace for late completion.
+4. **#36: backups.** A database backup contains the media signing key (see "Decisions already made").
+5. **#37: audit log.** The `instance.*` and `points.entry_posted` events are the hooks.
+6. **#38: install, first-run, backup and upgrade docs.**
+7. Follow-ups: **#83** (media: the JPEG header scan should skip stray bytes like Go's decoder; minor), **#88**
+   (kid photo avatars, split from #16) and **#89** (make the per-submission photo limit configurable through
+   `CHORECAST_MEDIA_MAX_FILES`).
+
+#16 (kid profiles; the remaining work is #88) and #18 (device pairing; open only because nobody has run the
+end-to-end check on a real device) are also still open. The bodies of #26, #27 and #28 are scoped to the
+server; their UI lives in #31, #32 and #34.
+
+`docs/roadmap.md` checkboxes have **not** been ticked as things merged. Go by the issue and PR state, not the
+boxes.
 
 ## Repo layout and stack
 
@@ -45,8 +64,8 @@ not the boxes.
 ## Tooling: always go through mise
 
 `mise.toml` pins the tool versions (Go 1.27, golangci-lint, sqlc, pnpm…). Tools on the plain `PATH` can
-be older, so use `mise run …`. **Commit with `mise exec -- git commit …`**: the lefthook pre-commit hook
-runs `golangci-lint`, and the copy on the plain `PATH` is too old for Go 1.27 and fails the hook.
+be older, so use `mise run …`. Commit with plain `git commit`: the lefthook hooks run with the mise shims on
+`PATH` (see "Environment gotchas" for `mise exec`).
 
 | Task | Command |
 |---|---|
@@ -61,7 +80,7 @@ CI runs on PRs: `server-web` (gen drift, lint, tests), `android` (build, lint, u
 and semgrep. **Generated files must be committed** or the drift check fails.
 
 Commit messages follow Conventional Commits (a hook enforces it), e.g.
-`feat: … (#23)`.
+`feat(server): …`.
 
 ## Conventions that bite if you miss them
 
@@ -95,11 +114,11 @@ Commit messages follow Conventional Commits (a hook enforces it), e.g.
 
 **Events and jobs**
 - Domain events go through `events.Bus.InTx` / `tx.Emit`, in the same transaction as the change.
-  `household.calendar_changed` is already emitted when the timezone, day end or week start changes;
-  **#23 should subscribe to it** to regenerate.
+  `household.calendar_changed`, `chore.changed` and `kid.changed` trigger horizon regeneration, instance
+  transitions emit `instance.*`, and the ledger emits `points.entry_posted`.
 - `internal/jobs` has a SQLite-backed runner and a scheduler with `KidDayCloses`, `KidWeekCloses` and
   `HouseholdDayCloses` providers (per-kid effective day end). Wire new recurring work in
-  `cmd/chorecast/background.go`.
+  `cmd/chorecast/background.go`. Delivery is at-least-once, so handlers must be idempotent.
 
 **Web**
 - Biome a11y: use `label-props { for }` with `input-props { id }`, and `aria-labelledby` on `NSwitch`
@@ -119,38 +138,63 @@ Commit messages follow Conventional Commits (a hook enforces it), e.g.
   kids' data.
 - No model identifiers in commits, PRs or code.
 
-## What #23 can build on
+## Decisions already made
 
-- `schedule.Expand(rule, cal, slots, from, to, limit)` / `schedule.Next` give occurrences
-  (`Date`, `Slot`, `DueAt`, `Flexible`). Flexible weeks yield `TimesPerWeek` occurrences dated at the
-  week's first active day, all due at week close.
-- `assign.Planner{Kids, DefaultMinutes, Away, Ledger}.Plan(chore, occurrences, state)` returns
-  `[]Planned` (a `KidID`, or a `Group` for shared chores, plus `Auto`) and the next rotation `State`.
-  It's pure and deterministic. To keep regenerations reproducible:
-  - Feed the ledger the **kept** instances (other chores, earlier days) before planning. Plan chores in
-    a stable order (by id) and occurrences in date order.
-  - Persist the rotation state as of the **last kept instance** and resume from it, not from the end
-    of the forecast. Otherwise each regeneration would advance the rotation again.
-    `chores.rotation_state` holds JSON `assign.State` and is reset to `{}` when the mode or kid list
-    changes.
-  - `assign.SplitPoints` is ready for shared-chore completion (#25/#26).
-- Chore columns: `schedule` (JSON, NULL = unscheduled), `slots`, `assign_mode`, `assign_kids`,
-  `shared_points`, `shared_penalty`, `disabled`, `min_age` plus `chore_eligibility` overrides,
-  `estimated_minutes`. Household: `default_chore_minutes`, `week_start`, `day_end`, `timezone`.
-- Kids: `archived_at` means archived (skip them). `birth_date` may be empty (then not age-gated).
-  `day_end_override` gives the kid's effective day end (`caltime.Household.EffectiveDayEnd`).
-- The spec for "untouched" instances, today's slot rule and "planned" is in
-  `docs/features/schedules.md` (Rolling horizon generation).
+**From the owner**
+- Ledger reversals are exact negations, never clamped, and a reversal's `local_date` is the reversed entry's.
+- The media signing key stays in the database (`server_keys` row `media_url`), so backups contain it.
+  `chorecast admin rotate-media-key` rotates it. Signed link expiry is capped at 10 minutes.
+- Default streak milestones are 3 days / 5 points, 7 / 15 and 30 / 50 (the `households.streak_milestones` default).
+- The FCM relay must be the admin's own Firebase project, with no shipped default, so we never handle kids' data.
+- No model identifiers in commits, PRs or code, and no trailers.
+- Never auto-accept Android SDK licenses locally. CI has the SDK.
 
-## Open loose ends
+**Behaviors fixed in the feature specs**
+- Completing after the instance's close is 409 `instance_closed`. Reopening after close goes straight to missed
+  (`dayclose.MissInTx`). Reassigning onto a closed day is 409.
+- Re-approval: single-kid and `completer_takes_all` credit the current earner; `split_evenly` restores the first
+  credits without re-splitting.
+- A video-evidence chore can't be completed until video exists (422 `video_evidence_unsupported`).
+- A kid reads only their own evidence submissions.
+- Archived kids' days still close. "Skip archived kids" applies to assignment only.
+- The shared-chore "group" is the chore's own kid list; there is no group entity.
 
-- An **assignment editor in the web UI** doesn't exist yet. The chore form only passes the assignment
-  through. It belongs in #34 (or alongside #23 if you want the horizon to be usable from the UI).
-- **#16:** uploaded photo avatars (needs #27's media pipeline).
-- **#18:** the on-device end-to-end check.
-- **#20:** can be closed now that the schedule editor shipped.
-- The shared-chore "group" is the chore's own kid list. There's no separate group entity (a design
-  call made in #22, documented in `schedules.md`).
+## Environment gotchas
+
+- **The push trap.** Worktree branches made by the agent tool track `origin/main`, and `push.default` is
+  `upstream`, so a plain `git push` goes to **main**. Run `git branch --unset-upstream` on every new branch and
+  push with an explicit refspec: `git push origin HEAD:refs/heads/<branch>`.
+- **Subagent pushes hang** in this environment. The lead pushes and opens the PRs; subagents commit only.
+- **`mise exec -- git commit` is blocked** in the agent sandbox. Plain `git commit` works, and lefthook finds the
+  mise-pinned tools through the shims on `PATH`.
+- **Hooks.** A global `core.hooksPath` once disabled lefthook; the owner removed it. If hooks don't run, check
+  `git config core.hooksPath` and run `mise run setup` to reinstall them.
+- **Media memory.** The worst accepted upload peaks near 210 MB. `deploy/compose.yaml` suggests a 512m memory
+  limit and `GOMEMLIMIT=400MiB`. The photo size cap is `CHORECAST_MEDIA_MAX_PHOTO_MB`.
+
+## What the next client work can build on
+
+The API that Android (#31-#33) and web (#34) call already exists, and the specs in `api/` cover everything
+merged. Paths are under `/api/v1`.
+
+- **Instances and transitions:** `GET /instances`, then `POST /instances/{instance}/completion`, `approval`,
+  `approval/reversal` (unapprove), `rejection`, `excusal` and `reassignment`. Conflicts carry codes such as
+  `instance_not_open`, `instance_planned` and `instance_closed`.
+- **Evidence:** `completion` takes the checklist, note and photos. `GET /instances/{instance}/evidence` returns
+  every submission, oldest first, with signed photo links.
+- **Media upload:** `POST /media/photos` (multipart `file`), then reference the returned `mediaId` in the
+  completion. A kid's photo also sends `capturedAt` and `captureId`. Files are served from `/media/files/{key}`
+  by signed link.
+- **Review queue:** `GET /review-queue` (submitted chores, oldest first, filters `kidId`, `choreId`, `media`) and
+  `POST /review-queue/approvals` (bulk approve, per-id results). Reject one at a time with feedback.
+- **Points:** `GET /kids/{kid}/points` and `/points/entries`, `POST /kids/{kid}/points/adjustments` and
+  `/kids/{kid}/points/entries/{entry}/reversal`.
+- **Streaks:** `GET /kids/{kid}/streaks`.
+- **Idempotency applies to JSON POSTs only.** A client that wants retry safety on the body-less endpoints
+  (approval, completion without evidence) must send `Content-Type: application/json` with the body `{}` and an
+  `Idempotency-Key`. PR #91 fixed the panic that keyed POSTs hit before.
+- The Kotlin client is generated from `api/openapi-3.0.json` at Gradle build time. The web types come from
+  `api/openapi.json`.
 
 ## Local manual testing
 
