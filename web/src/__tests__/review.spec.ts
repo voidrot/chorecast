@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BULK_APPROVE_MAX,
   badgeText,
   buildRejection,
+  chunk,
   groupByKid,
   mergePage,
   pruneSelection,
@@ -95,6 +97,19 @@ describe('summarizeApprovals', () => {
 
   it('removes approved and already-decided items but keeps failures listed', () => {
     expect([...removableIds(summary)]).toEqual([1, 2, 4])
+  })
+})
+
+describe('chunk', () => {
+  it('splits into pieces of at most the limit, keeping order', () => {
+    const ids = Array.from({ length: 250 }, (_, i) => i)
+    const parts = chunk(ids, BULK_APPROVE_MAX)
+    expect(parts.map((p) => p.length)).toEqual([100, 100, 50])
+    expect(parts.flat()).toEqual(ids)
+  })
+
+  it('returns nothing for an empty list', () => {
+    expect(chunk([], BULK_APPROVE_MAX)).toEqual([])
   })
 })
 

@@ -138,6 +138,15 @@ export function badgeText(count: number, hasMore: boolean): string {
   return hasMore ? `${count}+` : String(count)
 }
 
+/** The server accepts at most this many ids in one bulk approval. */
+export const BULK_APPROVE_MAX = 100
+
+export function chunk<T>(list: readonly T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size))
+  return out
+}
+
 /** A rejection needs a reason, text, or both; undefined when it has neither. */
 export function buildRejection(reason: RejectReason | null, text: string): RejectBody | undefined {
   const trimmed = text.trim()

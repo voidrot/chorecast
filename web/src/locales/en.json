@@ -3,7 +3,7 @@
     "name": "Chorecast"
   },
   "nav": {
-    "reviewPending": "{n} waiting",
+    "reviewLabel": "Review, {n} waiting",
     "home": "Home",
     "account": "Account",
     "signOut": "Sign out",

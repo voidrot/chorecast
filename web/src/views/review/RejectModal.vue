@@ -50,12 +50,12 @@ function submit() {
   >
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <div class="flex flex-col gap-1">
-        <label for="rej-reason" class="text-sm font-medium">{{ t('review.reasonLabel') }}</label>
+        <span class="text-sm font-medium" aria-hidden="true">{{ t('review.reasonLabel') }}</span>
         <NSelect
           v-model:value="reason"
           :options="options"
           clearable
-          :input-props="{ id: 'rej-reason' }"
+          :aria-label="t('review.reasonLabel')"
         />
       </div>
       <div class="flex flex-col gap-1">

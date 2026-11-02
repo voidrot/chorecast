@@ -5,6 +5,9 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
 import {
+  type ApprovalResult,
+  BULK_APPROVE_MAX,
+  chunk,
   groupByKid,
   isGone,
   mergePage,
@@ -37,6 +40,8 @@ const bulkBusy = ref(false)
 const failures = ref<{ instanceId: number; chore: string; text: string }[]>([])
 let loadedAt = Date.now()
 let lastPhotoReload = 0
+let photoReloads = 0
+let seq = 0
 
 const kidFilter = ref<number | null>(null)
 const choreFilter = ref<number | null>(null)
@@ -75,7 +80,11 @@ async function fetchPage(cursor?: string) {
  * Loads the first page, or, with keep, as many pages as are already listed so a reload (for fresh
  * photo links) doesn't lose the parent's place.
  */
-async function load(keep = 0) {
+async function load(keep = 0, fromPhotoError = false) {
+  // Only the newest load may write state: a slower, older response is dropped.
+  const mine = ++seq
+  const background = keep > 0
+  if (!fromPhotoError) photoReloads = 0
   loading.value = true
   loadError.value = undefined
   try {
@@ -86,28 +95,38 @@ async function load(keep = 0) {
       list = mergePage(list, page.items)
       cursor = page.nextCursor
     } while (cursor && list.length < keep)
+    if (mine !== seq) return
     items.value = list
     nextCursor.value = cursor
     selected.value = pruneSelection(selected.value, list)
     loadedAt = Date.now()
   } catch (e) {
+    if (mine !== seq) return
     loadError.value = errorText(e instanceof ApiError ? e : ApiError.network(e))
+    // A failed background refresh keeps the list (the banner shows above it); a failed fresh load
+    // would leave items from other filters on screen, so it clears them.
+    if (!background) {
+      items.value = []
+      nextCursor.value = undefined
+    }
   } finally {
-    loading.value = false
+    if (mine === seq) loading.value = false
   }
 }
 
 async function loadMore() {
   if (!nextCursor.value) return
+  const mine = seq
   loading.value = true
   try {
     const page = await fetchPage(nextCursor.value)
+    if (mine !== seq) return
     items.value = mergePage(items.value, page.items)
     nextCursor.value = page.nextCursor
   } catch (e) {
-    message.error(errorText(e instanceof ApiError ? e : ApiError.network(e)))
+    if (mine === seq) message.error(errorText(e instanceof ApiError ? e : ApiError.network(e)))
   } finally {
-    loading.value = false
+    if (mine === seq) loading.value = false
   }
 }
 
@@ -131,8 +150,8 @@ async function approveOne(item: ReviewItem) {
     }
     const err = ApiError.fromProblem(response.status, error)
     message.error(errorText(err))
-    // 409: someone else already decided it, so it no longer belongs in the queue.
-    if (err.status === 409 && isGone(err.code)) drop(new Set([id]))
+    // Someone else already decided it (409) or it's gone (404): it no longer belongs in the queue.
+    if (isGone(err.code)) drop(new Set([id]))
   } catch (e) {
     message.error(errorText(ApiError.network(e)))
   } finally {
@@ -147,12 +166,23 @@ async function approveSelected() {
   if (!ids.length) return
   bulkBusy.value = true
   failures.value = []
+  const results: ApprovalResult[] = []
+  let failure: ApiError | undefined
+  // The server takes at most 100 ids per request, so send them in chunks and merge the results.
   try {
-    const { data, error, response } = await api.POST('/review-queue/approvals', {
-      body: { instanceIds: ids },
-    })
-    if (!data) throw ApiError.fromProblem(response.status, error)
-    const summary = summarizeApprovals(data.results)
+    for (const part of chunk(ids, BULK_APPROVE_MAX)) {
+      const { data, error, response } = await api.POST('/review-queue/approvals', {
+        body: { instanceIds: part },
+      })
+      if (!data) throw ApiError.fromProblem(response.status, error)
+      results.push(...data.results)
+    }
+  } catch (e) {
+    failure = e instanceof ApiError ? e : ApiError.network(e)
+  }
+  try {
+    // Chunks already approved are applied even when a later one failed.
+    const summary = summarizeApprovals(results)
     const names = new Map(items.value.map((i) => [i.instance.id, i.instance.choreName]))
     failures.value = summary.failed.map((f) => ({
       instanceId: f.instanceId,
@@ -166,8 +196,7 @@ async function approveSelected() {
       message.warning(t('review.bulkAlreadyDecided', { n: summary.alreadyDecided.length }))
     }
     drop(removableIds(summary))
-  } catch (e) {
-    message.error(errorText(e instanceof ApiError ? e : ApiError.network(e)))
+    if (failure) message.error(errorText(failure))
   } finally {
     bulkBusy.value = false
   }
@@ -200,7 +229,7 @@ async function submitReject(body: RejectBody) {
     }
     const err = ApiError.fromProblem(response.status, error)
     rejectError.value = errorText(err)
-    if (err.status === 409 && isGone(err.code)) {
+    if (isGone(err.code)) {
       rejecting.value = undefined
       message.error(rejectError.value)
       drop(new Set([item.instance.id]))
@@ -212,22 +241,31 @@ async function submitReject(body: RejectBody) {
   }
 }
 
-// Signed photo links last about 10 minutes: reload when one fails, at most every 30 seconds.
+// Signed photo links last about 10 minutes: reload when one fails, at most every 30 seconds and
+// at most twice in a row (a permanently broken image must not reload forever). Any other load
+// resets the count.
 function onPhotoError() {
-  if (Date.now() - lastPhotoReload < 30_000) return
+  if (photoReloads >= 2 || Date.now() - lastPhotoReload < 30_000) return
   lastPhotoReload = Date.now()
-  void load(items.value.length)
+  photoReloads++
+  void load(items.value.length, true)
 }
 
 let timer: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
-  const [kids, chores] = await Promise.all([api.GET('/kids'), api.GET('/chores')])
-  kidOptions.value = (kids.data?.items ?? []).map((k) => ({ value: k.id, label: k.displayName }))
-  choreOptions.value = (chores.data?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
-  await load()
+  // Created before any await so an early unmount can't leave it running.
   timer = setInterval(() => {
     if (Date.now() - loadedAt > PHOTO_REFRESH_MS && !loading.value) void load(items.value.length)
   }, 60_000)
+  // The filters' options are a convenience: if they fail to load, the list still works.
+  try {
+    const [kids, chores] = await Promise.all([api.GET('/kids'), api.GET('/chores')])
+    kidOptions.value = (kids.data?.items ?? []).map((k) => ({ value: k.id, label: k.displayName }))
+    choreOptions.value = (chores.data?.items ?? []).map((c) => ({ value: c.id, label: c.name }))
+  } catch {
+    // leave the options empty
+  }
+  await load()
 })
 onBeforeUnmount(() => clearInterval(timer))
 
@@ -243,12 +281,12 @@ watch([kidFilter, choreFilter, mediaFilter], () => {
 
     <div class="grid gap-3 sm:grid-cols-3">
       <div class="flex flex-col gap-1">
-        <label for="rf-kid" class="text-sm font-medium">{{ t('review.filterKid') }}</label>
+        <span class="text-sm font-medium" aria-hidden="true">{{ t('review.filterKid') }}</span>
         <NSelect
           v-model:value="kidFilter"
           :options="kidOptions"
           clearable
-          :input-props="{ id: 'rf-kid' }"
+          :aria-label="t('review.filterKid')"
         />
       </div>
       <div class="flex flex-col gap-1">
@@ -262,22 +300,22 @@ watch([kidFilter, choreFilter, mediaFilter], () => {
         />
       </div>
       <div class="flex flex-col gap-1">
-        <label for="rf-media" class="text-sm font-medium">{{ t('review.filterMedia') }}</label>
+        <span class="text-sm font-medium" aria-hidden="true">{{ t('review.filterMedia') }}</span>
         <NSelect
           v-model:value="mediaFilter"
           :options="mediaOptions"
           clearable
-          :input-props="{ id: 'rf-media' }"
+          :aria-label="t('review.filterMedia')"
         />
       </div>
     </div>
 
     <NAlert v-if="loadError" type="error">{{ loadError }}</NAlert>
-    <NSpin v-else-if="loading && !items.length" />
-    <p v-else-if="!items.length" class="text-gray-600 dark:text-neutral-400">
+    <NSpin v-if="loading && !items.length" />
+    <p v-else-if="!items.length && !loadError" class="text-gray-600 dark:text-neutral-400">
       {{ t('review.empty') }}
     </p>
-    <template v-else>
+    <template v-else-if="items.length">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <NCheckbox
           :checked="state === 'all'"
