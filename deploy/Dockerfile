@@ -21,7 +21,8 @@ COPY server/ ./
 COPY --from=web /src/server/internal/webui/dist ./internal/webui/dist
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags="-s -w -X github.com/voidrot/chorecast/server/internal/version.Version=${VERSION} -X github.com/voidrot/chorecast/server/internal/version.Commit=${COMMIT}" \
-      -o /out/chorecast ./cmd/chorecast
+      -o /out/chorecast ./cmd/chorecast \
+ && mkdir -p /out/data
 
 FROM alpine:3.24 AS media
 RUN apk add --no-cache ffmpeg ca-certificates \
@@ -38,6 +39,10 @@ CMD ["serve"]
 # Last stage = default target.
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 COPY --from=server /out/chorecast /chorecast
+# distroless has no mkdir, so copy in an empty /data owned by the server's uid. Docker seeds a
+# new named volume with this directory's ownership; without it the volume is root-owned and the
+# server can't create its database.
+COPY --from=server --chown=65532:65532 /out/data /data
 ENV CHORECAST_DATA_DIR=/data CHORECAST_ADDR=:8080
 VOLUME /data
 EXPOSE 8080
