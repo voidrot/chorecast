@@ -705,9 +705,31 @@ export interface paths {
         put?: never;
         /**
          * Complete a chore
-         * @description Marks an open instance done: `submitted` for a parent to approve, or `approved` with points credited when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a member of); a parent completes for a kid and names the kid for a shared instance. An instance dated after today can't be completed yet (409 `instance_planned`), nor one whose day (or week) has closed (409 `instance_closed`): day close counts it as missed. Returns the updated instance.
+         * @description Marks an open instance done: `submitted` for a parent to approve, or `approved` with points credited when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a member of); a parent completes for a kid and names the kid for a shared instance. An instance dated after today can't be completed yet (409 `instance_planned`), nor one whose day (or week) has closed (409 `instance_closed`): day close counts it as missed.
+         *
+         *     The evidence comes with it and is checked against the chore's rules (422 `validation_failed`, with the field's location): every step ticked when it has a checklist, a note when it asks for one, at least its number of photos, with a `before` and an `after` when it asks for both. Each photo is a pending upload by the kid, or by the parent completing for them, not used before. A kid's photo carries its `capturedAt` and `captureId` and must be taken after the instance's day (or a flexible chore's week) began. A chore that asks for a video can't be completed yet (422 `video_evidence_unsupported`). Every submission is kept, so resubmitting after a rejection adds one. Returns the updated instance.
          */
         post: operations["completeChoreInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A chore's submitted evidence
+         * @description Every submission's checklist, note and photos, oldest first, for parents and the instance's kids (its assignee, or a shared instance's members). Photo links are signed and work for 10 minutes; once retention has deleted a photo it is marked `expired` and has no links.
+         */
+        get: operations["getChoreInstanceEvidence"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1095,7 +1117,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a photo
-         * @description A multipart form with the image in `file` (JPEG, PNG or WebP, recognized by its content, not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any metadata (EXIF, GPS). The photo is pending until it is attached to evidence. A kid's photo that exactly matches earlier kid evidence is rejected with 409 `duplicate_media`. Images over 24 MP or 12,000 px on a side, or that would need too much memory to decode, get 413; animated images get 415. Photos are processed one at a time; when several uploads are already waiting the answer is 503 `media_busy`, and a caller with two uploads in progress gets 429 `rate_limited`, both with Retry-After.
+         * @description A multipart form with the image in `file` (JPEG, PNG or WebP, recognized by its content, not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any metadata (EXIF, GPS). The photo is pending until a completion attaches it as evidence; one not attached within 24 hours is deleted. A kid's photo that exactly matches earlier kid evidence is rejected with 409 `duplicate_media`, except that a kid repeating their own upload that is still pending (an offline retry) gets that photo back. A kid may hold 20 pending photos; more is 429 `rate_limited`. Images over 24 MP or 12,000 px on a side, or that would need too much memory to decode, get 413; animated images get 415. Photos are processed one at a time; when several uploads are already waiting the answer is 503 `media_busy`, and a caller with two uploads in progress gets 429 `rate_limited`, both with Retry-After.
          */
         post: operations["uploadPhoto"];
         delete?: never;
@@ -1543,11 +1565,17 @@ export interface components {
             items: components["schemas"]["Chore"][];
         };
         CompleteChoreInstanceInputBody: {
+            /** @description Indexes (0-based) of the chore's steps that were ticked */
+            checklist?: number[] | null;
             /**
              * Format: int64
              * @description Parents: the kid who did it (required for a shared instance). Kids complete as themselves.
              */
             kidId?: number;
+            /** @description The kid's note */
+            note?: string;
+            /** @description Photos uploaded with POST /media/photos */
+            photos?: components["schemas"]["EvidencePhotoInput"][] | null;
         };
         CompleteSetupOutputBody: {
             /**
@@ -1662,6 +1690,55 @@ export interface components {
             /** @description The value at the given location */
             value?: unknown;
         };
+        EvidencePhoto: {
+            captureId?: string;
+            /**
+             * Format: date-time
+             * @description Device time at the shutter (kids' photos)
+             */
+            capturedAt?: string;
+            /** @description Retention deleted the file: there are no links */
+            expired?: boolean;
+            /** Format: int64 */
+            height?: number;
+            /** Format: int64 */
+            mediaId: number;
+            /** @enum {string} */
+            role?: "before" | "after";
+            /**
+             * Format: uri
+             * @description Signed link to the thumbnail, valid until urlExpiresAt
+             */
+            thumbUrl?: string;
+            /**
+             * Format: uri
+             * @description Signed link, valid until urlExpiresAt
+             */
+            url?: string;
+            /** Format: date-time */
+            urlExpiresAt?: string;
+            /** Format: int64 */
+            width?: number;
+        };
+        EvidencePhotoInput: {
+            /** @description The app's id for the capture; required for a kid's photo */
+            captureId?: string;
+            /**
+             * Format: date-time
+             * @description Device time at the shutter; required for a kid's photo
+             */
+            capturedAt?: string;
+            /**
+             * Format: int64
+             * @description A pending photo from POST /media/photos
+             */
+            mediaId: number;
+            /**
+             * @description Before or after the chore; the chore may require one of each
+             * @enum {string}
+             */
+            role?: "before" | "after";
+        };
         EvidenceRules: {
             /** @description The photos include a before and an after (needs photos >= 2) */
             beforeAfter?: boolean;
@@ -1730,6 +1807,33 @@ export interface components {
             timezone: string;
             /** @enum {string} */
             weekStart: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
+        };
+        InstanceEvidence: {
+            /**
+             * Format: int64
+             * @description Which submission of the instance this is; 1 = the first
+             */
+            attempt: number;
+            /** @description Indexes of the ticked steps */
+            checklist: number[];
+            /**
+             * Format: int64
+             * @description The kid who did it
+             */
+            kidId?: number;
+            note?: string;
+            photos: components["schemas"]["EvidencePhoto"][];
+            /** Format: date-time */
+            submittedAt: string;
+            /**
+             * Format: int64
+             * @description Who submitted it: the kid, or a parent for them
+             */
+            submittedBy?: number;
+        };
+        InstanceEvidenceOutputBody: {
+            /** @description Every submission, oldest first */
+            items: components["schemas"]["InstanceEvidence"][];
         };
         Invite: {
             /** Format: date-time */
@@ -4504,6 +4608,65 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getChoreInstanceEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Instance id */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceEvidenceOutputBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
