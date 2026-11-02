@@ -2,6 +2,68 @@
   "app": {
     "name": "Chorecast"
   },
+  "points": {
+    "title": "{name}'s points",
+    "profile": "Edit profile",
+    "balance": "Balance",
+    "available": "Available",
+    "availableHint": "Balance minus points held by pending requests.",
+    "kinds": {
+      "chore": "Chore",
+      "chore_penalty": "Missed chore",
+      "streak_bonus": "Streak bonus",
+      "adjustment": "Adjustment",
+      "reversal": "Reversal"
+    },
+    "ledger": {
+      "title": "Ledger",
+      "empty": "No points yet.",
+      "reversed": "Reversed",
+      "reversesEntry": "Undoes entry #{id}",
+      "clamped": "Clamped (asked {requested})",
+      "balanceAfter": "Balance {n}",
+      "reverse": "Reverse",
+      "undoReversal": "Undo this reversal",
+      "more": "Load more"
+    },
+    "adjust": {
+      "title": "Adjust points",
+      "direction": "Direction",
+      "add": "Add",
+      "subtract": "Subtract",
+      "amount": "Points",
+      "note": "Note",
+      "noteHint": "Required. The kid sees it.",
+      "submit": "Add to ledger",
+      "done": "Adjustment added.",
+      "amountInvalid": "Enter a whole number of points from 1 to 1,000,000.",
+      "noteRequired": "Add a note saying why.",
+      "noteTooLong": "The note is too long."
+    },
+    "reverse": {
+      "title": "Reverse this entry",
+      "explain": "This adds an opposite entry. Nothing is deleted, and the reversal can be undone later.",
+      "note": "Note",
+      "submit": "Reverse",
+      "cancel": "Cancel",
+      "done": "Entry reversed.",
+      "noteRequired": "Add a note saying why.",
+      "noteTooLong": "The note is too long."
+    },
+    "streaks": {
+      "title": "Streaks",
+      "daily": "Daily streak",
+      "current": "Current {n}",
+      "best": "Best {n}",
+      "asOf": "through {date}",
+      "noChores": "No chore streaks yet.",
+      "unknownChore": "Chore #{id}"
+    },
+    "errors": {
+      "already_reversed": "Someone already reversed this entry. The ledger was refreshed.",
+      "kid_not_found": "This kid no longer exists."
+    }
+  },
   "nav": {
     "reviewLabel": "Review, {n} waiting",
     "home": "Home",
@@ -250,6 +312,7 @@
   },
   "kids": {
     "title": "Kids",
+    "points": "Points and streaks",
     "add": "Add a kid",
     "showArchived": "Show archived",
     "archived": "Archived",

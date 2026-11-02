@@ -145,6 +145,12 @@ function toggleArchive() {
       <h1 class="text-2xl font-semibold">
         {{ isNew ? t('kids.newTitle') : kid?.displayName }}
       </h1>
+      <RouterLink
+        v-if="!isNew"
+        :to="{ name: 'kid-points', params: { kid: String(route.params.kid) } }"
+      >
+        <NButton>{{ t('kids.points') }}</NButton>
+      </RouterLink>
     </div>
     <NSpin v-if="loading" />
     <form v-else class="flex flex-col gap-6" @submit.prevent="save">
