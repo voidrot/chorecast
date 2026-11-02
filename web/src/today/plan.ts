@@ -141,6 +141,7 @@ const STALE_CODES = new Set([
   'instance_not_approved',
   'instance_not_missed',
   'instance_closed',
+  'instance_planned',
   'instance_shared',
   'instance_taken',
 ])
