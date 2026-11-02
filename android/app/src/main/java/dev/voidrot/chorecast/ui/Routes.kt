@@ -27,11 +27,15 @@ data object ConnectRoute
 data class LoginRoute(val serverUrl: String)
 
 /**
- * Placeholder parent home until the parent screens (#32) and device pairing (#18) exist.
+ * Parent home: each kid's day and the way into the review queue.
  * [recoveryCodesLeft] is set right after a sign-in that used a recovery code.
  */
 @Serializable
 data class HomeRoute(val serverUrl: String, val recoveryCodesLeft: Long? = null)
+
+/** The parent's review queue. */
+@Serializable
+data class ReviewRoute(val serverUrl: String)
 
 /** The parent's paired-devices list. */
 @Serializable

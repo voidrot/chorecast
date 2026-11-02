@@ -6,6 +6,7 @@ import dev.voidrot.chorecast.core.DeviceClient
 import dev.voidrot.chorecast.core.HouseholdInfo
 import dev.voidrot.chorecast.core.KidChores
 import dev.voidrot.chorecast.core.ParentAuth
+import dev.voidrot.chorecast.core.ParentReview
 import dev.voidrot.chorecast.core.ServerChecker
 import dev.voidrot.chorecast.core.TokenStore
 import dev.voidrot.chorecast.data.FileCaptureStore
@@ -30,6 +31,9 @@ class AppContainer(context: Context) {
     val householdInfo = HouseholdInfo(engine)
     val deviceClient = DeviceClient(engine)
     val kidChores = KidChores(engine)
+
+    /** One instance for the app's life, so a retry keeps its Idempotency-Key after a screen is recreated. */
+    val parentReview = ParentReview(engine)
     val sso = SsoBridge()
     // Photos of a completion that was never sent (the process died) are not kept for the next run.
     val captures = FileCaptureStore(File(context.filesDir, "captures")).also { it.clearAll() }
