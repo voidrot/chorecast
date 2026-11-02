@@ -268,8 +268,19 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   caught up and duplicates are impossible. New schedules start from now (no backfill). Close schedules name the
   kind (`day_close:<kind>:kid:<id>`), and their occurrence key is `<date>@<close instant>`, so a day end moved
   later on the same date still fires.
-- Kinds and schedules are wired in `cmd/chorecast/background.go` (`newBackground`). Today: `maintenance.daily` (purges
-  finished jobs, expired tokens and idempotency keys, dispatched events, invites and pairing codes).
+- Kinds and schedules are wired in `cmd/chorecast/background.go` (`newBackground`) and the packages it calls
+  `Register` on. Today:
+  - `maintenance.daily`: purges finished jobs, expired tokens and idempotency keys, dispatched events, invites and
+    pairing codes.
+  - `media.retention` (daily): deletes evidence files of resolved instances after `media_retention_days`, and
+    pending uploads never attached.
+  - `horizon.generate`: regenerates the rolling 7-day horizon. Enqueued at startup, at each household day end, and
+    by subscribers to `household.calendar_changed`, `chore.changed` and `kid.changed`.
+  - `dayclose.kid_day`, `dayclose.kid_week` (each kid's own day end and week close) and `dayclose.shared` (the
+    household day end, for shared instances): mark open instances missed and post their penalties.
+  - Streaks (`internal/streaks`) have no kind of their own. Hooks run inside the dayclose jobs:
+    `EvaluateKidDay` after `dayclose.kid_day` and `EvaluateDay` after `dayclose.shared`.
+  - `autoapprove.run` (every 5 minutes): approves submitted instances nobody reviewed within their timeout.
 - Tests drive time with `clock.Fake` and call `Scheduler.Tick` / `Runner.RunDue` directly.
 
 ## Domain events
