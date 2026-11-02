@@ -1,11 +1,13 @@
 package dev.voidrot.chorecast.core
 
 import dev.voidrot.chorecast.api.apis.InstancesApi
+import dev.voidrot.chorecast.api.apis.KidsApi
 import dev.voidrot.chorecast.api.apis.PointsApi
 import dev.voidrot.chorecast.api.infrastructure.HttpResponse
 import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.DailyStreak
 import dev.voidrot.chorecast.api.models.InstanceEvidence
+import dev.voidrot.chorecast.api.models.Kid
 import dev.voidrot.chorecast.api.models.PointsBalance
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CancellationException
@@ -65,6 +67,20 @@ class KidChores(private val engine: HttpClientEngine? = null) {
                 ),
             )
         }
+    }
+
+    /** Just the kid's instances (today and the days ahead), for the background sync that schedules reminders. */
+    suspend fun upcoming(url: ServerUrl, token: String, kidId: Long): Fetch<List<ChoreInstance>> = guard {
+        val resp = instances(url, token).listChoreInstances(kidId = kidId)
+        if (resp.success) Fetch.Ok(resp.body().items) else resp.failure()
+    }
+
+    /** The kid's own profile, which carries the quiet hours and day-end override the reminders need. */
+    suspend fun profile(url: ServerUrl, token: String, kidId: Long): Fetch<Kid> = guard {
+        val resp = KidsApi(baseUrl = url.apiBase, httpClientEngine = engine, httpClientConfig = ApiClients.config)
+            .apply { setBearerToken(token) }
+            .getKid(kidId.toString())
+        if (resp.success) Fetch.Ok(resp.body()) else resp.failure()
     }
 
     /** The instances dated in [range] (at most [HISTORY_PAGE_DAYS] days), planned and open ones included. */

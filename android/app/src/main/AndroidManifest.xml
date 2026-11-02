@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Scanning the pairing QR code. Pairing also works by typing the code. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Local chore reminders (Android 13+ asks at runtime). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <!-- usesCleartextTraffic: self-hosted servers often run plain HTTP on the home network. The app

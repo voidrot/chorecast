@@ -128,4 +128,30 @@ class KidChoresTest {
         val engine = MockEngine { respondError(HttpStatusCode.NotFound) }
         assertEquals(Fetch.NotFound, KidChores(engine).evidence(url, "tok", 7))
     }
+
+    @Test
+    fun upcomingAndProfileReadOnlyWhatRemindersNeed() = runTest {
+        val seen = mutableListOf<String>()
+        val engine = MockEngine { req ->
+            seen += req.url.encodedPath
+            when (req.url.encodedPath) {
+                "/api/v1/instances" -> ok(instances)
+                "/api/v1/kids/5" -> ok("""{"id":5,"slug":"sam","displayName":"Sam","color":"#ffffff","pinRequired":false,
+                    "pinSet":false,"dayEndOverride":"19:30","quietHours":{"start":"21:00","end":"06:30"}}""")
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+        val client = KidChores(engine)
+        assertEquals(2, (client.upcoming(url, "tok", 5) as Fetch.Ok).value.size)
+        val kid = (client.profile(url, "tok", 5) as Fetch.Ok).value
+        assertEquals("19:30", kid.dayEndOverride)
+        assertEquals("06:30", kid.quietHours?.end)
+        assertEquals(listOf("/api/v1/instances", "/api/v1/kids/5"), seen)
+    }
+
+    @Test
+    fun upcomingMapsARefusedToken() = runTest {
+        val engine = MockEngine { respondError(HttpStatusCode.Unauthorized) }
+        assertEquals(Fetch.Unauthorized, KidChores(engine).upcoming(url, "tok", 5))
+    }
 }

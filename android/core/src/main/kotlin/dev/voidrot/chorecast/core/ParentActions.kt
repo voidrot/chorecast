@@ -153,7 +153,7 @@ fun householdToday(zone: ZoneId, dayEnd: String, now: Instant): LocalDate {
     return if (wall >= dayEndMinutes(dayEnd)) local.toLocalDate().plusDays(1) else local.toLocalDate()
 }
 
-private fun dayEndMinutes(dayEnd: String): Int {
+internal fun dayEndMinutes(dayEnd: String): Int {
     val parts = dayEnd.split(":")
     val h = parts.getOrNull(0)?.toIntOrNull()
     val m = parts.getOrNull(1)?.toIntOrNull()
