@@ -19,6 +19,8 @@
 //   - The fairness ledger starts with the frozen instances from a week before this week's start
 //     (flexible instances are dated at the week start). Chores are planned by id, occurrences in
 //     date order, one at a time; an occurrence a frozen instance already covers isn't planned again.
+//     A manually reassigned instance covers the occurrence of the kid it was planned for
+//     (reassigned_from) too, so fixed and everyone chores don't plan that kid's again.
 //   - Rotation: each instance stores the state after its turn. chores.rotation_state is the state
 //     after the chore's last instance dated before the horizon (before today, or before the week
 //     start for flexible chores), and each run resumes from it. Walking the occurrences, it takes
@@ -98,6 +100,12 @@ type existing struct {
 
 func (e existing) key() instKey {
 	return instKey{occKey{e.ChoreID, e.OccurrenceDate, e.Slot, e.Seq}, e.KidID.Int64}
+}
+
+// covers reports whether the instance stands for kid's planned occurrence: it's theirs, or it
+// was reassigned away from them (the new kid does it in their place).
+func (e existing) covers(kid int64) bool {
+	return e.KidID.Int64 == kid || (e.ReassignedFrom.Valid && e.ReassignedFrom.Int64 == kid)
 }
 
 // untouched: nothing has happened to it yet. A reassignment (or swap) sets manually_reassigned,
@@ -210,7 +218,7 @@ func (g *Generator) generate(ctx context.Context, q *sqlc.Queries) (Result, erro
 			if r.keptToday[e.ChoreID] == nil {
 				r.keptToday[e.ChoreID] = map[int64]bool{}
 			}
-			for _, k := range append([]int64{e.KidID.Int64}, e.members...) {
+			for _, k := range append([]int64{e.KidID.Int64, e.ReassignedFrom.Int64}, e.members...) {
 				r.keptToday[e.ChoreID][k] = true
 			}
 		}
@@ -419,9 +427,10 @@ func (r *run) planChore(ctx context.Context, c sqlc.Chore, overrides map[int64]b
 			due := r.dueAt(o, pl.KidID)
 			drop := !due.After(r.now) // the kid's own day already closed
 			if !single {
-				// fixed/everyone: no second instance for a kid with a kept one here, and no
-				// slot added today for a kid with a kept instance today.
-				drop = drop || slices.ContainsFunc(frozenHere, func(k existing) bool { return k.KidID.Int64 == pl.KidID }) ||
+				// fixed/everyone: no second instance for a kid with a kept one here (or whose
+				// one was reassigned to another kid), and no slot added today for a kid with a
+				// kept instance today.
+				drop = drop || slices.ContainsFunc(frozenHere, func(k existing) bool { return k.covers(pl.KidID) }) ||
 					(newToday && r.keptToday[c.ID][pl.KidID])
 			}
 			if drop {

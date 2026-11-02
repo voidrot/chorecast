@@ -106,7 +106,7 @@ func (q *Queries) DeleteChoreInstances(ctx context.Context, choreID int64) error
 }
 
 const getChoreInstance = `-- name: GetChoreInstance :one
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.id = ?
 `
@@ -131,6 +131,7 @@ func (q *Queries) GetChoreInstance(ctx context.Context, id int64) (GetChoreInsta
 		&i.ChoreInstance.Status,
 		&i.ChoreInstance.AutoAssigned,
 		&i.ChoreInstance.ManuallyReassigned,
+		&i.ChoreInstance.ReassignedFrom,
 		&i.ChoreInstance.RotationState,
 		&i.ChoreInstance.CompletedBy,
 		&i.ChoreInstance.CompletedAt,
@@ -313,7 +314,7 @@ func (q *Queries) ListChoreInstanceMembersFrom(ctx context.Context, occurrenceDa
 }
 
 const listChoreInstancesBetween = `-- name: ListChoreInstancesBetween :many
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= ?1 AND i.occurrence_date <= ?2
   AND (CAST(?3 AS INTEGER) = 0 OR i.kid_id = CAST(?3 AS INTEGER)
@@ -355,6 +356,7 @@ func (q *Queries) ListChoreInstancesBetween(ctx context.Context, arg ListChoreIn
 			&i.ChoreInstance.Status,
 			&i.ChoreInstance.AutoAssigned,
 			&i.ChoreInstance.ManuallyReassigned,
+			&i.ChoreInstance.ReassignedFrom,
 			&i.ChoreInstance.RotationState,
 			&i.ChoreInstance.CompletedBy,
 			&i.ChoreInstance.CompletedAt,
@@ -377,7 +379,7 @@ func (q *Queries) ListChoreInstancesBetween(ctx context.Context, arg ListChoreIn
 }
 
 const listChoreInstancesFrom = `-- name: ListChoreInstancesFrom :many
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.estimated_minutes FROM chore_instances i
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.estimated_minutes FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= ?
 ORDER BY i.chore_id, i.occurrence_date, i.slot, i.seq, i.kid_id
@@ -395,6 +397,7 @@ type ListChoreInstancesFromRow struct {
 	Status             string         `json:"status"`
 	AutoAssigned       int64          `json:"auto_assigned"`
 	ManuallyReassigned int64          `json:"manually_reassigned"`
+	ReassignedFrom     sql.NullInt64  `json:"reassigned_from"`
 	RotationState      sql.NullString `json:"rotation_state"`
 	CompletedBy        sql.NullInt64  `json:"completed_by"`
 	CompletedAt        sql.NullString `json:"completed_at"`
@@ -426,6 +429,7 @@ func (q *Queries) ListChoreInstancesFrom(ctx context.Context, occurrenceDate str
 			&i.Status,
 			&i.AutoAssigned,
 			&i.ManuallyReassigned,
+			&i.ReassignedFrom,
 			&i.RotationState,
 			&i.CompletedBy,
 			&i.CompletedAt,
@@ -492,8 +496,9 @@ func (q *Queries) ListLatestChoreInstanceRejectionsBetween(ctx context.Context, 
 }
 
 const reassignChoreInstance = `-- name: ReassignChoreInstance :execrows
-UPDATE chore_instances SET kid_id = ?, manually_reassigned = 1, auto_assigned = 0, updated_at = ?
-WHERE id = ? AND status = 'open' AND kid_id IS NOT NULL
+UPDATE chore_instances SET kid_id = ?1, reassigned_from = COALESCE(reassigned_from, kid_id),
+    manually_reassigned = 1, auto_assigned = 0, updated_at = ?2
+WHERE id = ?3 AND status = 'open' AND kid_id IS NOT NULL
 `
 
 type ReassignChoreInstanceParams struct {
@@ -502,7 +507,8 @@ type ReassignChoreInstanceParams struct {
 	ID        int64         `json:"id"`
 }
 
-// A parent's pick replaces any auto-pick; manually_reassigned keeps the horizon from replanning it.
+// A parent's pick replaces any auto-pick; manually_reassigned keeps the horizon from replanning it,
+// and reassigned_from keeps the kid it was planned for (the first, across several reassignments).
 func (q *Queries) ReassignChoreInstance(ctx context.Context, arg ReassignChoreInstanceParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, reassignChoreInstance, arg.KidID, arg.UpdatedAt, arg.ID)
 	if err != nil {

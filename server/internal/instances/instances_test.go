@@ -696,6 +696,88 @@ func TestHorizonKeepsTouchedInstances(t *testing.T) {
 	}
 }
 
+// TestReassignDoesNotDuplicateOnRegeneration: a reassigned instance stands for the occurrence of
+// the kid it was planned for, so regenerating (any chore or kid edit) doesn't plan that kid's
+// again, in any mode and across a second reassignment.
+func TestReassignDoesNotDuplicateOnRegeneration(t *testing.T) {
+	for _, tc := range []struct {
+		mode    string
+		kids    func(f *fixture) []int64
+		perDate int
+	}{
+		{assign.ModeFixed, func(f *fixture) []int64 { return []int64{f.sam} }, 1},
+		{assign.ModeEveryone, nil, 2}, // Kim is excluded, so there's a kid to hand Sam's to
+		{assign.ModeRotation, func(f *fixture) []int64 { return []int64{f.sam, f.ada, f.kim} }, 1},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			f := newFixture(t)
+			gen := horizon.New(f.db, f.clk)
+			in := chores.ChoreInput{Name: "Dishes", Points: 5,
+				Schedule:   &schedule.ScheduleRule{Type: schedule.TypeDaily, StartDate: date(today)},
+				Assignment: &chores.ChoreAssignment{Mode: tc.mode}}
+			if tc.kids != nil {
+				in.Assignment.KidIDs = tc.kids(f)
+			} else {
+				in.Eligibility = []chores.ChoreEligibility{{KidID: f.kim, Allow: false}}
+			}
+			c, err := f.chores.Create(t.Context(), in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			byDate := func() map[string][]horizon.ChoreInstance {
+				if _, err := gen.Generate(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				is, err := gen.List(t.Context(), horizon.ListFilter{From: date(today), To: date("2026-11-07")})
+				if err != nil {
+					t.Fatal(err)
+				}
+				out := map[string][]horizon.ChoreInstance{}
+				for _, i := range is {
+					if i.ChoreID == c.ID {
+						out[i.Date.String()] = append(out[i.Date.String()], i)
+					}
+				}
+				return out
+			}
+			// reassign moves the day's reassigned instance (at first, its first one) to a kid
+			// without one that day.
+			reassign := func(day []horizon.ChoreInstance) int64 {
+				t.Helper()
+				target := day[0]
+				for _, i := range day {
+					if i.ManuallyReassigned {
+						target = i
+					}
+				}
+				for _, k := range []int64{f.sam, f.ada, f.kim} {
+					if !slices.ContainsFunc(day, func(i horizon.ChoreInstance) bool { return i.KidID == k }) {
+						if _, err := f.svc.Reassign(t.Context(), target.ID, k, f.mom); err != nil {
+							t.Fatal(err)
+						}
+						return k
+					}
+				}
+				t.Fatal("no kid to reassign to")
+				return 0
+			}
+			const day = "2026-11-02"
+			for round := range 2 { // a second reassignment still covers the original kid
+				to := reassign(byDate()[day])
+				got := byDate()
+				for d := date(today); !d.After(date("2026-11-07")); d = d.AddDays(1) {
+					if n := len(got[d.String()]); n != tc.perDate {
+						t.Errorf("round %d: %s has %d instances, want %d: %+v", round, d, n, tc.perDate, got[d.String()])
+					}
+				}
+				if !slices.ContainsFunc(got[day], func(i horizon.ChoreInstance) bool { return i.KidID == to && i.ManuallyReassigned }) {
+					t.Errorf("round %d: the reassigned instance is gone: %+v", round, got[day])
+				}
+			}
+		})
+	}
+}
+
 // TestLedgerStaysConsistent drives random transitions over single and shared instances and checks
 // after every step that each kid's balance is the sum of the effects in force for their
 // instances, that a credit is in force exactly while an instance is approved and a penalty

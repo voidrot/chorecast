@@ -279,6 +279,7 @@ CREATE TABLE chore_instances (
     status              TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'submitted', 'approved', 'missed', 'excused')),
     auto_assigned       INTEGER NOT NULL DEFAULT 0 CHECK (auto_assigned IN (0, 1)),       -- picked by the fair auto-pick
     manually_reassigned INTEGER NOT NULL DEFAULT 0 CHECK (manually_reassigned IN (0, 1)), -- a parent or swap changed the assignee
+    reassigned_from     INTEGER REFERENCES users (id) ON DELETE SET NULL, -- the planned kid a reassignment replaced (the first one); the horizon counts the instance as theirs
     rotation_state      TEXT,                         -- rotation: JSON assign.State after this instance's turn
     -- Lifecycle (internal/instances, #25). The last completion is kept after a rejection or an
     -- approval reversal, so a completed instance stays touched (never regenerated).

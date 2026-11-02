@@ -88,9 +88,11 @@ UPDATE chore_instances SET status = 'open', rejection_count = rejection_count + 
 WHERE id = ? AND status = 'submitted';
 
 -- name: ReassignChoreInstance :execrows
--- A parent's pick replaces any auto-pick; manually_reassigned keeps the horizon from replanning it.
-UPDATE chore_instances SET kid_id = ?, manually_reassigned = 1, auto_assigned = 0, updated_at = ?
-WHERE id = ? AND status = 'open' AND kid_id IS NOT NULL;
+-- A parent's pick replaces any auto-pick; manually_reassigned keeps the horizon from replanning it,
+-- and reassigned_from keeps the kid it was planned for (the first, across several reassignments).
+UPDATE chore_instances SET kid_id = sqlc.arg(kid_id), reassigned_from = COALESCE(reassigned_from, kid_id),
+    manually_reassigned = 1, auto_assigned = 0, updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id) AND status = 'open' AND kid_id IS NOT NULL;
 
 -- name: InsertChoreInstanceRejection :exec
 INSERT INTO chore_instance_rejections (instance_id, kid_id, reason_code, reason_text, rejected_by, created_at)

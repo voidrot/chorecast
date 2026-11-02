@@ -61,6 +61,7 @@ type ChoreInstance struct {
 	Status             string         `json:"status"`
 	AutoAssigned       int64          `json:"auto_assigned"`
 	ManuallyReassigned int64          `json:"manually_reassigned"`
+	ReassignedFrom     sql.NullInt64  `json:"reassigned_from"`
 	RotationState      sql.NullString `json:"rotation_state"`
 	CompletedBy        sql.NullInt64  `json:"completed_by"`
 	CompletedAt        sql.NullString `json:"completed_at"`
