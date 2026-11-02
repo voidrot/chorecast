@@ -101,6 +101,7 @@ class TodayViewModel(
     private val captures: FileCaptureStore,
     private val kidId: Long,
     private val token: String,
+    private val onCompleted: () -> Unit = {},
     private val now: () -> Instant = Instant::now,
     private val today: () -> LocalDate = LocalDate::now,
 ) : ViewModel() {
@@ -300,6 +301,7 @@ class TodayViewModel(
                     _state.update { st ->
                         st.copy(drafts = st.drafts - id, completing = false, selected = null, history = HistoryState())
                     }
+                    onCompleted()
                     refresh()
                 }
                 is SubmitOutcome.Result.Failed -> failed(id, r.error)

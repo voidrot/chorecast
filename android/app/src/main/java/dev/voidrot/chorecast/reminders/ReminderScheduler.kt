@@ -33,10 +33,10 @@ class ReminderScheduler(context: Context) {
         work.enqueueUniquePeriodicWork(PERIODIC_SYNC, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
-    /** Sync now (the app opened). A sync already waiting or running covers it. */
+    /** Sync now (the app opened, or a chore was finished). A newer request replaces one still waiting. */
     fun syncNow() {
         val request = OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(online).build()
-        work.enqueueUniqueWork(SYNC_NOW, ExistingWorkPolicy.KEEP, request)
+        work.enqueueUniqueWork(SYNC_NOW, ExistingWorkPolicy.REPLACE, request)
     }
 
     /** Replaces every scheduled reminder with [plan]. */
@@ -85,6 +85,8 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
             ?: return Result.failure()
         val key = inputData.getString(KEY) ?: return Result.failure()
         val dueAt = inputData.getLong(DUE_AT, 0L).takeIf { it > 0 }?.let(Instant::ofEpochMilli)
+        // Doze can delay the work past the moment the reminder was about; then it is just noise.
+        if (kind != ReminderKind.MORNING && (dueAt == null || !Instant.now().isBefore(dueAt))) return Result.success()
         ReminderNotifier(applicationContext).show(
             key = key,
             kind = kind,

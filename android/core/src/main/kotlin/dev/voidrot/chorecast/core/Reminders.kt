@@ -42,6 +42,15 @@ data class QuietWindow(val start: LocalTime, val end: LocalTime) {
         val end = today.atTime(end).atZone(zone).toInstant()
         return if (end.isAfter(at)) end else today.plusDays(1).atTime(this.end).atZone(zone).toInstant()
     }
+
+    /** [at] itself when it is outside the window, otherwise the most recent moment the window started. */
+    fun pullBack(at: Instant, zone: ZoneId): Instant {
+        val local = at.atZone(zone)
+        if (!contains(local.toLocalTime())) return at
+        val today = local.toLocalDate()
+        val started = today.atTime(start).atZone(zone).toInstant()
+        return if (started.isAfter(at)) today.minusDays(1).atTime(start).atZone(zone).toInstant() else started
+    }
 }
 
 /**
@@ -95,25 +104,35 @@ val REMINDER_HORIZON: Duration = Duration.ofHours(48)
  * - Morning overview: at the end of the quiet hours, for what is open on the household day starting
  *   then. Today's is skipped once it has passed, so it goes out at most once per day.
  *
- * A reminder time already past [now] is dropped (never sent late). A time inside the quiet hours is
- * held until they end; if that is no longer before the slot or day close it warns about, it is dropped.
+ * A reminder time already past [now] is dropped (never sent late). A slot reminder inside the quiet hours is
+ * held until they end (and dropped if that is no longer before the slot). A day-close reminder inside the
+ * quiet hours goes out when they start instead, since holding it would pass the close. The held time, not the
+ * original one, is what is compared with [now], so a sync during the quiet hours keeps a held reminder.
  */
 fun planReminders(instances: List<ChoreInstance>, settings: ReminderSettings, now: Instant): List<Reminder> {
     val open = instances.filter { it.status == ChoreInstance.Status.OPEN && it.flexible != true }
     val order = compareBy<ChoreInstance>({ it.dueAt.toInstant() }, { it.choreName.lowercase() }, { it.id })
 
-    /** Holds [raw] out of the quiet hours; null when it is past or no longer before [deadline]. */
-    fun place(raw: Instant, deadline: Instant): Instant? {
-        if (!raw.isAfter(now)) return null
+    /** A slot reminder held out of the quiet hours; null when that moment is past or no longer before [due]. */
+    fun placeSlot(raw: Instant, due: Instant): Instant? {
         val at = settings.quiet.release(raw, settings.zone)
-        return at.takeIf { it.isBefore(deadline) }
+        return at.takeIf { it.isAfter(now) && it.isBefore(due) }
+    }
+
+    /**
+     * A day-close reminder inside the quiet hours goes out when they start instead, which is always before
+     * the close; null when that moment is past too.
+     */
+    fun placeClose(raw: Instant): Instant? {
+        val at = settings.quiet.pullBack(raw, settings.zone)
+        return at.takeIf { it.isAfter(now) }
     }
 
     val slots = open.filter { slotTime(it.slot) != null }
         .filter { it.dueAt.toInstant() <= now.plus(REMINDER_HORIZON) }
         .mapNotNull { i ->
             val due = i.dueAt.toInstant()
-            place(due.minus(SLOT_REMINDER_LEAD), due)?.let {
+            placeSlot(due.minus(SLOT_REMINDER_LEAD), due)?.let {
                 Reminder("slot:${i.id}", ReminderKind.SLOT_DUE, it, due, 1, i.choreName)
             }
         }
@@ -122,7 +141,7 @@ fun planReminders(instances: List<ChoreInstance>, settings: ReminderSettings, no
     val closing = open.filter { !it.planned && it.date == today }.sortedWith(order)
     val close = dayClose(today, settings)
     val dayClose = closing.firstOrNull()?.let { first ->
-        place(close.minus(DAY_CLOSE_REMINDER_LEAD), close)?.let {
+        placeClose(close.minus(DAY_CLOSE_REMINDER_LEAD))?.let {
             Reminder("close:$today", ReminderKind.DAY_CLOSE, it, close, closing.size, first.choreName)
         }
     }

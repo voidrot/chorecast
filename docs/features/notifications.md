@@ -78,12 +78,14 @@ device's kid (`/devices/picker`, then `/kids/{id}` for quiet hours and the day-e
 tablets only clear it. `planReminders` (`:core`, `Reminders.kt`) decides what fires: 30 minutes before each slotted
 open chore, 1 hour before the kid's day close (what is still open), and a morning overview at the end of the quiet
 hours for the day starting then (a morning already past is not sent late, so at most one per day). Submitted,
-approved, missed, excused and flexible instances get nothing, and a time already past is dropped. A time inside the
-quiet hours is held until they end; if that is no longer before the slot or day close it warns about, it is dropped.
-A kid with no quiet hours set gets the 20:00 to 07:00 default, because the API does not expose it. Each reminder is
+approved, missed, excused and flexible instances get nothing, and a time already past is dropped. A slot reminder
+inside the quiet hours is held until they end (dropped if that is no longer before the slot). A day-close reminder
+inside the quiet hours goes out when they start instead, since holding it would pass the close; with the default
+quiet hours and a midnight day end that is 20:00. Either way the held time, not the original, is compared with the
+current time, so a sync during the quiet hours keeps it. A kid with no quiet hours set gets the 20:00 to 07:00 default, because the API does not expose it. Each reminder is
 one-time work named by a stable key (`slot:<instance>`, `close:<date>`, `morning:<date>`), and every sync cancels
-the old ones first, so nothing is duplicated. Android 13+ asks for the notification permission once. Known limits:
-school hours are not applied, and a chore finished in the app leaves its reminder scheduled until the next sync.
+the old ones first, so nothing is duplicated. Android 13+ asks for the notification permission once. Finishing a chore in the app triggers a sync, and a reminder that fires after its slot or day close has
+passed is skipped. Known limit: school hours are not applied.
 
 ## Other channels
 

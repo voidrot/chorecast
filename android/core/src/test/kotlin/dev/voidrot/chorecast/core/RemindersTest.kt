@@ -99,10 +99,29 @@ class RemindersTest {
     }
 
     @Test
-    fun dayCloseReminderInsideQuietHoursIsSuppressed() {
-        // 20:00 is quiet for the default window, and its end (07:00 tomorrow) is after the close.
-        val r = plan(at("2026-05-04", "12:00"), settings, instance(1, at("2026-05-04", "21:00")))
-        assertTrue(r.none { it.kind == ReminderKind.DAY_CLOSE })
+    fun dayCloseReminderInsideQuietHoursGoesOutWhenTheyStart() {
+        // The raw 20:00 is inside quiet hours that start at 19:30, so it moves back to 19:30.
+        val s = settings.copy(quiet = QuietWindow(LocalTime.of(19, 30), LocalTime.of(7, 0)))
+        val r = plan(at("2026-05-04", "12:00"), s, instance(1, at("2026-05-04", "21:00")))
+            .single { it.kind == ReminderKind.DAY_CLOSE }
+        assertEquals(at("2026-05-04", "19:30"), r.at)
+    }
+
+    @Test
+    fun defaultsWithMidnightDayEndSendTheDayCloseReminderAtEightPm() {
+        val s = settings.copy(dayEnd = "00:00")
+        val i = instance(1, at("2026-05-05", "00:00"))
+        val r = plan(at("2026-05-04", "12:00"), s, i).single { it.kind == ReminderKind.DAY_CLOSE }
+        assertEquals(at("2026-05-04", "20:00"), r.at)
+        // Once quiet hours have started, there is nothing left to send.
+        assertTrue(plan(at("2026-05-04", "21:00"), s, i).none { it.kind == ReminderKind.DAY_CLOSE })
+    }
+
+    @Test
+    fun syncDuringQuietHoursKeepsAHeldSlotReminder() {
+        val i = instance(1, at("2026-05-05", "07:20"), slot = "07:20", date = day.plusDays(1), planned = true)
+        val r = plan(at("2026-05-05", "06:55"), settings, i).single { it.kind == ReminderKind.SLOT_DUE }
+        assertEquals(at("2026-05-05", "07:00"), r.at)
     }
 
     @Test

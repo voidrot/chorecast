@@ -85,7 +85,7 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                         elapsedNanos = SystemClock::elapsedRealtimeNanos,
                     )
                 },
-                todayViewModel = { kid -> TodayViewModel(currentUrl(), container.kidChores, container.choreCompleter(), container.captures, kid.kidId, kid.token) },
+                todayViewModel = { kid -> TodayViewModel(currentUrl(), container.kidChores, container.choreCompleter(), container.captures, kid.kidId, kid.token, onCompleted = container.reminderScheduler::syncNow) },
                 // The parent screens of an elevated tablet ask with the elevated token and their own ParentReview, never the pairing token.
                 parentModels = ParentModels(
                     overview = { OverviewViewModel(currentUrl(), it.review, it.tokens) },

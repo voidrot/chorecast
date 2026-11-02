@@ -8,6 +8,8 @@ import dev.voidrot.chorecast.core.Fetch
 import dev.voidrot.chorecast.core.planReminders
 import dev.voidrot.chorecast.core.reminderSettings
 import dev.voidrot.chorecast.data.AppMode
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import java.time.Instant
 
@@ -32,7 +34,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         } ?: return stop(scheduler) // the token no longer works: the device screen handles re-pairing
         val kidId = device.kidId?.takeIf { !device.shared } ?: return stop(scheduler)
 
-        val household = c.householdInfo.get(url, token) ?: return Result.retry()
+        // null covers offline, a refused token and a server error alike, so retry a few times and then wait for the next run.
+        val household = c.householdInfo.get(url, token) ?: return if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.success()
         val kid = when (val f = c.kidChores.profile(url, token, kidId)) {
             is Fetch.Ok -> f.value
             Fetch.Unauthorized, Fetch.NotFound -> return stop(scheduler)
@@ -45,13 +48,21 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         }
         val settings = reminderSettings(household, kid) ?: return stop(scheduler)
 
-        val now = Instant.now()
-        scheduler.replace(planReminders(instances, settings, now), now)
+        // One sync at a time may clear and re-enqueue, or two runs could interleave and drop reminders.
+        replaceLock.withLock {
+            val now = Instant.now()
+            scheduler.replace(planReminders(instances, settings, now), now)
+        }
         return Result.success()
     }
 
-    private fun stop(scheduler: ReminderScheduler): Result {
-        scheduler.clear()
+    private suspend fun stop(scheduler: ReminderScheduler): Result {
+        replaceLock.withLock { scheduler.clear() }
         return Result.success()
+    }
+
+    private companion object {
+        const val MAX_ATTEMPTS = 3
+        val replaceLock = Mutex()
     }
 }
