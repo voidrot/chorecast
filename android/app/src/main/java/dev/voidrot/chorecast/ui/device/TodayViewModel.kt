@@ -262,8 +262,10 @@ class TodayViewModel(
     }
 
     fun removePhoto(captureId: String) {
-        if (_state.value.submitting) return
+        val s = _state.value
+        if (s.submitting) return
         captures.delete(captureId)
+        s.selectedDraft?.let { completer.discardRemoved(url, token, it, captureId) }
         userEdit { it.removePhoto(captureId) }
     }
 
@@ -310,7 +312,7 @@ class TodayViewModel(
             CompleteError.SignedOut -> _state.update { it.copy(error = TodayError.SignedOut) }
             // The chore moved on without this submit: its draft and photos are no use, show what it is now.
             CompleteError.Closed, CompleteError.NotOpen -> {
-                _state.value.drafts[id]?.photos?.forEach { captures.delete(it.captureId) }
+                _state.value.drafts[id]?.let { dropDraft(it) }
                 _state.update { it.copy(drafts = it.drafts - id, completing = false, cameraOpen = false, completeError = error) }
                 refresh()
             }
@@ -324,8 +326,14 @@ class TodayViewModel(
         }
     }
 
-    /** A finished session drops unsent photos from the device. */
+    /** Deletes the draft's photo files and frees its uploads on the server. */
+    private fun dropDraft(draft: CompletionDraft) {
+        draft.photos.forEach { captures.delete(it.captureId) }
+        completer.discardDropped(url, token, draft)
+    }
+
+    /** A finished session drops unsent photos from the device and the server. */
     override fun onCleared() {
-        _state.value.drafts.values.flatMap { it.photos }.forEach { captures.delete(it.captureId) }
+        _state.value.drafts.values.forEach(::dropDraft)
     }
 }
