@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -17,7 +18,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/caltime"
+	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/events"
@@ -60,11 +63,14 @@ func (CalendarChanged) EventType() string { return "household.calendar_changed" 
 
 // Service reads and updates the settings. bus may be nil (no event is emitted then).
 type Service struct {
-	db  *db.DB
-	bus *events.Bus
+	db    *db.DB
+	clock clock.Clock
+	bus   *events.Bus
 }
 
-func New(d *db.DB, bus *events.Bus) *Service { return &Service{db: d, bus: bus} }
+func New(d *db.DB, c clock.Clock, bus *events.Bus) *Service {
+	return &Service{db: d, clock: c, bus: bus}
+}
 
 func toSettings(h sqlc.Household) (HouseholdSettings, error) {
 	milestones, err := Milestones(h)
@@ -114,9 +120,10 @@ func Calendar(ctx context.Context, q *sqlc.Queries) (caltime.Household, error) {
 	return caltime.NewHousehold(h.Timezone, end, time.Weekday(h.WeekStart%7))
 }
 
-// Update replaces the settings. Changing the day end is refused while a kid's day-end override
-// would end after it; changing the calendar emits CalendarChanged in the same transaction.
-func (s *Service) Update(ctx context.Context, in HouseholdSettings) (HouseholdSettings, error) {
+// Update replaces the settings for by. Changing the day end is refused while a kid's day-end
+// override would end after it; changing the calendar emits CalendarChanged in the same
+// transaction. A change is audited (settings_updated, with each changed field) in it too.
+func (s *Service) Update(ctx context.Context, by audit.Actor, in HouseholdSettings) (HouseholdSettings, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	var details []error
 	bad := func(loc, msg string, v any) {
@@ -177,6 +184,11 @@ func (s *Service) Update(ctx context.Context, in HouseholdSettings) (HouseholdSe
 		}); err != nil {
 			return err
 		}
+		after := in
+		after.DayEnd = dayEnd.String()
+		if err := s.audit(ctx, q, by, before, after); err != nil {
+			return err
+		}
 		if before.Timezone != in.Timezone || before.DayEnd != dayEnd.String() || before.WeekStart != int64(weekStart) {
 			return emit(CalendarChanged{Timezone: in.Timezone, DayEnd: dayEnd.String(), WeekStart: in.WeekStart})
 		}
@@ -194,6 +206,67 @@ func (s *Service) Update(ctx context.Context, in HouseholdSettings) (HouseholdSe
 		return HouseholdSettings{}, err
 	}
 	return s.Get(ctx)
+}
+
+// audit records which settings changed from before to after; nothing when none did.
+func (s *Service) audit(ctx context.Context, q *sqlc.Queries, by audit.Actor, before sqlc.Household, after HouseholdSettings) error {
+	old, err := toSettings(before)
+	if err != nil {
+		return err
+	}
+	changes, err := diff(old, after)
+	if err != nil || len(changes) == 0 {
+		return err
+	}
+	return audit.Record(ctx, q, s.clock.Now(), audit.Entry{
+		Actor: by, Action: audit.ActionSettingsUpdated, TargetKind: audit.TargetHousehold, Summary: after.Name,
+		Details: audit.AuditDetails{Changes: changes},
+	})
+}
+
+// diff lists the settings that differ, by API field name (sorted), with their values as text.
+func diff(before, after HouseholdSettings) ([]audit.AuditChange, error) {
+	from, err := fields(before)
+	if err != nil {
+		return nil, err
+	}
+	to, err := fields(after)
+	if err != nil {
+		return nil, err
+	}
+	names := slices.Collect(maps.Keys(from))
+	for k := range to {
+		if _, ok := from[k]; !ok {
+			names = append(names, k)
+		}
+	}
+	slices.Sort(names)
+	var out []audit.AuditChange
+	for _, k := range names {
+		if a, b := text(from[k]), text(to[k]); a != b {
+			out = append(out, audit.AuditChange{Field: k, From: a, To: b})
+		}
+	}
+	return out, nil
+}
+
+// fields are the settings' JSON fields; optional ones left out are absent.
+func fields(v HouseholdSettings) (map[string]json.RawMessage, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]json.RawMessage
+	return m, json.Unmarshal(b, &m)
+}
+
+// text is a JSON value as plain text: a string unquoted, absent as "", anything else as JSON.
+func text(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	return string(raw)
 }
 
 // checkKidDayEnds refuses a household day end earlier than any kid's override.

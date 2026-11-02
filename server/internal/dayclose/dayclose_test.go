@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/voidrot/chorecast/server/internal/assign"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -647,7 +648,7 @@ func TestArchivedKidsDaysStillClose(t *testing.T) {
 	inst := f.instance(c.ID, f.ann, "2026-11-04")
 
 	f.at("2026-11-04 14:00") // the 13:00 slot is due, so the horizon keeps it
-	if _, err := f.kids.Archive(t.Context(), strconv.FormatInt(f.ann, 10)); err != nil {
+	if _, err := f.kids.Archive(t.Context(), audit.System, strconv.FormatInt(f.ann, 10)); err != nil {
 		t.Fatal(err)
 	}
 	f.generate()

@@ -8,6 +8,19 @@ import (
 	"database/sql"
 )
 
+type AuditLog struct {
+	ID         int64         `json:"id"`
+	ActorKind  string        `json:"actor_kind"`
+	ActorID    sql.NullInt64 `json:"actor_id"`
+	Action     string        `json:"action"`
+	TargetKind string        `json:"target_kind"`
+	TargetID   sql.NullInt64 `json:"target_id"`
+	Summary    string        `json:"summary"`
+	Data       string        `json:"data"`
+	EventID    sql.NullInt64 `json:"event_id"`
+	CreatedAt  string        `json:"created_at"`
+}
+
 type Chore struct {
 	ID                  int64          `json:"id"`
 	Name                string         `json:"name"`

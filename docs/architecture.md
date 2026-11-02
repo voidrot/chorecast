@@ -303,7 +303,8 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   backoff, and a crash mid-dispatch can't duplicate deliveries.
 - Delivery is at-least-once; subscribers must be idempotent (use `Envelope.ID`). Subscribers are registered in
   `cmd/chorecast/background.go` with `bus.Subscribe`; the horizon generator subscribes to the calendar, chore and kid events, and the inbox
-  (`internal/inbox`) to the instance transitions, `instance.missed` and `points.entry_posted`. Dispatched
+  (`internal/inbox`) to the instance transitions, `instance.missed` and `points.entry_posted`, and the audit log
+  (`internal/audit/recorder`) to approvals, rejections, un-approvals, excuses and manual adjustments. Dispatched
   events are purged after 30 days by daily maintenance.
 
 ## Push notifications

@@ -189,6 +189,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The household's audit log, newest first (owner only)
+         * @description Who changed settings, approved, rejected, un-approved or excused chores, adjusted or reversed points, invited, promoted, demoted, removed or reset parents, paired or revoked devices, and archived or unarchived kids. `actorKind` is `parent` (with `actorId` and `actorName`), `system` (e.g. an auto-approval) or `cli` (`chorecast admin` on the server host). `summary` is the target's name when it happened and `details` holds the action's specifics; the server stores no display text. Filters combine; `from` and `to` are household-local days, both inclusive. Entries are purged after 365 days.
+         */
+        get: operations["listAuditLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/invite": {
         parameters: {
             query?: never;
@@ -1462,6 +1482,80 @@ export interface components {
         ApproveReviewQueueOutputBody: {
             results: components["schemas"]["ReviewQueueApprovalResult"][];
         };
+        AuditChange: {
+            /** @description The setting's name in the household settings API, e.g. dayEnd */
+            field: string;
+            from: string;
+            to: string;
+        };
+        AuditDetails: {
+            /**
+             * Format: int64
+             * @description points_*: the signed points posted
+             */
+            amount?: number;
+            /** @description settings_updated: each setting that changed */
+            changes?: components["schemas"]["AuditChange"][] | null;
+            /**
+             * Format: int64
+             * @description points_*: the kid; device_paired: the kid it belongs to (absent = a shared device)
+             */
+            kidId?: number;
+            /** @description chore_*: the assignee, or a shared chore's members */
+            kidIds?: number[] | null;
+            /** @description points_*: the note */
+            note?: string;
+            /** @description chore_rejected: the quick-pick reason */
+            reasonCode?: string;
+            /** @description chore_rejected: the parent's feedback */
+            reasonText?: string;
+            /**
+             * Format: int64
+             * @description points_reversed: the entry undone
+             */
+            reversesId?: number;
+            /**
+             * @description invite_*: the invite's role; parent_role_changed: the new role
+             * @enum {string}
+             */
+            role?: "parent" | "owner";
+        };
+        AuditEntry: {
+            /** @enum {string} */
+            action: "settings_updated" | "chore_approved" | "chore_rejected" | "chore_unapproved" | "chore_excused" | "points_adjusted" | "points_reversed" | "invite_created" | "invite_revoked" | "invite_accepted" | "parent_role_changed" | "parent_removed" | "parent_password_reset" | "parent_totp_disabled" | "device_paired" | "device_revoked" | "kid_archived" | "kid_unarchived";
+            /**
+             * Format: int64
+             * @description The parent who acted
+             */
+            actorId?: number;
+            /**
+             * @description parent = a signed-in parent; system = the server (e.g. an auto-approval); cli = an admin command on the server host
+             * @enum {string}
+             */
+            actorKind: "parent" | "system" | "cli";
+            /** @description The parent's name now */
+            actorName?: string;
+            /**
+             * Format: date-time
+             * @description When it happened
+             */
+            createdAt: string;
+            details: components["schemas"]["AuditDetails"];
+            /** Format: int64 */
+            id: number;
+            /** @description The target's name when it happened (chore, kid, parent or device) */
+            summary?: string;
+            /**
+             * Format: int64
+             * @description Absent for household settings
+             */
+            targetId?: number;
+            /**
+             * @description What targetId is
+             * @enum {string}
+             */
+            targetKind: "household" | "instance" | "points_entry" | "invite" | "parent" | "device" | "kid";
+        };
         BeginTOTPOutputBody: {
             /** @description otpauth:// URL to show as a QR code */
             otpauthUrl: string;
@@ -2244,6 +2338,11 @@ export interface components {
             n: number;
             /** @enum {string} */
             weekday: "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+        };
+        PageAuditEntry: {
+            items: components["schemas"]["AuditEntry"][];
+            /** @description Pass as cursor to fetch the next page. Absent on the last page. */
+            nextCursor?: string;
         };
         PagePointsEntry: {
             items: components["schemas"]["PointsEntry"][];
@@ -3142,6 +3241,77 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAuditLog: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from a previous page's nextCursor. Omit for the first page. */
+                cursor?: string;
+                /** @description Maximum number of items to return. */
+                limit?: number;
+                /** @description Only this kind of actor: parent, system or cli */
+                actorKind?: string;
+                /** @description Only this parent's actions */
+                actorId?: number;
+                /** @description Only this action, e.g. kid_archived */
+                action?: string;
+                /** @description First day (YYYY-MM-DD), household time */
+                from?: string;
+                /** @description Last day (YYYY-MM-DD), household time, inclusive */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageAuditEntry"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

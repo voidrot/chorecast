@@ -14,6 +14,7 @@ import (
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/assign"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -305,7 +306,7 @@ func TestTransitionInputsAreValidated(t *testing.T) {
 	wantValidation(t, "reassign to the same kid", err)
 	_, err = f.svc.Reassign(ctx, single, f.mom, f.mom)
 	wantValidation(t, "reassign to a parent", err)
-	if _, err := f.kids.Archive(ctx, fmt.Sprint(f.kim)); err != nil {
+	if _, err := f.kids.Archive(ctx, audit.System, fmt.Sprint(f.kim)); err != nil {
 		t.Fatal(err)
 	}
 	_, err = f.svc.Reassign(ctx, single, f.kim, f.mom)

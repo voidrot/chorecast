@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
+	"github.com/voidrot/chorecast/server/internal/audit/recorder"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/autoapprove"
 	"github.com/voidrot/chorecast/server/internal/backup"
@@ -51,6 +53,7 @@ func newBackground(store *db.DB, clk clock.Clock, files media.Storage, dataDir s
 	parentsSvc := parents.New(store, clk)
 	pairing := devices.New(store, clk)
 	inboxSvc := inbox.New(store, clk)
+	auditLog := audit.New(store)
 	runner.Register(kindMaintenance, func(ctx context.Context, _ jobs.Job) error {
 		now := clk.Now()
 		purgedJobs, err := runner.PurgeFinished(ctx, now.Add(-keepDoneJobs), now.Add(-keepFailedJobs))
@@ -81,9 +84,14 @@ func newBackground(store *db.DB, clk clock.Clock, files media.Storage, dataDir s
 		if err != nil {
 			return err
 		}
+		purgedAudit, err := auditLog.Purge(ctx, now.Add(-audit.Keep))
+		if err != nil {
+			return err
+		}
 		log.Info("maintenance", "purged_jobs", purgedJobs, "purged_tokens", purgedTokens,
 			"purged_idempotency_keys", purgedKeys, "purged_events", purgedEvents, "purged_invites", purgedInvites,
-			"purged_pairing_codes", purgedCodes, "purged_notifications", purgedNotifications)
+			"purged_pairing_codes", purgedCodes, "purged_notifications", purgedNotifications,
+			"purged_audit_entries", purgedAudit)
 		return nil
 	}, jobs.KindOptions{MaxAttempts: 3})
 	sched.Add(jobs.Every("maintenance", kindMaintenance, 24*time.Hour))
@@ -143,6 +151,10 @@ func newBackground(store *db.DB, clk clock.Clock, files media.Storage, dataDir s
 
 	// In-app inbox rows are written from the domain events above.
 	inboxSvc.Register(bus)
+
+	// Audit rows for the events that identify an audited action (approvals, rejections,
+	// un-approvals, excuses, adjustments); other actions write theirs in their own transaction.
+	recorder.New(store).Register(bus)
 
 	// Daily backups after the household day end, the newest few kept.
 	backup.NewScheduler(store, clk, dataDir, backups).Register(runner, sched, log)

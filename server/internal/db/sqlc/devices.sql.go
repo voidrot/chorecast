@@ -76,16 +76,24 @@ func (q *Queries) CreatePairingCode(ctx context.Context, arg CreatePairingCodePa
 	return i, err
 }
 
-const deleteDevice = `-- name: DeleteDevice :execrows
-DELETE FROM devices WHERE id = ?
+const deleteDevice = `-- name: DeleteDevice :one
+DELETE FROM devices WHERE id = ? RETURNING id, user_id, name, app_version, created_at, elevate_failures, elevate_locked_until
 `
 
-func (q *Queries) DeleteDevice(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteDevice, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+// No row (sql.ErrNoRows) when there is no such device.
+func (q *Queries) DeleteDevice(ctx context.Context, id int64) (Device, error) {
+	row := q.db.QueryRowContext(ctx, deleteDevice, id)
+	var i Device
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.AppVersion,
+		&i.CreatedAt,
+		&i.ElevateFailures,
+		&i.ElevateLockedUntil,
+	)
+	return i, err
 }
 
 const deleteDeviceSessions = `-- name: DeleteDeviceSessions :execrows

@@ -17,6 +17,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
@@ -105,12 +106,21 @@ func (s *Service) CreateInvite(ctx context.Context, by *auth.Principal, role str
 		return Invite{}, "", err
 	}
 	now := s.clock.Now()
-	row, err := s.db.CreateInvite(ctx, sqlc.CreateInviteParams{
-		TokenHash: auth.HashToken(token), Role: role, CreatedBy: sql.NullInt64{Int64: by.UserID, Valid: true},
-		CreatedAt: db.Timestamp(now), ExpiresAt: db.Timestamp(now.Add(InviteTTL)),
+	var row sqlc.Invite
+	err = s.inTx(ctx, func(q *sqlc.Queries) error {
+		if row, err = q.CreateInvite(ctx, sqlc.CreateInviteParams{
+			TokenHash: auth.HashToken(token), Role: role, CreatedBy: sql.NullInt64{Int64: by.UserID, Valid: true},
+			CreatedAt: db.Timestamp(now), ExpiresAt: db.Timestamp(now.Add(InviteTTL)),
+		}); err != nil {
+			return fmt.Errorf("create invite: %w", err)
+		}
+		return audit.Record(ctx, q, now, audit.Entry{
+			Actor: audit.Parent(by.UserID), Action: audit.ActionInviteCreated, TargetKind: audit.TargetInvite,
+			TargetID: row.ID, Details: audit.AuditDetails{Role: role},
+		})
 	})
 	if err != nil {
-		return Invite{}, "", fmt.Errorf("create invite: %w", err)
+		return Invite{}, "", err
 	}
 	return Invite{ID: row.ID, Role: row.Role, CreatedAt: now, ExpiresAt: now.Add(InviteTTL)}, token, nil
 }
@@ -129,15 +139,19 @@ func (s *Service) PendingInvites(ctx context.Context) ([]Invite, error) {
 	return out, nil
 }
 
-func (s *Service) RevokeInvite(ctx context.Context, id int64) error {
-	n, err := s.db.DeleteInvite(ctx, id)
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return apierr.New(http.StatusNotFound, apierr.CodeNotFound, "no such pending invite")
-	}
-	return nil
+func (s *Service) RevokeInvite(ctx context.Context, by audit.Actor, id int64) error {
+	return s.inTx(ctx, func(q *sqlc.Queries) error {
+		role, err := q.DeleteInvite(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return apierr.New(http.StatusNotFound, apierr.CodeNotFound, "no such pending invite")
+		} else if err != nil {
+			return err
+		}
+		return audit.Record(ctx, q, s.clock.Now(), audit.Entry{
+			Actor: by, Action: audit.ActionInviteRevoked, TargetKind: audit.TargetInvite, TargetID: id,
+			Details: audit.AuditDetails{Role: role},
+		})
+	})
 }
 
 // InviteInfo is what the invite page shows before accepting.
@@ -249,6 +263,12 @@ func (s *Service) Accept(ctx context.Context, token string, np NewParent) (int64
 	} else if n == 0 {
 		return 0, "", errInvalidInvite
 	}
+	if err := audit.Record(ctx, q, now, audit.Entry{
+		Actor: audit.Parent(u.ID), Action: audit.ActionInviteAccepted, TargetKind: audit.TargetParent,
+		TargetID: u.ID, Summary: u.DisplayName, Details: audit.AuditDetails{Role: inv.Role},
+	}); err != nil {
+		return 0, "", err
+	}
 	session, _, err := auth.NewStore(q, s.clock).Issue(ctx, auth.IssueParams{
 		Kind: auth.TokenWebSession, UserID: u.ID, TTL: auth.WebSessionTTL, Label: "Invite",
 	})
@@ -261,8 +281,8 @@ func (s *Service) Accept(ctx context.Context, token string, np NewParent) (int64
 	return u.ID, session, nil
 }
 
-// SetOwner promotes or demotes a parent, keeping at least one owner.
-func (s *Service) SetOwner(ctx context.Context, id int64, owner bool) error {
+// SetOwner promotes or demotes a parent, keeping at least one owner. A role that changes is audited.
+func (s *Service) SetOwner(ctx context.Context, by audit.Actor, id int64, owner bool) error {
 	return s.inTx(ctx, func(q *sqlc.Queries) error {
 		u, err := q.GetParent(ctx, id)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -276,10 +296,24 @@ func (s *Service) SetOwner(ctx context.Context, id int64, owner bool) error {
 			}
 		}
 		var v int64
+		role := "parent"
 		if owner {
-			v = 1
+			v, role = 1, "owner"
 		}
-		return q.SetOwner(ctx, sqlc.SetOwnerParams{IsOwner: v, ID: id})
+		if v == u.IsOwner {
+			return nil
+		}
+		if err := q.SetOwner(ctx, sqlc.SetOwnerParams{IsOwner: v, ID: id}); err != nil {
+			return err
+		}
+		return s.record(ctx, q, by, audit.ActionParentRoleChanged, u, audit.AuditDetails{Role: role})
+	})
+}
+
+// record audits action on parent u in the action's transaction.
+func (s *Service) record(ctx context.Context, q *sqlc.Queries, by audit.Actor, action string, u sqlc.User, d audit.AuditDetails) error {
+	return audit.Record(ctx, q, s.clock.Now(), audit.Entry{
+		Actor: by, Action: action, TargetKind: audit.TargetParent, TargetID: u.ID, Summary: u.DisplayName, Details: d,
 	})
 }
 
@@ -296,7 +330,7 @@ func keepAnOwner(ctx context.Context, q *sqlc.Queries) error {
 
 // Remove removes a parent: their sessions, app tokens, credentials and username go, their row
 // (and name on past entries) stays. The last owner can't be removed.
-func (s *Service) Remove(ctx context.Context, id int64) error {
+func (s *Service) Remove(ctx context.Context, by audit.Actor, id int64) error {
 	return s.inTx(ctx, func(q *sqlc.Queries) error {
 		u, err := q.GetParent(ctx, id)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -315,13 +349,16 @@ func (s *Service) Remove(ctx context.Context, id int64) error {
 		if err := q.DeleteRecoveryCodes(ctx, id); err != nil {
 			return err
 		}
-		return q.RemoveParent(ctx, sqlc.RemoveParentParams{RemovedAt: sql.NullString{String: db.Timestamp(s.clock.Now()), Valid: true}, ID: id})
+		if err := q.RemoveParent(ctx, sqlc.RemoveParentParams{RemovedAt: sql.NullString{String: db.Timestamp(s.clock.Now()), Valid: true}, ID: id}); err != nil {
+			return err
+		}
+		return s.record(ctx, q, by, audit.ActionParentRemoved, u, audit.AuditDetails{})
 	})
 }
 
 // ResetPassword gives a parent a new random password (returned once, to pass on) and signs them
 // out everywhere. 2FA stays as it was.
-func (s *Service) ResetPassword(ctx context.Context, id int64) (string, error) {
+func (s *Service) ResetPassword(ctx context.Context, by audit.Actor, id int64) (string, error) {
 	codes, err := auth.NewRecoveryCodes(1) // same alphabet: easy to read out or type
 	if err != nil {
 		return "", err
@@ -332,7 +369,8 @@ func (s *Service) ResetPassword(ctx context.Context, id int64) (string, error) {
 		return "", err
 	}
 	err = s.inTx(ctx, func(q *sqlc.Queries) error {
-		if _, err := q.GetParent(ctx, id); errors.Is(err, sql.ErrNoRows) {
+		u, err := q.GetParent(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
 			return errNotFound
 		} else if err != nil {
 			return err
@@ -340,15 +378,19 @@ func (s *Service) ResetPassword(ctx context.Context, id int64) (string, error) {
 		if err := q.SetPasswordHash(ctx, sqlc.SetPasswordHashParams{PasswordHash: sql.NullString{String: hash, Valid: true}, ID: id}); err != nil {
 			return err
 		}
-		return q.DeleteTokensForUser(ctx, sql.NullInt64{Int64: id, Valid: true})
+		if err := q.DeleteTokensForUser(ctx, sql.NullInt64{Int64: id, Valid: true}); err != nil {
+			return err
+		}
+		return s.record(ctx, q, by, audit.ActionParentPasswordReset, u, audit.AuditDetails{})
 	})
 	return password, err
 }
 
 // DisableTOTP turns off a parent's two-factor sign-in and deletes their recovery codes.
-func (s *Service) DisableTOTP(ctx context.Context, id int64) error {
+func (s *Service) DisableTOTP(ctx context.Context, by audit.Actor, id int64) error {
 	return s.inTx(ctx, func(q *sqlc.Queries) error {
-		if _, err := q.GetParent(ctx, id); errors.Is(err, sql.ErrNoRows) {
+		u, err := q.GetParent(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
 			return errNotFound
 		} else if err != nil {
 			return err
@@ -356,7 +398,10 @@ func (s *Service) DisableTOTP(ctx context.Context, id int64) error {
 		if err := q.DisableTOTP(ctx, id); err != nil {
 			return err
 		}
-		return q.DeleteRecoveryCodes(ctx, id)
+		if err := q.DeleteRecoveryCodes(ctx, id); err != nil {
+			return err
+		}
+		return s.record(ctx, q, by, audit.ActionParentTOTPDisabled, u, audit.AuditDetails{})
 	})
 }
 

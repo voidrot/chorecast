@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -87,14 +88,14 @@ func TestHorizonTriggers(t *testing.T) {
 	}
 
 	// A later day end: in Berlin it's 22:00, so Wednesday is over there.
-	hs := household.New(store, bus)
+	hs := household.New(store, clk, bus)
 	settings, err := hs.Get(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	clk.Set(time.Date(2026, 11, 4, 21, 0, 0, 0, time.UTC))
 	settings.Timezone = "Europe/Berlin"
-	if _, err := hs.Update(t.Context(), settings); err != nil {
+	if _, err := hs.Update(t.Context(), audit.System, settings); err != nil {
 		t.Fatal(err)
 	}
 	settle()

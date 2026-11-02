@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
@@ -65,7 +66,7 @@ func runAdmin(ctx context.Context, svc *parents.Service, cmd, username string, o
 	}
 	switch cmd {
 	case "reset-password":
-		pw, err := svc.ResetPassword(ctx, u.ID)
+		pw, err := svc.ResetPassword(ctx, audit.CLI, u.ID)
 		if err != nil {
 			return err
 		}
@@ -73,7 +74,7 @@ func runAdmin(ctx context.Context, svc *parents.Service, cmd, username string, o
 			u.DisplayName, u.Username.String, pw)
 		return err
 	case "disable-2fa":
-		if err := svc.DisableTOTP(ctx, u.ID); err != nil {
+		if err := svc.DisableTOTP(ctx, audit.CLI, u.ID); err != nil {
 			return err
 		}
 		_, err = fmt.Fprintf(out, "Two-factor sign-in is off for %s (%s). Their recovery codes were deleted.\n",

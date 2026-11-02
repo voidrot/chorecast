@@ -11,6 +11,7 @@ import (
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/assign"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -186,7 +187,7 @@ func TestDisabledChoresAndArchivedKidsAreSkipped(t *testing.T) {
 	f.chore(chores.ChoreInput{Name: "Unscheduled"})
 	f.generate()
 
-	if _, err := f.kids.Archive(t.Context(), "ada"); err != nil {
+	if _, err := f.kids.Archive(t.Context(), audit.System, "ada"); err != nil {
 		t.Fatal(err)
 	}
 	f.generate()
@@ -272,13 +273,13 @@ func TestTimezoneChangeRegeneratesDueTimes(t *testing.T) {
 	f.generate()
 	before := byKey(f.list())
 
-	hs := household.New(f.db, nil)
+	hs := household.New(f.db, f.clock, nil)
 	settings, err := hs.Get(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	settings.Timezone = "Europe/Berlin"
-	if _, err := hs.Update(t.Context(), settings); err != nil {
+	if _, err := hs.Update(t.Context(), audit.System, settings); err != nil {
 		t.Fatal(err)
 	}
 	f.generate()

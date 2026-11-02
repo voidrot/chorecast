@@ -453,7 +453,31 @@ CREATE INDEX notifications_by_recipient ON notifications (recipient_id, id);
 CREATE INDEX notifications_unread ON notifications (recipient_id) WHERE read_at IS NULL;
 CREATE INDEX notifications_by_age ON notifications (created_at);
 
+-- ==== Audit log (#37) ====
+-- Who did what (internal/audit), owner-visible and purged after 365 days. Rows come from domain events
+-- (approvals, rejections, adjustments; event_id set) or are written in the same transaction as the
+-- action (settings, parents, invites, devices, archive; event_id NULL). A redelivered event hits the
+-- unique index and writes nothing; created_at (the event's time) is in it because event ids restart if
+-- maintenance ever empties the events table. data holds typed details (JSON), never secrets; summary is
+-- the target's name when it happened.
+CREATE TABLE audit_log (
+    id          INTEGER PRIMARY KEY,
+    actor_kind  TEXT    NOT NULL CHECK (actor_kind IN ('parent', 'system', 'cli')),
+    actor_id    INTEGER REFERENCES users (id), -- the parent; users rows are never deleted
+    action      TEXT    NOT NULL,
+    target_kind TEXT    NOT NULL,
+    target_id   INTEGER,
+    summary     TEXT    NOT NULL DEFAULT '',
+    data        TEXT    NOT NULL DEFAULT '{}', -- JSON
+    event_id    INTEGER,
+    created_at  TEXT    NOT NULL,
+    CHECK ((actor_kind = 'parent') = (actor_id IS NOT NULL))
+);
+CREATE UNIQUE INDEX audit_log_once ON audit_log (event_id, created_at, action, target_id) WHERE event_id IS NOT NULL;
+CREATE INDEX audit_log_by_age ON audit_log (created_at);
+
 -- +goose Down
+DROP TABLE audit_log;
 DROP TABLE notifications;
 DROP TABLE chore_instance_evidence_photos;
 DROP TABLE chore_instance_evidence;

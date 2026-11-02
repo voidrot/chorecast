@@ -40,6 +40,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
@@ -508,7 +509,9 @@ func (s *Service) Adjust(ctx context.Context, kidID, amount int64, note string, 
 	return out, err
 }
 
-// ReverseKidEntry reverses one of the kid's entries; an entry of another kid is not found.
+// ReverseKidEntry reverses one of the kid's entries; an entry of another kid is not found. The
+// reversal is audited in the same transaction: its EntryPosted looks like the reversals chore
+// transitions post, so the audit recorder can't tell them apart.
 func (s *Service) ReverseKidEntry(ctx context.Context, kidID, entryID int64, note string, by int64) (PointsEntry, error) {
 	var out PointsEntry
 	err := s.bus.InTx(ctx, func(tx *events.Tx) error {
@@ -518,8 +521,18 @@ func (s *Service) ReverseKidEntry(ctx context.Context, kidID, entryID int64, not
 		} else if err != nil {
 			return err
 		}
-		out, err = Reverse(ctx, tx, s.clock, entryID, note, by)
-		return err
+		if out, err = Reverse(ctx, tx, s.clock, entryID, note, by); err != nil {
+			return err
+		}
+		kid, err := tx.Q.GetKidByID(ctx, kidID)
+		if err != nil {
+			return fmt.Errorf("load kid: %w", err)
+		}
+		return audit.Record(ctx, tx.Q, s.clock.Now(), audit.Entry{
+			Actor: audit.UserOrSystem(by), Action: audit.ActionPointsReversed, TargetKind: audit.TargetPointsEntry,
+			TargetID: out.ID, Summary: kid.DisplayName,
+			Details: audit.AuditDetails{KidID: kidID, Amount: &out.Amount, Note: out.Note, ReversesID: entryID},
+		})
 	})
 	return out, err
 }
