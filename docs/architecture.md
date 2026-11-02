@@ -153,7 +153,8 @@ Implemented in `internal/auth`:
   per-key grants exist post-v1).
 - **Data scoping** is separate from scopes: a handler that serves one kid's data must call `Principal.CanAccessKid(id)`.
   Parents and displays cover every kid; a kid only themselves; shared devices and API keys none. The points
-  endpoints (`pointsKid` in `internal/api/points.go`) apply it; each new kid-scoped endpoint must add the check.
+  endpoints (`pointsKid` in `internal/api/points.go`) and `GET /instances` apply it; each new kid-scoped endpoint
+  must add the check.
 - Handlers read the caller with `auth.PrincipalFrom(ctx)`.
 - Passwords and PINs use argon2id (OWASP minimum: 19 MiB, t=2, p=1) in PHC format; `VerifySecret` reports when a
   stored hash should be upgraded.
@@ -279,13 +280,14 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   are durable even if the process dies a moment later.
 - **Inside `InTx`, use only `tx.Q`.** SQLite runs on a single connection, so any other query blocks until the
   transaction ends.
-- Events are typed structs with a stable `EventType()` (today `household.calendar_changed` and `points.entry_posted`); subscribers decode with
+- Events are typed structs with a stable `EventType()` (today `household.calendar_changed`, `points.entry_posted`,
+  `chore.changed` and `kid.changed`); subscribers decode with
   `events.Decode[T]`.
 - The dispatcher (woken on commit, polling every second) turns each event into one job per subscriber (key
   `event:<id>:<subscriber>`) and marks it dispatched. Each subscriber therefore retries independently with job
   backoff, and a crash mid-dispatch can't duplicate deliveries.
 - Delivery is at-least-once; subscribers must be idempotent (use `Envelope.ID`). Subscribers are registered in
-  `cmd/chorecast/background.go` with `bus.Subscribe`. None exist yet: nothing subscribes to an event today. Dispatched
+  `cmd/chorecast/background.go` with `bus.Subscribe`; today the horizon generator subscribes to the calendar, chore and kid events. Dispatched
   events are purged after 30 days by daily maintenance.
 
 ## Push notifications

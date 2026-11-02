@@ -23,6 +23,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/jobs"
 	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/version"
 	"github.com/voidrot/chorecast/server/internal/webui"
@@ -75,6 +76,10 @@ func serve() error {
 	clk := clock.Real{}
 	runner, sched, bus := newBackground(store, clk, slog.Default())
 	if err := runner.Recover(ctx); err != nil {
+		return err
+	}
+	// Bring the horizon up to date once the runner starts (the server may have been off).
+	if _, _, err := runner.Enqueue(ctx, kindHorizon, struct{}{}, jobs.EnqueueOptions{}); err != nil {
 		return err
 	}
 	// Background work gets its own context so it also stops when the HTTP server fails.

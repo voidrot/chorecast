@@ -20,6 +20,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/devices"
 	"github.com/voidrot/chorecast/server/internal/events"
+	"github.com/voidrot/chorecast/server/internal/horizon"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/kids"
@@ -81,9 +82,9 @@ func New(r chi.Router, deps Deps) huma.API {
 
 	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock),
 		sso: sso.New(deps.Config, deps.DB, deps.Clock), parents: parents.New(deps.DB, deps.Clock),
-		kids: kids.NewService(deps.DB, deps.Clock), household: household.New(deps.DB, deps.Bus),
-		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock),
-		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock)}
+		kids: kids.NewService(deps.DB, deps.Clock, deps.Bus), household: household.New(deps.DB, deps.Bus),
+		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock, deps.Bus),
+		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock), horizon: horizon.New(deps.DB, deps.Clock)}
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getHealth",
 		Method:      "GET",
@@ -109,6 +110,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerDevices(hapi, h)
 	registerChores(hapi, h)
 	registerPoints(hapi, h)
+	registerInstances(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMe",
@@ -137,6 +139,7 @@ type handlers struct {
 	devices   *devices.Service
 	chores    *chores.Service
 	ledger    *ledger.Service
+	horizon   *horizon.Generator
 }
 
 type HealthOutput struct {

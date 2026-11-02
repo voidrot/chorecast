@@ -372,11 +372,14 @@ export interface paths {
         get: operations["getChore"];
         /**
          * Edit a chore
-         * @description Replaces the definition; optional fields left out are cleared. Upcoming untouched instances are regenerated once scheduling exists.
+         * @description Replaces the definition; optional fields left out are cleared. Upcoming untouched instances are regenerated.
          */
         put: operations["updateChore"];
         post?: never;
-        /** Delete a chore */
+        /**
+         * Delete a chore
+         * @description Deletes the chore and its upcoming instances. A chore with history (an instance that's done, missed, reassigned or already due) can't be deleted: disable it instead (409 `chore_has_history`).
+         */
         delete: operations["deleteChore"];
         options?: never;
         head?: never;
@@ -624,6 +627,26 @@ export interface paths {
          * @description Replaces all settings. Changing the timezone, day end or week start regenerates untouched upcoming chores. The day end can't be earlier than a kid's day-end override.
          */
         put: operations["updateHousehold"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chore instances by date
+         * @description Instances on [from, to] (default today to today+7, at most 62 days). Kids see only their own (including shared ones they're a member of); parents see every kid's, or one kid's with `kidId`. Days after today are `planned`: a forecast that may still change.
+         */
+        get: operations["listChoreInstances"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1221,6 +1244,47 @@ export interface components {
             slots?: string[] | null;
             /** @description Checklist steps shown to the kid */
             steps?: string[] | null;
+        };
+        ChoreInstance: {
+            /** @description Picked by the fair auto-pick */
+            autoAssigned?: boolean;
+            /** Format: int64 */
+            choreId: number;
+            choreName: string;
+            /**
+             * Format: date
+             * @description The day it belongs to (flexible: the week's first active day)
+             */
+            date: string;
+            /** Format: date-time */
+            dueAt: string;
+            /** @description One of a flexible chore's completions for the week */
+            flexible?: boolean;
+            /** @description Shared: the members who may complete it */
+            groupKidIds?: number[] | null;
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description The assignee; absent for a shared instance
+             */
+            kidId?: number;
+            /** @description A parent or a swap changed the assignee */
+            manuallyReassigned?: boolean;
+            /** @description Dated after today: a forecast that may still change */
+            planned: boolean;
+            /**
+             * Format: int64
+             * @description Flexible: which of the week's completions this is (0-based)
+             */
+            seq?: number;
+            /** @description HH:MM due time; absent = due at day close (or week close when flexible) */
+            slot?: string;
+            /** @enum {string} */
+            status: "open" | "submitted" | "approved" | "missed" | "excused";
+        };
+        ChoreInstancesOutputBody: {
+            items: components["schemas"]["ChoreInstance"][];
         };
         ChoresOutputBody: {
             items: components["schemas"]["Chore"][];
@@ -3070,6 +3134,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /** @description Unprocessable Entity */
             422: {
                 headers: {
@@ -3838,6 +3911,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdSettings"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listChoreInstances: {
+        parameters: {
+            query?: {
+                /** @description Only this kid's instances; kids default to themselves */
+                kidId?: number;
+                /** @description First day (YYYY-MM-DD); default today */
+                from?: string;
+                /** @description Last day (YYYY-MM-DD); default today+7 */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChoreInstancesOutputBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Unprocessable Entity */
