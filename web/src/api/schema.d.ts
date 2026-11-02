@@ -1586,11 +1586,11 @@ export interface components {
             details: components["schemas"]["AuditDetails"];
             /** Format: int64 */
             id: number;
-            /** @description The target's name when it happened (chore, kid, parent or device) */
+            /** @description The target's name when it happened (chore, kid, parent or device) or the archive file name (backups) */
             summary?: string;
             /**
              * Format: int64
-             * @description Absent for household settings
+             * @description Absent for household settings and backups
              */
             targetId?: number;
             /**

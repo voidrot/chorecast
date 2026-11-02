@@ -247,11 +247,11 @@
             "type": "integer"
           },
           "summary": {
-            "description": "The target's name when it happened (chore, kid, parent or device)",
+            "description": "The target's name when it happened (chore, kid, parent or device) or the archive file name (backups)",
             "type": "string"
           },
           "targetId": {
-            "description": "Absent for household settings",
+            "description": "Absent for household settings and backups",
             "format": "int64",
             "type": "integer"
           },

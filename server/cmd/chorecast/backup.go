@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/voidrot/chorecast/server/internal/audit"
@@ -56,24 +57,14 @@ func backupCmd(ctx context.Context, args []string, dataDir string, clk clock.Clo
 	if err != nil {
 		return err
 	}
-	// After the snapshot, so the row is not in the archive. A normal connection of its own is safe
-	// beside a running server: the database is in WAL mode with a busy timeout, and SQLite allows
-	// writers from several processes.
-	if err := recordBackup(ctx, dataDir, res); err != nil {
-		return fmt.Errorf("wrote %s, but recording it in the audit log failed: %w", res.Path, err)
+	// After the snapshot, so the row is not in the archive. The archive is good either way, so a
+	// failure here is a warning, not a failed command (cron would report a good backup as failed).
+	if err := backup.RecordCreatedFile(ctx, dataDir, res.CreatedAt, audit.CLI, res); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: wrote %s but did not record it in the audit log: %v\n", res.Path, err)
 	}
 	_, err = fmt.Fprintf(out, "Wrote %s (%d bytes): schema %d, %d tables, %d media files (%d bytes). The snapshot took %s.\n",
 		res.Path, res.Size, res.SchemaVersion, len(res.Tables), res.MediaFiles, res.MediaBytes, res.Snapshot)
 	return err
-}
-
-func recordBackup(ctx context.Context, dataDir string, res backup.Result) error {
-	store, err := db.Open(ctx, dataDir)
-	if err != nil {
-		return err
-	}
-	recErr := backup.RecordCreated(ctx, store.Queries, res.CreatedAt, audit.CLI, res.Path, res.Size, &res.MediaFiles)
-	return errors.Join(recErr, store.Close())
 }
 
 // blockRestore is what the commands that work beside a running server (admin, backup) take

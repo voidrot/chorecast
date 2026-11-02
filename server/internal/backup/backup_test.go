@@ -713,6 +713,19 @@ func writeFile(t *testing.T, b []byte) string {
 	return p
 }
 
+func TestRestoreNeedsAClock(t *testing.T) {
+	clk := clock.NewFake(start)
+	src, _ := newDataDir(t, clk)
+	out := writeBackup(t, src, clk)
+	target := t.TempDir()
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); err == nil {
+		t.Fatal("restore without a clock succeeded")
+	}
+	if entries, _ := os.ReadDir(target); len(entries) != 0 {
+		t.Errorf("a refused restore touched the data dir: %v", entries)
+	}
+}
+
 func backupRows(t *testing.T, store *db.DB) []audit.AuditEntry {
 	t.Helper()
 	page, err := audit.New(store).List(t.Context(), audit.Filter{Action: audit.ActionBackupCreated}, paging.Params{})

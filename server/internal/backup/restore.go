@@ -54,7 +54,7 @@ type RestoreOptions struct {
 	// MaxBytes caps what the restore extracts in total. Zero means the free space on the data
 	// dir's disk minus a 256 MiB margin.
 	MaxBytes int64
-	// Clock dates the restore_completed audit row.
+	// Clock dates the restore_completed audit row. Required.
 	Clock clock.Clock
 }
 
@@ -74,6 +74,9 @@ type RestoreOptions struct {
 // undone; if undoing fails too, the staging dir and the marker are kept and the error names where
 // the old data is. Backups in dataDir/backups are never touched.
 func Restore(ctx context.Context, archive, dataDir string, opts RestoreOptions) (Manifest, error) {
+	if opts.Clock == nil {
+		return Manifest{}, errors.New("backup: restore needs a clock")
+	}
 	lock, err := db.LockDataDir(dataDir)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("%w: a server or another restore is using %s; stop it first", err, dataDir)
@@ -123,12 +126,19 @@ func Restore(ctx context.Context, archive, dataDir string, opts RestoreOptions) 
 		return Manifest{}, err
 	}
 	// Migrate in staging: a migration failure must not leave a half-upgraded database in place.
+	// The restore's audit row goes in here too, so it moves in with the data, and a failed insert
+	// leaves the data dir untouched.
 	store, err := db.Open(ctx, restored)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("backup: migrate restored database: %w", err)
 	}
-	if err := store.Close(); err != nil {
-		return Manifest{}, err
+	forced := opts.Force
+	recErr := audit.Record(ctx, store.Queries, opts.Clock.Now(), audit.Entry{
+		Actor: audit.CLI, Action: audit.ActionRestoreCompleted, TargetKind: audit.TargetBackup, Summary: filepath.Base(archive),
+		Details: audit.AuditDetails{AppVersion: m.AppVersion, SchemaVer: m.SchemaVersion, Forced: &forced},
+	})
+	if err := errors.Join(recErr, store.Close()); err != nil {
+		return Manifest{}, fmt.Errorf("backup: prepare restored database: %w", err)
 	}
 
 	old := filepath.Join(stage, "old")
@@ -149,24 +159,7 @@ func Restore(ctx context.Context, archive, dataDir string, opts RestoreOptions) 
 	if err != nil {
 		return Manifest{}, err // undone: dataDir is as it was
 	}
-	// The restored database is in place and the data dir still locked: record the restore in it.
-	if err := recordRestored(ctx, dataDir, archive, m, opts); err != nil {
-		return m, fmt.Errorf("backup: restored, but recording it in the audit log failed: %w", err)
-	}
 	return m, nil
-}
-
-func recordRestored(ctx context.Context, dataDir, archive string, m Manifest, opts RestoreOptions) error {
-	store, err := db.Open(ctx, dataDir)
-	if err != nil {
-		return err
-	}
-	forced := opts.Force
-	recErr := audit.Record(ctx, store.Queries, opts.Clock.Now(), audit.Entry{
-		Actor: audit.CLI, Action: audit.ActionRestoreCompleted, TargetKind: audit.TargetBackup, Summary: filepath.Base(archive),
-		Details: audit.AuditDetails{AppVersion: m.AppVersion, SchemaVer: m.SchemaVersion, Forced: &forced},
-	})
-	return errors.Join(recErr, store.Close())
 }
 
 // dataNames are what a restore replaces in the data dir. The WAL files go with the database: a

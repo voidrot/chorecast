@@ -235,9 +235,9 @@ Built (#121): backups and restores. `backup_created` (target kind `backup`, summ
 size and media count) is written by the scheduled job (actor `system`) and by `chorecast backup` (actor `cli`) after
 the snapshot, so the row is not in its own archive. A scheduled backup is recorded once per file name (a unique
 index), so a retried job adds nothing, and a retry that finds the archive but no row records it with the size only.
-The CLI writes through its own connection, which is safe beside a running server (WAL, 5 s busy timeout).
+The CLI writes through a read-write connection of its own that does not migrate (WAL, 5 s busy timeout), so it is safe beside a running server; if the schema is not the binary's latest, or the write fails, it warns on stderr and still exits 0, since the archive is good.
 `restore_completed` (actor `cli`; details the manifest's app and schema versions and whether `--force` was used) is
-written into the restored database after the swap, beside the rows that came with the archive.
+inserted into the staged database before the swap, so it moves in atomically with the data (a failed insert leaves the data dir untouched), beside the rows that came with the archive.
 
 ## i18n
 

@@ -142,7 +142,7 @@ type Entry struct {
 	Actor      Actor
 	Action     string
 	TargetKind string
-	TargetID   int64 // 0 = none (household settings)
+	TargetID   int64 // 0 = none (household settings, backups)
 	Summary    string
 	Details    AuditDetails
 }
@@ -182,8 +182,8 @@ type AuditEntry struct {
 	ActorName  string       `json:"actorName,omitempty" doc:"The parent's name now"`
 	Action     string       `json:"action" enum:"settings_updated,chore_approved,chore_rejected,chore_unapproved,chore_excused,points_adjusted,points_reversed,invite_created,invite_revoked,invite_accepted,parent_role_changed,parent_removed,parent_password_reset,parent_totp_disabled,device_paired,device_revoked,kid_archived,kid_unarchived,backup_created,restore_completed"`
 	TargetKind string       `json:"targetKind" enum:"household,instance,points_entry,invite,parent,device,kid,backup" doc:"What targetId is"`
-	TargetID   int64        `json:"targetId,omitempty" doc:"Absent for household settings"`
-	Summary    string       `json:"summary,omitempty" doc:"The target's name when it happened (chore, kid, parent or device)"`
+	TargetID   int64        `json:"targetId,omitempty" doc:"Absent for household settings and backups"`
+	Summary    string       `json:"summary,omitempty" doc:"The target's name when it happened (chore, kid, parent or device) or the archive file name (backups)"`
 	Details    AuditDetails `json:"details"`
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -76,7 +77,7 @@ func (s *Scheduler) Run(ctx context.Context, at time.Time, log *slog.Logger) err
 		if statErr != nil {
 			return statErr
 		}
-		if err := RecordCreated(ctx, s.db.Queries, s.clock.Now(), audit.System, out, info.Size(), nil); err != nil {
+		if err := RecordCreated(ctx, s.db.Queries, at, audit.System, out, info.Size(), nil); err != nil {
 			return err
 		}
 	case err != nil:
@@ -124,4 +125,32 @@ func RecordCreated(ctx context.Context, q *sqlc.Queries, at time.Time, actor aud
 		Actor: actor, Action: audit.ActionBackupCreated, TargetKind: audit.TargetBackup, Summary: filepath.Base(path),
 		Details: audit.AuditDetails{Bytes: size, MediaFiles: mediaFiles},
 	})
+}
+
+// ErrSchemaBehind means the database is not at this binary's schema, so a row cannot be written
+// without migrating it.
+var ErrSchemaBehind = errors.New("backup: the database is not at this binary's schema version")
+
+// RecordCreatedFile writes RecordCreated's row through a read-write connection of its own that
+// does not migrate, so the backup command never changes the schema of a database it only copied.
+// The database is in WAL mode, so this is safe beside a running server. It returns
+// ErrSchemaBehind, writing nothing, when the schema is not this binary's latest.
+func RecordCreatedFile(ctx context.Context, dataDir string, at time.Time, actor audit.Actor, res Result) error {
+	conn, err := openFile(filepath.Join(dataDir, db.FileName), "rw")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	have, err := db.SchemaVersion(ctx, conn)
+	if err != nil {
+		return err
+	}
+	latest, err := db.LatestSchemaVersion()
+	if err != nil {
+		return err
+	}
+	if have != latest {
+		return fmt.Errorf("%w: schema %d, binary %d", ErrSchemaBehind, have, latest)
+	}
+	return RecordCreated(ctx, sqlc.New(conn), at, actor, res.Path, res.Size, &res.MediaFiles)
 }
