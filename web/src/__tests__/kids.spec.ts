@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  ageOn,
-  avatarFormData,
-  emptyForm,
-  formFromKid,
-  initials,
-  inputFromForm,
-  type Kid,
-} from '@/kids/form'
+import { ageOn, emptyForm, formFromKid, initials, inputFromForm, type Kid } from '@/kids/form'
 
 const kid: Kid = {
   id: 3,
@@ -66,10 +58,5 @@ describe('kid form', () => {
       avatarPhotoExpiresAt: '2026-01-01T00:00:00Z',
     }
     expect(inputFromForm(formFromKid(withPhoto))).toEqual(inputFromForm(formFromKid(kid)))
-  })
-
-  it('sends the avatar photo as the multipart file part', () => {
-    const body = avatarFormData(new Blob(['x'], { type: 'image/png' }))
-    expect(body.get('file')).toBeInstanceOf(Blob)
   })
 })

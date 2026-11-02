@@ -2220,6 +2220,10 @@ export interface components {
         };
         KidProfile: {
             avatar?: string;
+            /** Format: date-time */
+            avatarPhotoExpiresAt?: string;
+            /** Format: uri */
+            avatarPhotoUrl?: string;
             color: string;
             displayName: string;
             /** Format: int64 */

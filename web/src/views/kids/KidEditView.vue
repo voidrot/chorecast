@@ -21,6 +21,7 @@ import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
 import { avatarIds } from '@/avatars'
 import KidAvatar from '@/components/KidAvatar.vue'
+import { earliestExpiry, useLinkRefresh } from '@/composables/useLinkRefresh'
 import {
   avatarFormData,
   emptyForm,
@@ -132,6 +133,28 @@ async function removePhoto() {
   )
 }
 
+/** Takes only the photo link from a fresh kid, keeping the form's unsaved edits. */
+function applyPhoto(fresh: Kid) {
+  if (!kid.value) return
+  kid.value = {
+    ...kid.value,
+    avatarPhotoUrl: fresh.avatarPhotoUrl,
+    avatarPhotoExpiresAt: fresh.avatarPhotoExpiresAt,
+  }
+}
+
+// The photo link lasts minutes: refetch the kid before it lapses, or when the tab regains focus.
+useLinkRefresh(
+  computed(() => earliestExpiry([kid.value?.avatarPhotoExpiresAt])),
+  async () => {
+    if (!kid.value) return
+    const { data } = await api.GET('/kids/{kid}', {
+      params: { path: { kid: String(kid.value.id) } },
+    })
+    if (data) applyPhoto(data)
+  },
+)
+
 /** Runs a photo change; it saves at once, apart from the form's Save button. */
 async function changePhoto(
   run: () => Promise<{
@@ -149,12 +172,7 @@ async function changePhoto(
       error.value = ApiError.fromProblem(res.response.status, res.error)
       return
     }
-    // Only the photo changed: keep the form's unsaved edits.
-    kid.value = {
-      ...kid.value,
-      avatarPhotoUrl: res.data.avatarPhotoUrl,
-      avatarPhotoExpiresAt: res.data.avatarPhotoExpiresAt,
-    }
+    applyPhoto(res.data)
     message.success(t(done))
   } catch (e) {
     error.value = ApiError.network(e)

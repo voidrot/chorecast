@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { NAlert, NButton, NCard, NSpin, NSwitch, NTag } from 'naive-ui'
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
 import KidAvatar from '@/components/KidAvatar.vue'
 import { useAsync } from '@/composables/useAsync'
+import { earliestExpiry, useLinkRefresh } from '@/composables/useLinkRefresh'
 import { ageOn } from '@/kids/form'
 import { todayISO } from '@/setup/wizard'
 
@@ -22,6 +23,10 @@ const kids = useAsync(async () => {
 })
 onMounted(() => kids.run())
 watch(showArchived, () => kids.run())
+useLinkRefresh(
+  computed(() => earliestExpiry((kids.data.value ?? []).map((k) => k.avatarPhotoExpiresAt))),
+  () => kids.run(),
+)
 </script>
 
 <template>
