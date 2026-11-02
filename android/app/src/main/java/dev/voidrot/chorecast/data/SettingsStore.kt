@@ -20,7 +20,13 @@ class SettingsStore(private val prefs: SharedPreferences) {
         get() = prefs.getString(KEY_SERVER_URL, null)?.let { (ServerUrl.parse(it) as? Result.Ok)?.value }
         set(value) = prefs.edit { if (value == null) remove(KEY_SERVER_URL) else putString(KEY_SERVER_URL, value.value) }
 
+    /** Whether the notification permission has been asked for; the system stops showing the prompt after refusals anyway. */
+    var askedNotifications: Boolean
+        get() = prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false)
+        set(value) = prefs.edit { putBoolean(KEY_ASKED_NOTIFICATIONS, value) }
+
     private companion object {
+        const val KEY_ASKED_NOTIFICATIONS = "asked_notifications"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_MODE = "mode"
     }

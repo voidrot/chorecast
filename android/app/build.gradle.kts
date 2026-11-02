@@ -72,6 +72,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.browser)
+    implementation(libs.androidx.work.runtime)
     // QR scanning without Google Play services (works in the FOSS flavor): CameraX frames decoded by ZXing.
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)

@@ -71,6 +71,22 @@ Per device, the app registers whichever transports are available:
 
 The `foss` flavor never includes Google libraries; option 2 doesn't exist there.
 
+Built (#99, part 2, Android): the polling fallback for a kid's own paired device. WorkManager runs `SyncWorker` about
+every 15 minutes on a network constraint (unique periodic work, KEEP) and once each time the app opens. It reads the
+device's kid (`/devices/picker`, then `/kids/{id}` for quiet hours and the day-end override), the household settings
+(timezone, day end) and the kid's instances, then replaces the whole local schedule. Parent installs and shared
+tablets only clear it. `planReminders` (`:core`, `Reminders.kt`) decides what fires: 30 minutes before each slotted
+open chore, 1 hour before the kid's day close (what is still open), and a morning overview at the end of the quiet
+hours for the day starting then (a morning already past is not sent late, so at most one per day). Submitted,
+approved, missed, excused and flexible instances get nothing, and a time already past is dropped. A slot reminder
+inside the quiet hours is held until they end (dropped if that is no longer before the slot). A day-close reminder
+inside the quiet hours goes out when they start instead, since holding it would pass the close; with the default
+quiet hours and a midnight day end that is 20:00. Either way the held time, not the original, is compared with the
+current time, so a sync during the quiet hours keeps it. A kid with no quiet hours set gets the 20:00 to 07:00 default, because the API does not expose it. Each reminder is
+one-time work named by a stable key (`slot:<instance>`, `close:<date>`, `morning:<date>`), and every sync cancels
+the old ones first, so nothing is duplicated. Android 13+ asks for the notification permission once. Finishing a chore in the app triggers a sync, and a reminder that fires after its slot or day close has
+passed is skipped. Known limit: school hours are not applied.
+
 ## Other channels
 
 - **Web push** (parents in the web admin): standard VAPID Web Push; the server generates its VAPID keypair on first

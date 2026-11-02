@@ -14,6 +14,7 @@ import dev.voidrot.chorecast.data.FileCaptureStore
 import dev.voidrot.chorecast.data.KeystoreTokenStore
 import dev.voidrot.chorecast.data.SettingsStore
 import dev.voidrot.chorecast.data.SsoBridge
+import dev.voidrot.chorecast.reminders.ReminderScheduler
 import io.ktor.client.engine.okhttp.OkHttp
 import java.io.File
 
@@ -32,6 +33,7 @@ class AppContainer(context: Context) {
     val householdInfo = HouseholdInfo(engine)
     val deviceClient = DeviceClient(engine)
     val kidChores = KidChores(engine)
+    val reminderScheduler = ReminderScheduler(context)
 
     /** One instance for the app's life, so a retry keeps its Idempotency-Key after a screen is recreated. */
     val parentReview = ParentReview(engine)

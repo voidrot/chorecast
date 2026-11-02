@@ -319,4 +319,19 @@
     <string name="kid_stale_changed">That chore changed in the meantime. Showing the latest.</string>
     <string name="kid_notice_forbidden">You aren\'t allowed to do that.</string>
     <string name="kid_notice_failed">Something went wrong (%1$s).</string>
+
+    <string name="reminders_channel_name">Chore reminders</string>
+    <string name="reminders_channel_description">Reminders before a chore is due, before the day ends, and a morning list</string>
+    <string name="reminder_slot_title">Chore due soon</string>
+    <string name="reminder_slot_text">%1$s is due at %2$s.</string>
+    <string name="reminder_close_title">The day ends soon</string>
+    <plurals name="reminder_close_text">
+        <item quantity="one">%2$s is still open. The day ends at %3$s.</item>
+        <item quantity="other">%1$d chores are still open, starting with %2$s. The day ends at %3$s.</item>
+    </plurals>
+    <string name="reminder_morning_title">Today\'s chores</string>
+    <plurals name="reminder_morning_text">
+        <item quantity="one">%2$s is on your list today.</item>
+        <item quantity="other">%1$d chores are on your list today, starting with %2$s.</item>
+    </plurals>
 </resources>

@@ -1,19 +1,26 @@
 package dev.voidrot.chorecast
 
+import android.Manifest
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import dev.voidrot.chorecast.core.SsoCallback
+import dev.voidrot.chorecast.data.AppMode
+import dev.voidrot.chorecast.reminders.ReminderNotifier
 import dev.voidrot.chorecast.ui.ChorecastNavHost
 import dev.voidrot.chorecast.ui.theme.ChorecastTheme
 
 class MainActivity : ComponentActivity() {
+    private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -25,6 +32,21 @@ class MainActivity : ComponentActivity() {
                     ChorecastNavHost(container, Modifier.padding(padding))
                 }
             }
+        }
+    }
+
+    /** The app opened: refresh the reminders' data, and make sure the periodic sync is scheduled. */
+    override fun onStart() {
+        super.onStart()
+        val container = (application as ChorecastApp).container
+        container.reminderScheduler.schedulePeriodicSync()
+        container.reminderScheduler.syncNow()
+        // Reminders are for paired devices; ask once, on Android 13+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && container.settings.mode == AppMode.DEVICE &&
+            !container.settings.askedNotifications && !ReminderNotifier.canNotify(this)
+        ) {
+            container.settings.askedNotifications = true
+            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
