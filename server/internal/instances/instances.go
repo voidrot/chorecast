@@ -9,7 +9,8 @@
 //
 // open → missed belongs to day close (internal/dayclose), which updates the status itself. When a
 // rejection or reversal reopens an instance whose close has passed already, day close misses it
-// in the same transaction, with its penalty (dayclose.MissInTx; see missIfClosed).
+// in the same transaction, with its penalty (dayclose.MissInTx; see missIfClosed). An open
+// instance whose close has passed can't be completed either (ErrClosed): day close takes it.
 //
 // Each transition runs inside the caller's transaction, so callers that act on many instances
 // (bulk approve, auto-approve) can call them from their own bus.InTx. A transition checks its
@@ -55,6 +56,7 @@ var (
 	ErrPlanned      = apierr.New(http.StatusConflict, apierr.CodeInstancePlanned, "this chore is for a later day")
 	ErrShared       = apierr.New(http.StatusConflict, apierr.CodeInstanceShared, "a shared chore can't be reassigned")
 	ErrTaken        = apierr.New(http.StatusConflict, apierr.CodeInstanceTaken, "that kid already has this chore then")
+	ErrClosed       = apierr.New(http.StatusConflict, apierr.CodeInstanceClosed, "this chore's day is over")
 )
 
 // Rejection reasons a parent can pick (chore_instance_rejections.reason_code).
@@ -193,7 +195,8 @@ func move(ctx context.Context, tx *events.Tx, c clock.Clock, in instance, from, 
 }
 
 // Complete marks an open instance done by c.KidID: submitted, or approved and credited when the
-// chore doesn't require approval. An instance dated after today can't be completed yet.
+// chore doesn't require approval. An instance dated after today can't be completed yet, nor one
+// whose close has passed (dayclose.ClosesAt) though day close hasn't taken it yet: it's missed.
 func Complete(ctx context.Context, tx *events.Tx, clk clock.Clock, id int64, c Completion) error {
 	in, err := load(ctx, tx.Q, id)
 	if err != nil {
@@ -208,6 +211,13 @@ func Complete(ctx context.Context, tx *events.Tx, clk clock.Clock, id int64, c C
 	}
 	if date, _ := caltime.ParseDate(in.OccurrenceDate); date.After(horizon.Today(cal, clk.Now())) {
 		return ErrPlanned
+	}
+	closes, err := dayclose.ClosesAt(ctx, tx.Q, in.ChoreInstance)
+	if err != nil {
+		return fmt.Errorf("instance %d close: %w", in.ID, err)
+	}
+	if !closes.After(clk.Now()) {
+		return ErrClosed
 	}
 	kid := c.KidID
 	if kid == 0 && in.KidID.Valid {

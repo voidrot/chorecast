@@ -42,7 +42,8 @@ func registerInstances(hapi huma.API, h *handlers) {
 		"Marks an open instance done: `submitted` for a parent to approve, or `approved` with points credited "+
 			"when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a "+
 			"member of); a parent completes for a kid and names the kid for a shared instance. An instance dated "+
-			"after today can't be completed yet (409 `instance_planned`).",
+			"after today can't be completed yet (409 `instance_planned`), nor one whose day (or week) has closed "+
+			"(409 `instance_closed`): day close counts it as missed.",
 		auth.Require(auth.ScopeChoresComplete), http.StatusForbidden, http.StatusUnprocessableEntity), h.completeInstance)
 	huma.Register(hapi, transition("approveChoreInstance", "approval", "Approve a submitted chore",
 		"Credits the points: to the assignee, or for a shared chore to the completer or split evenly across "+

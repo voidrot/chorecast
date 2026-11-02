@@ -705,7 +705,7 @@ export interface paths {
         put?: never;
         /**
          * Complete a chore
-         * @description Marks an open instance done: `submitted` for a parent to approve, or `approved` with points credited when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a member of); a parent completes for a kid and names the kid for a shared instance. An instance dated after today can't be completed yet (409 `instance_planned`). Returns the updated instance.
+         * @description Marks an open instance done: `submitted` for a parent to approve, or `approved` with points credited when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a member of); a parent completes for a kid and names the kid for a shared instance. An instance dated after today can't be completed yet (409 `instance_planned`), nor one whose day (or week) has closed (409 `instance_closed`): day close counts it as missed. Returns the updated instance.
          */
         post: operations["completeChoreInstance"];
         delete?: never;

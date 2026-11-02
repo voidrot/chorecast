@@ -330,7 +330,7 @@ func TestTransitionInputsAreValidated(t *testing.T) {
 func TestCompleteThenApproveCreditsTheInstanceDay(t *testing.T) {
 	f := newFixture(t)
 	c := f.chore(chores.ChoreInput{Name: "Dishes", Points: 5, RequiresApproval: true})
-	id := f.instance(c.ID, "2026-10-30", f.sam) // yesterday's, still open (day close hasn't run)
+	id := f.instance(c.ID, today, f.sam)
 
 	got, err := f.svc.Complete(t.Context(), id, instances.Completion{By: f.sam})
 	if err != nil {
@@ -346,12 +346,61 @@ func TestCompleteThenApproveCreditsTheInstanceDay(t *testing.T) {
 	if got, err = f.svc.Approve(t.Context(), id, f.mom); err != nil || got.Status != horizon.StatusApproved {
 		t.Fatalf("approve: %+v, %v", got, err)
 	}
-	if e := f.entries(id); !slices.Equal(e, []string{fmt.Sprintf("chore %d 5 2026-10-30", f.sam)}) {
-		t.Errorf("entries = %v, want the credit dated to the instance's day", e)
+	if e := f.entries(id); !slices.Equal(e, []string{fmt.Sprintf("chore %d 5 %s", f.sam, today)}) {
+		t.Errorf("entries = %v, want the credit dated to the instance's day, not the approval's", e)
 	}
 	if got := f.eventTypes(); !slices.Equal(got, []string{"instance.completed", "instance.approved"}) {
 		t.Errorf("events = %v", got)
 	}
+}
+
+// TestCompleteAfterTheCloseIsRefused: once an instance's close has passed (its kid's day or week
+// close), it can't be completed, even before day close takes it (downtime, a lagging job): day
+// close misses it. Nothing is written. An earlier slot today stays completable until the close.
+func TestCompleteAfterTheCloseIsRefused(t *testing.T) {
+	local := func(day, hhmm string) time.Time {
+		at, err := time.ParseInLocation("2006-01-02 15:04", day+" "+hhmm, time.FixedZone("CDT", -5*3600))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	f := newFixture(t) // now: Saturday 13:00 in Chicago; Ada's day ends at 12:00
+	f.exec("UPDATE users SET day_end_override = '12:00' WHERE id = ?", f.ada)
+	c := f.chore(chores.ChoreInput{Name: "Feed the cat", Points: 3, Penalty: 2}) // no approval: it would credit at once
+	ctx := t.Context()
+	for _, tc := range []struct {
+		what string
+		id   int64
+		kid  int64
+	}{
+		{"yesterday's, still open", f.instance(c.ID, "2026-10-30", f.sam), f.sam},
+		{"today's, for a kid whose day closed at 12:00", f.instanceDue(c.ID, today, local(today, "11:00"), f.ada), f.ada},
+		{"shared, yesterday's", f.instance(c.ID, "2026-10-30", 0, f.sam, f.ada), f.ada},
+	} {
+		_, err := f.svc.Complete(ctx, tc.id, instances.Completion{KidID: tc.kid, By: tc.kid})
+		wantErr(t, tc.what, err, instances.ErrClosed)
+		if got := f.get(tc.id); got.Status != horizon.StatusOpen || got.CompletedBy != 0 || !got.CompletedAt.IsZero() {
+			t.Errorf("%s: a refused completion changed it: %+v", tc.what, got)
+		}
+		if e := f.entries(tc.id); len(e) != 0 {
+			t.Errorf("%s: a refused completion wrote %v", tc.what, e)
+		}
+	}
+	if got := f.eventTypes(); len(got) != 0 {
+		t.Errorf("refused completions emitted %v", got)
+	}
+	// A 10:00 slot today is past due, but Sam's day is still open: it still counts.
+	early := f.instanceDue(c.ID, today, local(today, "10:00"), f.sam)
+	if got, err := f.svc.Complete(ctx, early, instances.Completion{By: f.sam}); err != nil || got.Status != horizon.StatusApproved {
+		t.Errorf("complete an earlier slot today: %+v, %v", got, err)
+	}
+	// At the instant Sam's day closes, it's over.
+	closing := f.instance(c.ID, today, f.sam)
+	f.exec("UPDATE chore_instances SET due_at = ? WHERE id = ?", db.Timestamp(local(today, "21:00")), closing)
+	f.clk.Set(local(today, "21:00"))
+	_, err := f.svc.Complete(ctx, closing, instances.Completion{By: f.sam})
+	wantErr(t, "complete at the close", err, instances.ErrClosed)
 }
 
 func TestCompleteWithoutApprovalCreditsAtOnce(t *testing.T) {
@@ -589,11 +638,17 @@ func TestReopeningAfterTheDayClosedMisses(t *testing.T) {
 				{"shared, today's 11:00 slot: shared chores close at the household day end",
 					f.instanceDue(c.ID, today, local(today, "11:00"), 0, f.sam, f.ada), f.ada, false},
 			} {
+				// Completed that morning, before its close; the reopen comes now.
+				in, err := f.db.GetChoreInstance(t.Context(), tc.id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.clk.Set(local(in.ChoreInstance.OccurrenceDate, "09:00"))
 				if _, err := f.svc.Complete(t.Context(), tc.id, instances.Completion{KidID: tc.completer, By: f.mom}); err != nil {
 					t.Fatalf("%s: complete: %v", tc.what, err)
 				}
+				f.clk.Set(saturday)
 				var got horizon.ChoreInstance
-				var err error
 				if reopen == "reject" {
 					got, err = f.svc.Reject(t.Context(), tc.id, f.mom, instances.Reason{Code: instances.ReasonNotDone})
 				} else {
@@ -916,6 +971,13 @@ func runLedgerModel(t *testing.T, seed uint64, allowNegative bool) {
 			m.members = all
 		}
 		m.id = f.instance(c.ID, date, kid, m.members...)
+		// A closed day's instance can't be completed any more, so yesterday's that need approval
+		// start submitted (completed before the close): rejecting one still meets the closed day.
+		if date == "2026-10-30" && c.RequiresApproval == 1 {
+			m.status, m.completer = horizon.StatusSubmitted, m.kids()[0]
+			f.exec("UPDATE chore_instances SET status = ?, completed_by = ?, completed_at = ? WHERE id = ?",
+				m.status, m.completer, db.Timestamp(f.clk.Now().Add(-24*time.Hour)), m.id)
+		}
 		model = append(model, m)
 	}
 	for i, date := range []string{"2026-10-29", "2026-10-30", today} {
@@ -939,6 +1001,8 @@ func runLedgerModel(t *testing.T, seed uint64, allowNegative bool) {
 			switch {
 			case m.status != horizon.StatusOpen:
 				want = instances.ErrNotOpen
+			case m.pastDay:
+				want = instances.ErrClosed
 			case !slices.Contains(m.kids(), kid):
 				want = errValidation
 			default:

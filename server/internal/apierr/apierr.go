@@ -74,6 +74,7 @@ const (
 	CodeInstancePlanned      = "instance_planned"       // a later day's instance can't be completed yet (409)
 	CodeInstanceShared       = "instance_shared"        // a shared instance has no single assignee to reassign (409)
 	CodeInstanceTaken        = "instance_taken"         // reassign: the kid already has this occurrence (409)
+	CodeInstanceClosed       = "instance_closed"        // complete: the instance's day (or week) has closed; day close takes it as missed (409)
 )
 
 var defaultCodes = map[int]string{

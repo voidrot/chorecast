@@ -179,8 +179,10 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
 - **Completion** records `completed_by` (the kid who did it) and `completed_at`; both stay after a rejection or
   reversal, which is how the horizon knows the instance was touched and keeps it. Kids complete their own
   instances or shared ones they're a member of. A parent completes for a kid and names the kid for a shared
-  instance. An instance dated after today can't be completed (409 `instance_planned`). Evidence (#27) hooks into
-  `Complete` (`checkEvidence`).
+  instance. An instance dated after today can't be completed (409 `instance_planned`), nor one whose close has
+  passed (`dayclose.ClosesAt`) while day close hasn't taken it yet, after downtime or a lagging job (409
+  `instance_closed`, nothing written): day close takes it as missed. Accepting an offline completion made before
+  the close, within a grace margin, is #35's job. Evidence (#27) hooks into `Complete` (`checkEvidence`).
 - **Reassign** moves an open single-kid instance to another active kid and sets `manually_reassigned` (clearing
   `auto_assigned`). Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already
   has the same occurrence (409 `instance_taken`).
