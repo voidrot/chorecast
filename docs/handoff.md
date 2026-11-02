@@ -5,45 +5,58 @@ Written 2026-11-02 for the next agent (or person) picking up Phase 1 (#2). Read 
 
 ## Where things stand
 
-The server side of the chore loop is built. What is left is the clients, plus reminders, backups, the audit
-log and the install docs. Issues are worked one PR each and PRs are squash-merged. This session's arrangement
-was that agents may merge a PR when CI is green and review has passed. Coding subagents only commit; the
-orchestrating session pushes and opens the PRs (see "Environment gotchas").
+The server is feature-complete for the v1 chore loop, and so is the web admin. Android has the kid, parent and
+shared-tablet flows, reminders and the inbox. Issues are worked one PR each and PRs are squash-merged.
+Agents may merge a PR when CI is green and review has passed. Coding subagents only commit; the orchestrating
+session pushes and opens the PRs (see "Environment gotchas").
 
-**Merged** (each feature spec in `docs/features/` has a "Built (#N)" paragraph describing the package):
+**Built** (each feature spec in `docs/features/` has a "Built (#N)" paragraph describing the package):
 
-| Issue | What | PR |
+| Area | What | Where |
 |---|---|---|
-| #12-#15, #17, #19, #21, #22 | Setup wizard, parent auth/TOTP/OIDC, invites and admin CLI, household settings, devices page, schedules, assignment modes | #46, #54, #56, #57 and earlier |
-| #20 | Chore definitions and catalogs (issue closed) | #55 |
-| #23 | Rolling 7-day horizon generator (`internal/horizon`) | #77 |
-| #75 | Media pipeline: photo upload, duplicate detection, signed URLs (split out of #27) | #78 |
-| #26 | Points ledger (`internal/ledger`; issue closed). The first commit, cf2910b, was pushed straight to main by mistake with no PR, and the owner chose to keep it | cf2910b, #79 |
-| #24 | Day and week close (`internal/dayclose`) | #82 |
-| #25 | Instance state machine (`internal/instances`) | #84 |
-| #30 | Streaks with milestone bonuses (`internal/streaks`) | #85 |
-| #29 | Auto-approve (`internal/autoapprove`) | #86 |
-| #27 | Chore evidence (`internal/evidence`) | #87 |
-| (fix) | Keyed POSTs no longer panic after their handler ran | #91 |
-| #28 | Review queue API: list submitted chores, approve in bulk (`internal/reviewqueue`) | #90 |
+| Server | Setup wizard, parent auth/TOTP/OIDC, invites and admin CLI, household settings, kid profiles (bundled and uploaded photo avatars), device pairing and sessions, schedules, assignment modes, chore definitions and catalogs | #12-#22, #88 |
+| Server | Rolling 7-day horizon (`internal/horizon`), day and week close (`internal/dayclose`), instance state machine (`internal/instances`), points ledger (`internal/ledger`), streaks (`internal/streaks`), auto-approve (`internal/autoapprove`) | #23-#26, #29, #30 |
+| Server | Evidence (`internal/evidence`), media pipeline with duplicate detection, signed URLs and discard of a pending upload (`internal/media`), review queue (`internal/reviewqueue`) | #27, #28, #75, #118 |
+| Server | Instances carry points, steps, description and evidence; kids' chore reads are scoped | #108, #116, #128 |
+| Server | In-app notification inbox (`internal/inbox`, `/inbox`) | #98 |
+| Server | Scheduled backups and `backup` / `restore` commands (`internal/backup`), owner-only audit log including backups and restores (`internal/audit`, `/audit`) | #36, #37, #121 |
+| Docs | Install, first-run, SSO, backup and upgrade guides in `docs/guide/` | #38 |
+| Web | Chore assignment editor, review queue, today screen with parent actions, kid ledger with adjustments and streaks, settings (points, streaks, approvals, media), phone-friendly nav, audit view | #93-#97 |
+| Android | Pairing by QR or typed code, parent sign-in with TOTP and SSO, parent home (each kid's day), review queue, parent actions (adjust points, excuse, reassign, reverse an approval), devices list with revoke | #8, #103, #104 |
+| Android | Kid today list and chore details, completion with CameraX photo evidence, discard of pending photos, kid history with evidence, unknown enum values decode instead of throwing | #100-#102, #118, #119 |
+| Android | Inbox screen with unread counts, WorkManager sync and local reminders for a kid's own device, parent pairing QR | #99, #133 |
+| Android | Shared tablet: profile picker with avatars, kid PIN pad, auto-lock, parent PIN elevation into a timed parent mode | #33 |
 
-**Still open, in the order to take them:**
+**Open work, Phase 1 issues from `gh issue list --state open`:**
 
-1. **#31, #32, #33: Android** (kid experience, parent experience, shared tablet mode).
-2. **#34: web admin.** Screens for chores, kids, devices, review queue, ledger and settings. It also owns the
-   chore **assignment editor** (the chore form only passes the assignment through today), the review-queue and
-   ledger screens, and the video-evidence checkbox.
-3. **#35: reminders without push** (polling sync, local reminders, in-app inbox). It owns offline
-   capture-time skew and the offline grace for late completion.
-4. **#36: backups.** A database backup contains the media signing key (see "Decisions already made").
-5. **#37: audit log.** The `instance.*` and `points.entry_posted` events are the hooks.
-6. **#38: install, first-run, backup and upgrade docs.**
-7. Follow-ups: **#88** (kid photo avatars, split from #16) and **#89** (make the per-submission photo limit
-   configurable through `CHORECAST_MEDIA_MAX_FILES`).
+1. **#31 (Android kid experience), #32 (Android parent experience), #18 (device pairing).** Their features are
+   built; the issues stay open until the owner closes them. #18 is also open because nobody has run the
+   end-to-end check (pair, pick a profile with a PIN, elevate as parent) on a real device or emulator.
+2. **#99 and #35 (reminders without push).** The server inbox (#98), the Android inbox screen (#136), background
+   sync with local reminders (#139) and the parent pairing QR (#140, closes #133) are all on `main`. Both
+   issues stay open until the owner closes them. #35 owned offline capture-time skew and the offline grace for
+   late completion; the Android code has no handling for either (no match for "skew" or "grace").
+3. **#34 (web admin).** Every screen the issue names exists (chores with schedule editor and catalogs, kids,
+   devices, parents and invites, review queue, ledger, settings, audit). The issue is open until the owner closes
+   it. The chore form's video-evidence checkbox is present but disabled ("coming later"); video evidence is not built.
+4. **#16 (kid profiles).** Avatars (bundled and uploaded), PIN, day end, quiet hours and school hours are stored
+   and editable, and archiving revokes the kid's devices. The issue is open until the owner closes it.
+5. **#2 (Phase 1 tracking), #1 (Phase 0 tracking), #65 (Renovate dashboard).**
 
-#16 (kid profiles; the remaining work is #88) and #18 (device pairing; open only because nobody has run the
-end-to-end check on a real device) are also still open. The bodies of #26, #27 and #28 are scoped to the
-server; their UI lives in #31, #32 and #34.
+**Open follow-ups:**
+
+- **#138:** small tablet-mode fixes from the #137 review (a 403 from `GET /household` signs a parent out where
+  only a 401 should, `clearSessionStores` leaves `parentStore` in state, `KidAvatar` never retries a failed
+  download, and the idle lock uses `delay()`, which stops while the device sleeps). None is reachable today.
+- **Release PRs #76 (server 0.3.0) and #114 (android 0.2.0)** need the owner to merge them.
+- **Renovate PRs #80 and #81** fail the image jobs and `server-web` with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH` on
+  `pnpm install --frozen-lockfile`. The lockfile needs regenerating on those branches.
+- **The parent inbox is not exposed in tablet parent mode.** Parent mode offers the overview, the review queue and
+  a kid's page. The inbox is reachable from the parent app's home and from kid sessions, not from there.
+- **School hours are stored and validated but not applied to reminders.** The kid's `quietHours` and
+  `schoolHours` are on the kid object, and the server has no reader for either. `planReminders` (`:core`,
+  `Reminders.kt`) uses `quietHours`, with a default 20:00 to 07:00 window for kids who have none, and ignores
+  `schoolHours`. `docs/features/notifications.md` lists this as a known limit.
 
 `docs/roadmap.md` checkboxes have **not** been ticked as things merged. Go by the issue and PR state, not the
 boxes.
@@ -131,6 +144,15 @@ Commit messages follow Conventional Commits (a hook enforces it), e.g.
 - When a server response gains a **required** field, update the Android test mocks (e.g.
   `HouseholdInfoTest`) or the `android` CI job fails.
 - **Never auto-accept Android SDK licenses** locally; the owner refused that. CI has the SDK.
+- The generated client sets `enumUnknownDefaultCase` (`android/api-client/build.gradle.kts`), so every generated
+  enum has an `UNKNOWN_DEFAULT_OPEN_API` member. A `when` over a generated enum needs an `else`, and the unknown
+  case must degrade gracefully (read-only, generic label), never throw.
+- `:app` first compiles in CI, because there is no local SDK. `:core` is plain JVM and compiles and tests locally
+  (`./gradlew :core:test`), so keep logic there. Read an `:app` change twice before pushing; the `android` CI job
+  is the compiler.
+- A trailing lambda binds to the last parameter, so adding a trailing parameter to a composable or constructor
+  can silently capture an existing `{ … }` call site. Pass lambdas by name in constructors and composables that
+  are likely to grow.
 
 **Product constraints from the owner**
 - The FCM relay must be the admin's own Firebase project. Don't ship a default, so we never handle
@@ -173,8 +195,7 @@ Commit messages follow Conventional Commits (a hook enforces it), e.g.
 
 ## What the next client work can build on
 
-The API that Android (#31-#33) and web (#34) call already exists, and the specs in `api/` cover everything
-merged. Paths are under `/api/v1`.
+The API that the Android and web clients call exists, and the specs in `api/` cover everything merged. Paths are under `/api/v1`.
 
 - **Instances and transitions:** `GET /instances`, then `POST /instances/{instance}/completion`, `approval`,
   `approval/reversal` (unapprove), `rejection`, `excusal` and `reassignment`. Conflicts carry codes such as
@@ -186,6 +207,12 @@ merged. Paths are under `/api/v1`.
   by signed link.
 - **Review queue:** `GET /review-queue` (submitted chores, oldest first, filters `kidId`, `choreId`, `media`) and
   `POST /review-queue/approvals` (bulk approve, per-id results). Reject one at a time with feedback.
+- **Inbox:** `GET /inbox`, `POST /inbox/read-all` and `POST /inbox/{id}/read`. No display text is stored; the
+  client renders from `kind` and `data`.
+- **Discard a pending photo:** `DELETE /media/photos/{id}` removes the caller's own upload before it is attached.
+- **Devices:** `POST /devices/pair`, `/devices/session`, `/devices/elevate`, `GET /devices/picker`, and for parents
+  `GET /devices`, `POST /devices/pairing` (create a code), `POST /devices/{id}/lock` and `DELETE /devices/{id}`.
+- **Audit:** `GET /audit` (owner only).
 - **Points:** `GET /kids/{kid}/points` and `/points/entries`, `POST /kids/{kid}/points/adjustments` and
   `/kids/{kid}/points/entries/{entry}/reversal`.
 - **Streaks:** `GET /kids/{kid}/streaks`.
