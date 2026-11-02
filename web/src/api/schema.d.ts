@@ -1712,6 +1712,8 @@ export interface components {
              * @description The day it belongs to (flexible: the week's first active day)
              */
             date: string;
+            /** @description The chore's description */
+            description?: string;
             /** Format: date-time */
             dueAt: string;
             /** @description What the chore asks the kid to hand in; absent = nothing */

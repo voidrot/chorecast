@@ -78,13 +78,13 @@ func TestListChoreInstances(t *testing.T) {
 	wantCode(t, "signed out", s.do("GET", "/api/v1/instances", nil), 401, "unauthenticated")
 }
 
-// An instance carries its chore's points, steps and evidence rules, so the kid app needs no chore read.
+// An instance carries its chore's description, points, steps and evidence rules, so the kid app needs no chore read.
 func TestChoreInstanceCarriesChoreDetails(t *testing.T) {
 	s := newAuthServer(t)
 	mom := sessionCookie(t, s.do("POST", "/api/v1/auth/login", login(nil)))
 	sam, _ := s.store.GetKidBySlug(t.Context(), sqlNull("sam"))
 	wantCode(t, "create chore", s.do("POST", "/api/v1/chores", map[string]any{
-		"name": "Dishes", "points": 5, "requiresApproval": true, "steps": []string{"Wash", "Dry"},
+		"name": "Dishes", "description": "Kitchen sink and drying rack", "points": 5, "requiresApproval": true, "steps": []string{"Wash", "Dry"},
 		"evidence":   map[string]any{"photos": 2, "beforeAfter": true, "checklist": true, "note": true},
 		"schedule":   map[string]any{"type": "daily", "startDate": "2026-10-31"},
 		"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam.ID}},
@@ -108,7 +108,7 @@ func TestChoreInstanceCarriesChoreDetails(t *testing.T) {
 			continue
 		}
 		bare++
-		for _, key := range []string{"points", "steps", "evidence"} {
+		for _, key := range []string{"points", "steps", "evidence", "description"} {
 			if v, ok := raw[key]; ok {
 				t.Errorf("bare chore instance has %s = %s, want it absent", key, v)
 			}
@@ -120,10 +120,11 @@ func TestChoreInstanceCarriesChoreDetails(t *testing.T) {
 
 	items := decode[struct {
 		Items []struct {
-			ChoreName string
-			Points    int
-			Steps     []string
-			Evidence  struct {
+			ChoreName   string
+			Description string
+			Points      int
+			Steps       []string
+			Evidence    struct {
 				Photos                       int
 				BeforeAfter, Checklist, Note bool
 			}
@@ -135,9 +136,9 @@ func TestChoreInstanceCarriesChoreDetails(t *testing.T) {
 			continue
 		}
 		dishes++
-		if i.Points != 5 || !slices.Equal(i.Steps, []string{"Wash", "Dry"}) ||
+		if i.Description != "Kitchen sink and drying rack" || i.Points != 5 || !slices.Equal(i.Steps, []string{"Wash", "Dry"}) ||
 			i.Evidence.Photos != 2 || !i.Evidence.BeforeAfter || !i.Evidence.Checklist || !i.Evidence.Note {
-			t.Errorf("instance = %+v, want the chore's points, steps and evidence", i)
+			t.Errorf("instance = %+v, want the chore's description, points, steps and evidence", i)
 		}
 	}
 	if dishes == 0 {
