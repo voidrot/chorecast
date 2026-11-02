@@ -56,6 +56,7 @@ fun ChoreDetailScreen(
                 chore.points?.let { PointsLabel(it) }
             }
             if (chore.status == ChoreStatusView.REDO) instance.lastRejection?.let { RejectionCard(it) }
+            instance.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
             instance.steps?.takeIf { it.isNotEmpty() }?.let { steps ->
                 Section(stringResource(R.string.chore_steps)) {
                     steps.forEachIndexed { i, step -> Text("${i + 1}. $step") }
