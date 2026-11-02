@@ -3,6 +3,7 @@
     "name": "Chorecast"
   },
   "nav": {
+    "reviewPending": "{n} waiting",
     "home": "Home",
     "account": "Account",
     "signOut": "Sign out",
@@ -10,7 +11,8 @@
     "kids": "Kids",
     "settings": "Settings",
     "devices": "Devices",
-    "chores": "Chores"
+    "chores": "Chores",
+    "review": "Review"
   },
   "session": {
     "parent": "Parent",
@@ -475,6 +477,58 @@
       "endDate": "The end date is before the start date.",
       "weekdays": "Pick at least one day of the week.",
       "monthDays": "Pick at least one day of the month."
+    }
+  },
+  "review": {
+    "title": "Review",
+    "empty": "Nothing is waiting for review.",
+    "filterKid": "Kid",
+    "filterChore": "Chore",
+    "filterMedia": "Photos",
+    "media": {
+      "with": "With photos",
+      "without": "Without photos"
+    },
+    "selectAll": "Select all",
+    "select": "Select {chore}",
+    "approveSelected": "Approve selected ({n})",
+    "approve": "Approve",
+    "reject": "Reject",
+    "cancel": "Cancel",
+    "loadMore": "Load more",
+    "approved": "Approved {chore}.",
+    "rejected": "Rejected {chore}.",
+    "bulkApproved": "Approved {n} chores.",
+    "bulkAlreadyDecided": "{n} chores had already been decided and were removed.",
+    "bulkFailed": "Some chores could not be approved:",
+    "submittedAt": "Submitted {at}",
+    "rejectedBefore": "Rejected {n} time(s) before",
+    "lastRejection": "Last rejection:",
+    "checklist": "Checklist",
+    "stepDone": "(done)",
+    "stepNotDone": "(not done)",
+    "note": "Note:",
+    "noPhotos": "No photos.",
+    "mediaExpired": "Media expired",
+    "openPhoto": "Open photo {n} of {total}",
+    "photoAlt": "Photo {n} for {chore}",
+    "photoTitle": "{chore}: photo {n} of {total}",
+    "prevPhoto": "Previous photo",
+    "nextPhoto": "Next photo",
+    "rejectTitle": "Reject {chore}",
+    "reasonLabel": "Quick reason",
+    "textLabel": "Feedback for the kid (optional)",
+    "reasonOrText": "Choose a reason or write some feedback.",
+    "reasons": {
+      "not_done": "Not done",
+      "not_finished": "Not finished",
+      "needs_redo": "Needs to be redone",
+      "evidence_unclear": "Photo or proof unclear"
+    },
+    "errors": {
+      "already_approved": "This chore is already approved.",
+      "instance_not_submitted": "Someone already decided this chore.",
+      "instance_not_found": "This chore no longer exists."
     }
   }
 }

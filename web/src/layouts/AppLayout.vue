@@ -1,20 +1,23 @@
 <script setup lang="ts">
-import { NButton, NTag } from 'naive-ui'
+import { NBadge, NButton, NTag } from 'naive-ui'
 import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { householdTimeZone } from '@/format'
+import { useReviewQueueStore } from '@/stores/reviewQueue'
 import { useSessionStore } from '@/stores/session'
 
 const { t } = useI18n()
 const router = useRouter()
 const session = useSessionStore()
+const reviewQueue = useReviewQueueStore()
 
 // Show dates in household time everywhere in the admin.
 onMounted(async () => {
   const { data } = await api.GET('/household')
   if (data) householdTimeZone.value = data.timezone
+  void reviewQueue.refresh()
 })
 
 async function signOut() {
@@ -37,6 +40,15 @@ async function signOut() {
           <RouterLink :to="{ name: 'chores' }" active-class="font-semibold">{{
             t('nav.chores')
           }}</RouterLink>
+          <RouterLink :to="{ name: 'review' }" active-class="font-semibold">
+            {{ t('nav.review') }}
+            <NBadge
+              v-if="reviewQueue.badge"
+              :value="reviewQueue.badge"
+              :offset="[4, -6]"
+              :aria-label="t('nav.reviewPending', { n: reviewQueue.badge })"
+            />
+          </RouterLink>
           <RouterLink :to="{ name: 'kids' }" active-class="font-semibold">{{
             t('nav.kids')
           }}</RouterLink>

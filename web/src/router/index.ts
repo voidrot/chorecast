@@ -51,6 +51,11 @@ const router = createRouter({
           component: () => import('@/views/chores/ChoreEditView.vue'),
         },
         {
+          path: 'review',
+          name: 'review',
+          component: () => import('@/views/review/ReviewView.vue'),
+        },
+        {
           path: 'kids',
           name: 'kids',
           component: () => import('@/views/kids/KidsView.vue'),
