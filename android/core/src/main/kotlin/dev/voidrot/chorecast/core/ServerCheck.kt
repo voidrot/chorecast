@@ -14,6 +14,7 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 import java.io.IOException
+import java.net.URI
 import java.time.LocalDate
 import java.time.OffsetDateTime
 
@@ -29,6 +30,7 @@ object ApiClients {
         serializersModule = SerializersModule {
             contextual(OffsetDateTime::class, OffsetDateTimeSerializer)
             contextual(LocalDate::class, LocalDateSerializer)
+            contextual(URI::class, UriSerializer)
         }
     }
 
@@ -78,6 +80,13 @@ object OffsetDateTimeSerializer : KSerializer<OffsetDateTime> {
     override val descriptor = PrimitiveSerialDescriptor("OffsetDateTime", PrimitiveKind.STRING)
     override fun serialize(encoder: Encoder, value: OffsetDateTime) = encoder.encodeString(value.toString())
     override fun deserialize(decoder: Decoder): OffsetDateTime = OffsetDateTime.parse(decoder.decodeString())
+}
+
+/** Links, such as a photo's signed URL. */
+object UriSerializer : KSerializer<URI> {
+    override val descriptor = PrimitiveSerialDescriptor("URI", PrimitiveKind.STRING)
+    override fun serialize(encoder: Encoder, value: URI) = encoder.encodeString(value.toString())
+    override fun deserialize(decoder: Decoder): URI = URI.create(decoder.decodeString())
 }
 
 /** YYYY-MM-DD civil dates. */
