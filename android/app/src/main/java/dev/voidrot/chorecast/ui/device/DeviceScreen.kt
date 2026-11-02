@@ -43,13 +43,20 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.voidrot.chorecast.R
 import kotlinx.coroutines.delay
 import java.time.Instant
 
 @Composable
-fun DeviceScreen(viewModel: DeviceViewModel, onUnpaired: () -> Unit, modifier: Modifier = Modifier) {
+fun DeviceScreen(
+    viewModel: DeviceViewModel,
+    todayViewModel: (KidAccess) -> TodayViewModel,
+    onUnpaired: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.unpaired) { if (state.unpaired) onUnpaired() }
 
@@ -66,17 +73,23 @@ fun DeviceScreen(viewModel: DeviceViewModel, onUnpaired: () -> Unit, modifier: M
     ) {
         val active = state.active
         val picker = state.picker
+        val ownKid = state.ownKid
         when {
             state.loading -> Centered { CircularProgressIndicator() }
             state.offline != null -> Centered {
                 Text(stringResource(R.string.device_offline, state.offline.orEmpty()))
                 Button(onClick = viewModel::load) { Text(stringResource(R.string.action_retry)) }
             }
-            active is ActiveSession.Kid -> Centered {
-                Initials(active.kid.displayName, active.kid.color, 96)
-                Text(stringResource(R.string.device_hi, active.kid.displayName), style = MaterialTheme.typography.headlineMedium)
-                Text(stringResource(R.string.device_chores_soon))
-                OutlinedButton(onClick = viewModel::lock) { Text(stringResource(R.string.device_done)) }
+            active is ActiveSession.Kid -> {
+                val access = KidAccess(active.kid.id, active.kid.displayName, active.token)
+                KidHome(
+                    access,
+                    viewModel.kidStore(access),
+                    todayViewModel,
+                    onLock = viewModel::lock,
+                    onParent = null,
+                    onUnauthorized = viewModel::sessionRefused,
+                )
             }
             active is ActiveSession.Parent -> Centered {
                 Text(stringResource(R.string.device_parent_mode, active.parent.displayName), style = MaterialTheme.typography.headlineSmall)
@@ -84,13 +97,15 @@ fun DeviceScreen(viewModel: DeviceViewModel, onUnpaired: () -> Unit, modifier: M
                 Text(stringResource(R.string.device_parent_soon))
                 OutlinedButton(onClick = viewModel::lock) { Text(stringResource(R.string.device_lock)) }
             }
-            picker != null && !picker.device.shared -> Centered {
-                Text(stringResource(R.string.device_hi, state.kidName ?: ""), style = MaterialTheme.typography.headlineMedium)
-                Text(stringResource(R.string.device_chores_soon))
-                if (picker.parents.isNotEmpty()) {
-                    TextButton(onClick = { viewModel.chooseParent(true) }) { Text(stringResource(R.string.device_parent)) }
-                }
-            }
+            ownKid != null -> KidHome(
+                ownKid,
+                viewModel.kidStore(ownKid),
+                todayViewModel,
+                onLock = null,
+                onParent = if (picker?.parents.isNullOrEmpty()) null else ({ viewModel.chooseParent(true) }),
+                // Checks the device token with the picker once, which unpairs the device if it was revoked.
+                onUnauthorized = viewModel::deviceTokenRefused,
+            )
             picker != null -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(stringResource(R.string.device_who), style = MaterialTheme.typography.headlineSmall)
                 LazyVerticalGrid(
@@ -147,6 +162,24 @@ fun DeviceScreen(viewModel: DeviceViewModel, onUnpaired: () -> Unit, modifier: M
             )
         }
     }
+}
+
+/**
+ * The kid's chores. The [TodayViewModel] lives in [store], which [DeviceViewModel] keeps for the
+ * session: it survives rotation, and the session ending clears it so a finished session's token
+ * doesn't linger. A new session starts with fresh data.
+ */
+@Composable
+private fun KidHome(
+    access: KidAccess,
+    store: ViewModelStoreOwner,
+    todayViewModel: (KidAccess) -> TodayViewModel,
+    onLock: (() -> Unit)?,
+    onParent: (() -> Unit)?,
+    onUnauthorized: () -> Unit,
+) {
+    val vm = viewModel<TodayViewModel>(viewModelStoreOwner = store) { todayViewModel(access) }
+    KidHomeScreen(vm, access.name, onLock, onParent, onUnauthorized)
 }
 
 @Composable

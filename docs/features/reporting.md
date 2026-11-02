@@ -67,6 +67,16 @@ Add covering indexes; add materialized daily rollups only if profiling shows a n
   estimate from the last 4 weeks' average earnings.
 - **Achievements**: a badge shelf; newly earned badges are announced (in-app and the `points` notification category).
 
+Built (#100, Android): the kid's home on a kid-bound phone or an open kid session on a shared tablet shows the points
+balance (`GET /kids/{kid}/points`), the current daily streak (`GET /kids/{kid}/streaks`) and today's chores from
+`GET /instances?kidId=`. Chores are grouped by due time (day-close chores last) and show status (open, do it again
+after a rejection, waiting for a parent, done, missed, excused) and points. The days after today come from the same
+call (the server's default range, today to today+7) and show as planned. The chore detail shows the due time, the
+steps, what the chore asks to hand in, and the parent's rejection reason and words. Pull to refresh; loading, empty
+and error states. The Complete button is a placeholder until #101. Points per chore come from the chore, because
+`ChoreInstance` carries none: the app reads `GET /chores` (kids hold `chores:read`) and `GET /chores/{id}` for
+the details. My week, goals, badges and history are not built yet.
+
 ## Badges
 
 ```
