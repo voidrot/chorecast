@@ -163,7 +163,9 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
   event with `to: approved`, no separate approval event). It goes to the assignee; for a shared instance to the
   completer (`completer_takes_all`) or split with `assign.SplitPoints` across every member, remainder to the
   completer (`split_evenly`). Helper tagging (schedules.md) isn't built, so the split is over the whole group. A
-  share of 0 posts nothing. Credit entries are dated to the instance's own day.
+  share of 0 posts nothing. Credit entries are dated to the instance's own day; for a flexible instance that's
+  its week's first active day, so a credit is never dated ahead of today (day close dates a flexible penalty to
+  the week's last day, when the week closed).
 - **Undo and re-apply** follow the ledger's rule: `Unapprove` reverses each kid's credit tip that's in effect, and
   re-approving reverses that reversal instead of posting again. So a re-approval restores each kid's original
   amount, even if the chore's points (or a split's completer) changed in between. `Excuse` reverses every penalty
