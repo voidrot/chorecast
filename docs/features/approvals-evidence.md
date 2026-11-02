@@ -227,6 +227,16 @@ chip, the "AI says done" filter and near-duplicate flags wait for Phase 3.
   because it needs feedback per chore; its `reason` quick picks are a fixed list (`not_done`, `not_finished`,
   `needs_redo`, `evidence_unclear`) validated by `instances.Reject`.
 
+Built (#94, web admin). `/review` (`views/review/`) is a parent-only screen on `GET /review-queue`. The client
+groups the flat list by kid (`review/queue.ts`) and shows each item's checklist with ticked steps, the note and a
+thumbnail grid; a thumbnail opens the photo in a modal with arrow-key navigation, and expired photos show "Media
+expired". Filters (kid, chore, with/without photos) reload the list, and "Load more" follows `nextCursor`. Items can
+be approved or rejected one by one (a quick-reason select plus optional text, 422 avoided client-side), or selected
+and approved in bulk through `POST /review-queue/approvals` with per-item failures listed; items that are approved,
+or already decided (`already_approved`, `instance_not_submitted`, `instance_not_found`), leave the list. Signed photo
+links expire after about 10 minutes, so the list reloads (keeping as many pages) when an image fails or after 8
+minutes. The nav "Review" link carries a badge with the first page's count (up to 100) and a "+" when more exist.
+
 ## Configuration (env)
 
 | Variable | Default |
