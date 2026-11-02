@@ -430,7 +430,31 @@ CREATE INDEX media_expiring ON media (expires_at) WHERE status = 'ready';
 CREATE INDEX media_deleting ON media (id) WHERE status = 'deleting';
 CREATE INDEX media_pending_by_uploader ON media (uploaded_by) WHERE owner_kind = 'pending';
 
+-- ==== Notification inbox (#98) ====
+-- In-app notifications (internal/inbox), one row per recipient, written from domain events. No text is
+-- stored: kind says what happened, ref_kind/ref_id what it is about and data holds the details
+-- clients render (chore name, rejection reason, ...). event_id is the events row, so a redelivered
+-- event hits the unique key and writes nothing; kind and ref_id stay in the key because event ids
+-- restart if maintenance ever empties the events table while notifications are still kept.
+CREATE TABLE notifications (
+    id           INTEGER PRIMARY KEY,
+    recipient_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE, -- a parent or a kid
+    kind         TEXT    NOT NULL CHECK (kind IN ('chore_submitted', 'chore_approved', 'chore_rejected', 'chore_missed', 'chore_excused', 'streak_milestone')),
+    kid_id       INTEGER REFERENCES users (id) ON DELETE CASCADE, -- the kid it is about
+    ref_kind     TEXT    NOT NULL CHECK (ref_kind IN ('instance', 'points_entry')),
+    ref_id       INTEGER NOT NULL,
+    event_id     INTEGER NOT NULL,
+    data         TEXT    NOT NULL DEFAULT '{}', -- JSON
+    created_at   TEXT    NOT NULL,  -- when the event happened
+    read_at      TEXT,
+    UNIQUE (recipient_id, kind, ref_id, event_id)
+);
+CREATE INDEX notifications_by_recipient ON notifications (recipient_id, id);
+CREATE INDEX notifications_unread ON notifications (recipient_id) WHERE read_at IS NULL;
+CREATE INDEX notifications_by_age ON notifications (created_at);
+
 -- +goose Down
+DROP TABLE notifications;
 DROP TABLE chore_instance_evidence_photos;
 DROP TABLE chore_instance_evidence;
 DROP TABLE kid_chore_streaks;

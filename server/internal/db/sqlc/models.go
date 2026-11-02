@@ -234,6 +234,19 @@ type Medium struct {
 	ExpiresAt   sql.NullString `json:"expires_at"`
 }
 
+type Notification struct {
+	ID          int64          `json:"id"`
+	RecipientID int64          `json:"recipient_id"`
+	Kind        string         `json:"kind"`
+	KidID       sql.NullInt64  `json:"kid_id"`
+	RefKind     string         `json:"ref_kind"`
+	RefID       int64          `json:"ref_id"`
+	EventID     int64          `json:"event_id"`
+	Data        string         `json:"data"`
+	CreatedAt   string         `json:"created_at"`
+	ReadAt      sql.NullString `json:"read_at"`
+}
+
 type PairingCode struct {
 	ID        int64          `json:"id"`
 	CodeHash  []byte         `json:"code_hash"`

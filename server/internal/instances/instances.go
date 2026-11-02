@@ -102,8 +102,13 @@ type Approved struct{ Change }
 
 func (Approved) EventType() string { return "instance.approved" }
 
-// Rejected is emitted when a submitted instance goes back to open with feedback.
-type Rejected struct{ Change }
+// Rejected is emitted when a submitted instance goes back to open with feedback: a quick-pick
+// reason code, text, or both.
+type Rejected struct {
+	Change
+	ReasonCode string `json:"reasonCode,omitempty"`
+	ReasonText string `json:"reasonText,omitempty"`
+}
 
 func (Rejected) EventType() string { return "instance.rejected" }
 
@@ -320,7 +325,7 @@ func Reject(ctx context.Context, tx *events.Tx, clk clock.Clock, id, by int64, r
 	}); err != nil {
 		return fmt.Errorf("record rejection: %w", err)
 	}
-	if err := tx.Emit(ctx, Rejected{in.change(horizon.StatusOpen, by)}); err != nil {
+	if err := tx.Emit(ctx, Rejected{Change: in.change(horizon.StatusOpen, by), ReasonCode: r.Code, ReasonText: r.Text}); err != nil {
 		return err
 	}
 	return missIfClosed(ctx, tx, clk, in)
