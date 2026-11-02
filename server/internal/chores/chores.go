@@ -135,9 +135,23 @@ func b2i(b bool) int64 {
 	return 0
 }
 
-func toChore(c sqlc.Chore, equipment []int64, elig []ChoreEligibility) Chore {
-	var steps, slots []string
+// StepsOf returns the chore's checklist steps.
+func StepsOf(c sqlc.Chore) []string {
+	var steps []string
 	_ = json.Unmarshal([]byte(c.Steps), &steps)
+	return steps
+}
+
+// EvidenceOf returns what the chore asks a kid to hand in.
+func EvidenceOf(c sqlc.Chore) EvidenceRules {
+	return EvidenceRules{
+		Photos: int(c.EvidencePhotos), BeforeAfter: c.EvidenceBeforeAfter == 1, Video: c.EvidenceVideo == 1,
+		Checklist: c.EvidenceChecklist == 1, Note: c.EvidenceNote == 1,
+	}
+}
+
+func toChore(c sqlc.Chore, equipment []int64, elig []ChoreEligibility) Chore {
+	var slots []string
 	_ = json.Unmarshal([]byte(c.Slots), &slots)
 	var rule *schedule.ScheduleRule
 	if c.Schedule.Valid {
@@ -156,14 +170,11 @@ func toChore(c sqlc.Chore, equipment []int64, elig []ChoreEligibility) Chore {
 		ID: c.ID,
 		ChoreInput: ChoreInput{
 			Name: c.Name, Description: c.Description, Points: int(c.Points), Penalty: int(c.Penalty),
-			EstimatedMinutes: optInt(c.EstimatedMinutes), MinAge: optInt(c.MinAge), Steps: steps, Slots: slots,
+			EstimatedMinutes: optInt(c.EstimatedMinutes), MinAge: optInt(c.MinAge), Steps: StepsOf(c), Slots: slots,
 			Schedule:         rule,
 			Assignment:       toAssignment(c),
 			RequiresApproval: c.RequiresApproval == 1, Escalate: c.Escalate == 1, AutoApproveHours: optInt(c.AutoApproveHours),
-			Evidence: EvidenceRules{
-				Photos: int(c.EvidencePhotos), BeforeAfter: c.EvidenceBeforeAfter == 1, Video: c.EvidenceVideo == 1,
-				Checklist: c.EvidenceChecklist == 1, Note: c.EvidenceNote == 1,
-			},
+			Evidence:   EvidenceOf(c),
 			LocationID: loc, EquipmentIDs: equipment, Eligibility: elig, Disabled: c.Disabled == 1,
 		},
 		CreatedAt: created, UpdatedAt: updated,
@@ -228,6 +239,57 @@ func (s *Service) Get(ctx context.Context, id int64) (Chore, error) {
 		return Chore{}, err
 	}
 	return toChore(c, nonNil(equipment[id]), nonNil(elig[id])), nil
+}
+
+// assignedTo reports whether the chore's assignment includes the kid: everyone, an auto-pick
+// without a pool, or listed (fixed, rotation order, auto pool, shared group), unless an
+// exception says the kid never gets it. The minimum age isn't applied.
+func (c Chore) assignedTo(kidID int64) bool {
+	if slices.Contains(c.Eligibility, ChoreEligibility{KidID: kidID, Allow: false}) {
+		return false
+	}
+	a := c.Assignment
+	switch {
+	case a == nil || a.Mode == assign.ModeEveryone:
+		return true
+	case a.Mode == assign.ModeAuto && len(a.KidIDs) == 0:
+		return true
+	default:
+		return slices.Contains(a.KidIDs, kidID)
+	}
+}
+
+// ListForKid returns the chores a kid may see: those whose assignment includes them, and those
+// they have (or had) an instance of, since a reassignment or a swap hands them another kid's.
+func (s *Service) ListForKid(ctx context.Context, kidID int64) ([]Chore, error) {
+	all, err := s.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	held, err := s.db.ListKidChoreIDsWithInstances(ctx, kidID)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(all, func(c Chore) bool {
+		return !c.assignedTo(kidID) && !slices.Contains(held, c.ID)
+	}), nil
+}
+
+// GetForKid returns one chore if the kid may see it (see ListForKid); otherwise it answers 404
+// as for a missing chore.
+func (s *Service) GetForKid(ctx context.Context, id, kidID int64) (Chore, error) {
+	c, err := s.Get(ctx, id)
+	if err != nil || c.assignedTo(kidID) {
+		return c, err
+	}
+	held, err := s.db.ListKidChoreIDsWithInstances(ctx, kidID)
+	if err != nil {
+		return Chore{}, err
+	}
+	if !slices.Contains(held, id) {
+		return Chore{}, errNotFound
+	}
+	return c, nil
 }
 
 // normalize trims and checks what the schema can't, returning the cleaned input.

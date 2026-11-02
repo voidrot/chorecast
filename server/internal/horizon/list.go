@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/voidrot/chorecast/server/internal/caltime"
+	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/household"
@@ -15,6 +16,9 @@ type ChoreInstance struct {
 	ID                 int64                   `json:"id"`
 	ChoreID            int64                   `json:"choreId"`
 	ChoreName          string                  `json:"choreName"`
+	Points             int                     `json:"points,omitempty" doc:"The chore's points; absent = 0"`
+	Steps              []string                `json:"steps,omitempty" doc:"The chore's checklist steps"`
+	Evidence           chores.EvidenceRules    `json:"evidence,omitzero" doc:"What the chore asks the kid to hand in; absent = nothing"`
 	KidID              int64                   `json:"kidId,omitempty" doc:"The assignee; absent for a shared instance"`
 	GroupKidIDs        []int64                 `json:"groupKidIds,omitempty" doc:"Shared: the members who may complete it"`
 	Date               caltime.Date            `json:"date" format:"date" doc:"The day it belongs to (flexible: the week's first active day)"`
@@ -97,7 +101,7 @@ func (g *Generator) List(ctx context.Context, f ListFilter) ([]ChoreInstance, er
 		if rej, ok := latest[r.ChoreInstance.ID]; ok {
 			last = &rej
 		}
-		out = append(out, ToInstance(r.ChoreInstance, r.ChoreName, members[r.ChoreInstance.ID], last, today))
+		out = append(out, ToInstance(r.ChoreInstance, r.Chore, members[r.ChoreInstance.ID], last, today))
 	}
 	return out, nil
 }
@@ -125,15 +129,16 @@ func Instance(ctx context.Context, q *sqlc.Queries, now time.Time, id int64) (Ch
 		}
 		last = &r
 	}
-	return ToInstance(row.ChoreInstance, row.ChoreName, members, last, Today(cal, now)), nil
+	return ToInstance(row.ChoreInstance, row.Chore, members, last, Today(cal, now)), nil
 }
 
-// ToInstance builds the API instance from its row, its members and its latest rejection (if any).
-func ToInstance(r sqlc.ChoreInstance, choreName string, members []int64, last *sqlc.ChoreInstanceRejection, today caltime.Date) ChoreInstance {
+// ToInstance builds the API instance from its row, its chore, its members and its latest rejection (if any).
+func ToInstance(r sqlc.ChoreInstance, c sqlc.Chore, members []int64, last *sqlc.ChoreInstanceRejection, today caltime.Date) ChoreInstance {
 	d, _ := caltime.ParseDate(r.OccurrenceDate)
 	due, _ := db.ParseTimestamp(r.DueAt)
 	out := ChoreInstance{
-		ID: r.ID, ChoreID: r.ChoreID, ChoreName: choreName, KidID: r.KidID.Int64, GroupKidIDs: members,
+		ID: r.ID, ChoreID: r.ChoreID, ChoreName: c.Name, Points: int(c.Points), Steps: chores.StepsOf(c), Evidence: chores.EvidenceOf(c),
+		KidID: r.KidID.Int64, GroupKidIDs: members,
 		Date: d, Slot: r.Slot, Seq: int(r.Seq), DueAt: due, Flexible: r.Flexible == 1, Status: r.Status,
 		Planned: d.After(today), AutoAssigned: r.AutoAssigned == 1, ManuallyReassigned: r.ManuallyReassigned == 1,
 		CompletedBy: r.CompletedBy.Int64, RejectionCount: int(r.RejectionCount),

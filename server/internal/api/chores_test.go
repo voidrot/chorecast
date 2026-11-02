@@ -2,11 +2,14 @@ package api_test
 
 import (
 	"fmt"
+	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/voidrot/chorecast/server/internal/auth"
+	"github.com/voidrot/chorecast/server/internal/horizon"
 )
 
 type choreJSON struct {
@@ -249,5 +252,102 @@ func TestChoreAssignment(t *testing.T) {
 	wantCode(t, "reorder", s.do("PUT", "/api/v1/chores/"+itoa(c.ID), rotation, mom), 200, "")
 	if st := state(); st != "{}" {
 		t.Errorf("state after reorder = %s", st)
+	}
+}
+
+// Kids read only the chores they're on: assigned by the chore, or holding one of its instances.
+func TestKidChoreReads(t *testing.T) {
+	s := newAuthServer(t) // Saturday 31 October 2026
+	mom := sessionCookie(t, s.do("POST", "/api/v1/auth/login", login(nil)))
+	sam, _ := s.store.GetKidBySlug(t.Context(), sqlNull("sam"))
+	sam2, _ := s.store.GetKidBySlug(t.Context(), sqlNull("sam-2"))
+	ids := map[string]int64{}
+	create := func(name string, extra map[string]any) {
+		t.Helper()
+		body := map[string]any{"name": name, "points": 2, "penalty": 3, "requiresApproval": false, "evidence": map[string]any{"photos": 0}}
+		for k, v := range extra {
+			body[k] = v
+		}
+		rec := s.do("POST", "/api/v1/chores", body, mom)
+		wantCode(t, "create "+name, rec, 201, "")
+		ids[name] = decode[choreJSON](t, rec).ID
+	}
+	assignment := func(mode string, kids ...int64) map[string]any {
+		return map[string]any{"assignment": map[string]any{"mode": mode, "kidIds": kids}}
+	}
+	create("Everyone", nil)
+	create("Sam's", assignment("fixed", sam.ID))
+	create("Sam 2's", map[string]any{
+		"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam2.ID}},
+		"schedule":   map[string]any{"type": "daily", "startDate": "2026-10-31"},
+	})
+	create("Rotation", assignment("rotation", sam2.ID, sam.ID))
+	create("Auto pool", assignment("auto", sam2.ID))
+	create("Auto, every kid", assignment("auto"))
+	create("Shared", assignment("shared", sam.ID, sam2.ID))
+	create("Not Sam", map[string]any{"eligibility": []map[string]any{{"kidId": sam.ID, "allow": false}}})
+	if _, err := horizon.New(s.store, s.clk).Generate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, samPhone := pairDevice(t, s, pair(t, s, mom, "sam").Code)
+	_, tablet := pairDevice(t, s, pair(t, s, mom, "").Code)
+	rec := s.bearer("POST", "/api/v1/devices/session", tablet, map[string]string{"kid": "sam-2"})
+	wantCode(t, "sam-2's tablet session", rec, 200, "")
+	sam2Session := decode[struct{ Token string }](t, rec).Token
+
+	names := func(what string, rec *httptest.ResponseRecorder) []string {
+		t.Helper()
+		wantCode(t, what, rec, 200, "")
+		var out []string
+		for _, c := range decode[struct{ Items []choreJSON }](t, rec).Items {
+			out = append(out, c.Name)
+		}
+		slices.Sort(out)
+		return out
+	}
+	want := func(who string, got []string, want ...string) {
+		t.Helper()
+		slices.Sort(want)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s sees %q, want %q", who, got, want)
+		}
+	}
+	get := func(name, token string) *httptest.ResponseRecorder {
+		return s.bearer("GET", "/api/v1/chores/"+itoa(ids[name]), token, nil)
+	}
+
+	all := make([]string, 0, len(ids))
+	for name := range ids {
+		all = append(all, name)
+	}
+	want("mom", names("parent list", s.do("GET", "/api/v1/chores", nil, mom)), all...)
+	for name, id := range ids {
+		wantCode(t, "parent reads "+name, s.do("GET", "/api/v1/chores/"+itoa(id), nil, mom), 200, "")
+	}
+
+	want("sam's phone", names("kid device list", s.bearer("GET", "/api/v1/chores", samPhone, nil)),
+		"Everyone", "Sam's", "Rotation", "Auto, every kid", "Shared")
+	wantCode(t, "sam reads a shared chore he's in", get("Shared", samPhone), 200, "")
+	for _, name := range []string{"Sam 2's", "Auto pool", "Not Sam"} {
+		wantCode(t, "sam reads "+name, get(name, samPhone), 404, "not_found")
+	}
+	wantCode(t, "sam reads a missing chore", s.bearer("GET", "/api/v1/chores/99999", samPhone, nil), 404, "not_found")
+
+	want("sam-2's tablet session", names("kid session list", s.bearer("GET", "/api/v1/chores", sam2Session, nil)),
+		"Everyone", "Sam 2's", "Rotation", "Auto pool", "Auto, every kid", "Shared", "Not Sam")
+	wantCode(t, "sam-2 reads sam's", get("Sam's", sam2Session), 404, "not_found")
+	wantCode(t, "sam-2 reads her own", get("Sam 2's", sam2Session), 200, "")
+
+	// A reassigned instance lets the new kid read its chore.
+	var tomorrow int64
+	if err := s.store.SQL.QueryRowContext(t.Context(),
+		"SELECT id FROM chore_instances WHERE chore_id = ? AND occurrence_date = '2026-11-01'", ids["Sam 2's"]).Scan(&tomorrow); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, "reassign to sam", s.do("POST", fmt.Sprintf("/api/v1/instances/%d/reassignment", tomorrow), map[string]any{"kidId": sam.ID}, mom), 200, "")
+	wantCode(t, "sam reads the chore he was handed", get("Sam 2's", samPhone), 200, "")
+	if got := names("kid device list", s.bearer("GET", "/api/v1/chores", samPhone, nil)); !slices.Contains(got, "Sam 2's") {
+		t.Errorf("after the reassignment sam sees %q, want Sam 2's too", got)
 	}
 }

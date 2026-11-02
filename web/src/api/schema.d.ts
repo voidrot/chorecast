@@ -330,7 +330,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Chore definitions */
+        /**
+         * Chore definitions
+         * @description Parents and displays get every chore. A kid gets the chores assigned to them (everyone, an auto-pick from every kid, or listed in the assignment, unless an exception excludes them) and those they have an instance of.
+         */
         get: operations["listChores"];
         put?: never;
         /** Add a chore */
@@ -368,7 +371,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A chore definition */
+        /**
+         * A chore definition
+         * @description A kid gets 404 for a chore they can't see (see `listChores`).
+         */
         get: operations["getChore"];
         /**
          * Edit a chore
@@ -1594,6 +1600,8 @@ export interface components {
             date: string;
             /** Format: date-time */
             dueAt: string;
+            /** @description What the chore asks the kid to hand in; absent = nothing */
+            evidence?: components["schemas"]["EvidenceRules"];
             /** @description One of a flexible chore's completions for the week */
             flexible?: boolean;
             /** @description Shared: the members who may complete it */
@@ -1613,6 +1621,11 @@ export interface components {
             planned: boolean;
             /**
              * Format: int64
+             * @description The chore's points; absent = 0
+             */
+            points?: number;
+            /**
+             * Format: int64
              * @description How many times a parent rejected it
              */
             rejectionCount?: number;
@@ -1625,6 +1638,8 @@ export interface components {
             slot?: string;
             /** @enum {string} */
             status: "open" | "submitted" | "approved" | "missed" | "excused";
+            /** @description The chore's checklist steps */
+            steps?: string[] | null;
         };
         ChoreInstanceNoteInputBody: {
             /** @description Why, on the reversing points entries; a default when absent */

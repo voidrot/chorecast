@@ -14,11 +14,16 @@ func registerChores(hapi huma.API, h *handlers) {
 	read, manage := auth.Require(auth.ScopeChoresRead), auth.Require(auth.ScopeChoresManage)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "listChores", Method: http.MethodGet, Path: "/chores",
-		Summary: "Chore definitions", Tags: []string{"chores"}, Security: read,
+		Summary: "Chore definitions",
+		Description: "Parents and displays get every chore. A kid gets the chores assigned to them (everyone, an auto-pick from every kid, " +
+			"or listed in the assignment, unless an exception excludes them) and those they have an instance of.",
+		Tags: []string{"chores"}, Security: read,
 	}, h.listChores)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getChore", Method: http.MethodGet, Path: "/chores/{id}",
-		Summary: "A chore definition", Tags: []string{"chores"}, Security: read, Errors: []int{http.StatusNotFound},
+		Summary:     "A chore definition",
+		Description: "A kid gets 404 for a chore they can't see (see `listChores`).",
+		Tags:        []string{"chores"}, Security: read, Errors: []int{http.StatusNotFound},
 	}, h.getChore)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "createChore", Method: http.MethodPost, Path: "/chores",
@@ -57,7 +62,13 @@ type ChoresOutput struct {
 }
 
 func (h *handlers) listChores(ctx context.Context, _ *struct{}) (*ChoresOutput, error) {
-	items, err := h.chores.List(ctx)
+	var items []chores.Chore
+	var err error
+	if p, _ := auth.PrincipalFrom(ctx); p.Kind == auth.KindKid {
+		items, err = h.chores.ListForKid(ctx, p.UserID)
+	} else {
+		items, err = h.chores.List(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +86,13 @@ type ChoreOutput struct {
 }
 
 func (h *handlers) getChore(ctx context.Context, in *ChoreIDInput) (*ChoreOutput, error) {
-	c, err := h.chores.Get(ctx, in.ID)
+	var c chores.Chore
+	var err error
+	if p, _ := auth.PrincipalFrom(ctx); p.Kind == auth.KindKid {
+		c, err = h.chores.GetForKid(ctx, in.ID, p.UserID)
+	} else {
+		c, err = h.chores.Get(ctx, in.ID)
+	}
 	if err != nil {
 		return nil, err
 	}

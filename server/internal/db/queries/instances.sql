@@ -49,7 +49,7 @@ UPDATE chore_instances SET rotation_state = NULL WHERE chore_id = ?;
 
 -- name: ListChoreInstancesBetween :many
 -- Instances on [from, to] for every kid (kid = 0) or one kid, including shared instances they're a member of.
-SELECT sqlc.embed(i), c.name AS chore_name FROM chore_instances i
+SELECT sqlc.embed(i), sqlc.embed(c) FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= sqlc.arg(from_date) AND i.occurrence_date <= sqlc.arg(to_date)
   AND (CAST(sqlc.arg(kid) AS INTEGER) = 0 OR i.kid_id = CAST(sqlc.arg(kid) AS INTEGER)
@@ -63,6 +63,14 @@ JOIN chore_instances i ON i.id = m.instance_id
 WHERE i.occurrence_date >= ? AND i.occurrence_date <= ?
 ORDER BY m.instance_id, m.kid_id;
 
+-- name: ListKidChoreIDsWithInstances :many
+-- The chores the kid has (or had) an instance of: assigned, or a member of the shared group.
+SELECT i.chore_id FROM chore_instances i WHERE i.kid_id = CAST(sqlc.arg(kid_id) AS INTEGER)
+UNION
+SELECT i.chore_id FROM chore_instances i
+JOIN chore_instance_members m ON m.instance_id = i.id
+WHERE m.kid_id = CAST(sqlc.arg(kid_id) AS INTEGER);
+
 -- name: ChoreHasHistory :one
 -- Whether the chore has an instance to keep: touched, or already due.
 SELECT EXISTS (SELECT 1 FROM chore_instances
@@ -73,7 +81,7 @@ SELECT EXISTS (SELECT 1 FROM chore_instances
 DELETE FROM chore_instances WHERE chore_id = ?;
 
 -- name: GetChoreInstance :one
-SELECT sqlc.embed(i), c.name AS chore_name FROM chore_instances i
+SELECT sqlc.embed(i), sqlc.embed(c) FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.id = ?;
 
@@ -128,7 +136,7 @@ ORDER BY i.completed_at, i.id;
 -- Submitted instances, oldest submission first, after the keyset (after_at, after_id) = ('', 0) for
 -- the first page. kid / chore 0 = any; media -1 = any, 1 = the latest submission has photos, 0 = none.
 -- kid_name is the completer's, else the assignee's.
-SELECT sqlc.embed(i), c.name AS chore_name, c.steps AS chore_steps, COALESCE(u.display_name, '') AS kid_name
+SELECT sqlc.embed(i), sqlc.embed(c), COALESCE(u.display_name, '') AS kid_name
 FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 LEFT JOIN users u ON u.id = COALESCE(i.completed_by, i.kid_id)

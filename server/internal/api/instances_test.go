@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/voidrot/chorecast/server/internal/horizon"
@@ -74,6 +75,44 @@ func TestListChoreInstances(t *testing.T) {
 		wantCode(t, what, s.do("GET", "/api/v1/instances"+q, nil, mom), 422, "validation_failed")
 	}
 	wantCode(t, "signed out", s.do("GET", "/api/v1/instances", nil), 401, "unauthenticated")
+}
+
+// An instance carries its chore's points, steps and evidence rules, so the kid app needs no chore read.
+func TestChoreInstanceCarriesChoreDetails(t *testing.T) {
+	s := newAuthServer(t)
+	mom := sessionCookie(t, s.do("POST", "/api/v1/auth/login", login(nil)))
+	sam, _ := s.store.GetKidBySlug(t.Context(), sqlNull("sam"))
+	wantCode(t, "create chore", s.do("POST", "/api/v1/chores", map[string]any{
+		"name": "Dishes", "points": 5, "requiresApproval": true, "steps": []string{"Wash", "Dry"},
+		"evidence":   map[string]any{"photos": 2, "beforeAfter": true, "checklist": true, "note": true},
+		"schedule":   map[string]any{"type": "daily", "startDate": "2026-10-31"},
+		"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam.ID}},
+	}, mom), 201, "")
+	if _, err := horizon.New(s.store, s.clk).Generate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_, token := pairDevice(t, s, pair(t, s, mom, "sam").Code)
+	rec := s.bearer("GET", "/api/v1/instances", token, nil)
+	wantCode(t, "kid lists instances", rec, 200, "")
+	items := decode[struct {
+		Items []struct {
+			Points   int
+			Steps    []string
+			Evidence struct {
+				Photos                       int
+				BeforeAfter, Checklist, Note bool
+			}
+		}
+	}](t, rec).Items
+	if len(items) == 0 {
+		t.Fatal("no instances")
+	}
+	for _, i := range items {
+		if i.Points != 5 || !slices.Equal(i.Steps, []string{"Wash", "Dry"}) ||
+			i.Evidence.Photos != 2 || !i.Evidence.BeforeAfter || !i.Evidence.Checklist || !i.Evidence.Note {
+			t.Errorf("instance = %+v, want the chore's points, steps and evidence", i)
+		}
+	}
 }
 
 func TestDeleteChoreWithHistoryIsRefused(t *testing.T) {
