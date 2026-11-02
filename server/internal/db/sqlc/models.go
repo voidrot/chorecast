@@ -108,6 +108,7 @@ type Household struct {
 	AutoApproveHours     sql.NullInt64 `json:"auto_approve_hours"`
 	OfflineGraceMinutes  int64         `json:"offline_grace_minutes"`
 	DefaultChoreMinutes  int64         `json:"default_chore_minutes"`
+	StreakMilestones     string        `json:"streak_milestones"`
 	CreatedAt            string        `json:"created_at"`
 }
 
@@ -146,6 +147,20 @@ type Job struct {
 	LockedAt       sql.NullString `json:"locked_at"`
 	CreatedAt      string         `json:"created_at"`
 	FinishedAt     sql.NullString `json:"finished_at"`
+}
+
+type KidChoreStreak struct {
+	KidID   int64 `json:"kid_id"`
+	ChoreID int64 `json:"chore_id"`
+	Current int64 `json:"current"`
+	Best    int64 `json:"best"`
+}
+
+type KidStreak struct {
+	KidID   int64  `json:"kid_id"`
+	Current int64  `json:"current"`
+	Best    int64  `json:"best"`
+	LastDay string `json:"last_day"`
 }
 
 type Location struct {
@@ -233,6 +248,12 @@ type SetupToken struct {
 	ID        int64  `json:"id"`
 	TokenHash []byte `json:"token_hash"`
 	CreatedAt string `json:"created_at"`
+}
+
+type StreakDay struct {
+	KidID   int64  `json:"kid_id"`
+	Day     string `json:"day"`
+	Outcome string `json:"outcome"`
 }
 
 type Token struct {

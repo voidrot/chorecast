@@ -29,6 +29,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/parents"
 	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/sso"
+	"github.com/voidrot/chorecast/server/internal/streaks"
 	"github.com/voidrot/chorecast/server/internal/version"
 )
 
@@ -88,7 +89,7 @@ func New(r chi.Router, deps Deps) huma.API {
 		kids: kids.NewService(deps.DB, deps.Clock, deps.Bus), household: household.New(deps.DB, deps.Bus),
 		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock, deps.Bus),
 		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock), horizon: horizon.New(deps.DB, deps.Clock),
-		clock: deps.Clock}
+		streaks: streaks.New(deps.DB, deps.Bus, deps.Clock), clock: deps.Clock}
 	signer := media.NewSigner(queries, deps.Clock)
 	h.media = media.New(deps.DB, deps.Clock, media.NewLocal(deps.Config.DataDir, Prefix+mediaFilesPath, signer), signer)
 	huma.Register(hapi, huma.Operation{
@@ -116,6 +117,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerDevices(hapi, h)
 	registerChores(hapi, h)
 	registerPoints(hapi, h)
+	registerStreaks(hapi, h)
 	registerInstances(hapi, h)
 	registerMedia(hapi, h)
 
@@ -148,6 +150,7 @@ type handlers struct {
 	ledger    *ledger.Service
 	horizon   *horizon.Generator
 	media     *media.Service
+	streaks   *streaks.Service
 	clock     clock.Clock
 }
 

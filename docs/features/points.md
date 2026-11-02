@@ -69,8 +69,8 @@ features add sources without schema changes. `created_by` is NULL for the system
   source), and these kinds require a source. A repeat `Post` writes nothing and returns the existing entry with
   `ErrAlreadyPosted`, so at-least-once callers (day close #24, approvals #25) treat that error as done and must
   not return it from their `InTx` function, or their own change rolls back. Undoing a reversal (re-approving,
-  un-excusing) means reversing the reversal, not posting again. Streak bonuses (#30) should use a per-day source
-  such as (`streak_day`, YYYYMMDD). A repeat's returned entry has `ReversedByID` set when it was reversed.
+  un-excusing) means reversing the reversal, not posting again. Streak bonuses (#30) use one source per day and
+  milestone (`streak_milestone`, see Streaks). A repeat's returned entry has `ReversedByID` set when it was reversed.
 - **Undo and re-apply.** A source's entry and its reversals form a chain C → R1 → R2 ….
   `ledger.Tip(ctx, tx, kidID, kind, src) (entry, inEffect, found, err)` returns the chain's unreversed end, and
   `inEffect` is true when the source's effect stands (an even number of reversals). To undo an effect in force,
@@ -159,6 +159,40 @@ Evaluated at day close for each kid:
 - Milestone bonuses are household-configured (`[{days: 3, points: 5}, {days: 7, points: 15}]`) and written as
   `streak_bonus` entries.
 - **Per-chore streaks** are computed from instance history, display only for v1 (no bonus).
+
+Built (#30, `internal/streaks`, server only). Choices made in implementation:
+
+- **When.** A kid's day is evaluated in the `dayclose.kid_day` job right after it marks the day's misses
+  (`dayclose.Closer.AfterKidDay`), and again for every kid in the `dayclose.shared` job at the household day end
+  (`AfterShared`). By the household day end every instance of the day is due, including shared ones and slots
+  later than an early day end. A day whose close is still ahead isn't evaluated.
+- **Which chores.** Required means every non-flexible instance dated that day: the kid's own and the shared ones
+  they're a member of. Flexible instances belong to their week, not a day, so they don't count. An instance still
+  `open` when the day is evaluated counts as not done. A day with no required instances is `none`: it neither
+  extends nor breaks the streak.
+- **Late changes: counted is final, the rest is re-checked.** Each day's outcome is stored (`streak_days`:
+  `counted`, `broken` or `none`). A counted day is never re-evaluated, so a later rejection doesn't break it (the
+  rule above). A day that didn't count is re-checked at each evaluation for 7 days (`streaks.RecheckDays`), so a
+  chore finished after an early day end or a shared chore done before the household day end repairs it the same
+  evening, and a miss a parent excuses within the week repairs it at the kid's next close. After downtime, the
+  evaluation also fills every day since the last evaluated one.
+- **The streak** is recomputed from the stored days at each evaluation: `current` is the run of counted days up
+  to the latest evaluated day (`none` days skipped), `best` the longest run. Both are kept in `kid_streaks` with
+  the last evaluated day.
+- **Milestones** are the household setting `streakMilestones` (household.md). Each time the run reaches a
+  milestone's `days` on a counted day, a `streak_bonus` entry of its `points` is posted, dated that day, from the
+  system, with the note "N-day streak". The source is (`streak_milestone`, YYYYMMDD × 10000 + days), so each (day,
+  milestone) posts once however often the day is evaluated, and a new run that reaches the milestone again earns
+  it again. A run is paid each milestone at most once: when a repair joins two runs, a milestone already paid on
+  any day of the joined run isn't paid again on the earlier day it now falls on, while a milestone the joined run
+  reaches for the first time is paid, even on a day that already had a shorter one. Bonuses already posted are
+  never reversed. Milestones are checked only from the evaluated days on, so a changed setting applies from then.
+- **Per-chore streaks** (`kid_chore_streaks`) are recomputed from the kid's instance history at each evaluation,
+  per recurring chore (any schedule but `once`; flexible instances left out): `current` is the latest run of
+  occurrences that were approved, submitted or excused, `best` the longest. They follow the instances' current
+  statuses, so a later rejection does break them.
+- **API.** `GET /kids/{kid}/streaks` (`points:read`; kids only their own) returns `daily` (`current`, `best`,
+  `lastDay`) and `chores` (`choreId`, `current`, `best`), as of the last evaluated day.
 
 ## AI evidence check
 
