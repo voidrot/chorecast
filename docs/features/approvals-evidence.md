@@ -35,6 +35,16 @@ Status: accepted (planning session, 2026-10-30). Builds on [points.md](points.md
 5. Auto-approve: a job approves `submitted` instances older than the effective timeout, unless the latest AI
    verdict is `not_yet`. The ledger entry is marked `created_by = system` with an "auto-approved" note.
 
+Built (#25, `internal/instances`; evidence is #27). Steps 3 and 4 are `instances.Complete`, `Approve` and `Reject`
+(see points.md, "Chore instance lifecycle", for the API and the ledger rules). Evidence isn't validated yet:
+`Complete` calls a `checkEvidence` hook where #27 adds it. A rejection needs a quick-pick `reason` (`not_done`,
+`not_finished`, `needs_redo` or `evidence_unclear`), a `text` of up to 500 characters, or both (422 otherwise).
+Every rejection is kept in `chore_instance_rejections` (reason, text, the rejected completer, the parent, when),
+and the instance carries `rejection_count`; the API returns `rejectionCount` and `lastRejection`. A rejection
+after the instance's day has closed makes it `missed`, with its penalty, instead of `open`, since the kid can't
+redo it. For auto-approve (#29): `instances.Approve(ctx, tx, clock, id, 0, "Auto-approved")` posts the credit with
+`created_by` NULL and that note, and `ErrNotSubmitted` means someone already decided, so the job skips it.
+
 ## Fresh-evidence rules (no reusing old photos)
 
 Goal: a kid can't satisfy today's chore with an old photo or one taken from the gallery or downloaded.

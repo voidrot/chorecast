@@ -26,7 +26,7 @@ func (q *Queries) AddChoreInstanceMember(ctx context.Context, arg AddChoreInstan
 
 const choreHasHistory = `-- name: ChoreHasHistory :one
 SELECT EXISTS (SELECT 1 FROM chore_instances
-    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR due_at <= ?))
+    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR completed_at IS NOT NULL OR due_at <= ?))
 `
 
 type ChoreHasHistoryParams struct {
@@ -50,6 +50,32 @@ UPDATE chore_instances SET rotation_state = NULL WHERE chore_id = ?
 func (q *Queries) ClearChoreInstanceRotationStates(ctx context.Context, choreID int64) error {
 	_, err := q.db.ExecContext(ctx, clearChoreInstanceRotationStates, choreID)
 	return err
+}
+
+const completeChoreInstance = `-- name: CompleteChoreInstance :execrows
+UPDATE chore_instances SET status = ?1, completed_by = ?2,
+    completed_at = ?3, updated_at = ?3
+WHERE id = ?4 AND status = 'open'
+`
+
+type CompleteChoreInstanceParams struct {
+	ToStatus    string         `json:"to_status"`
+	CompletedBy sql.NullInt64  `json:"completed_by"`
+	CompletedAt sql.NullString `json:"completed_at"`
+	ID          int64          `json:"id"`
+}
+
+func (q *Queries) CompleteChoreInstance(ctx context.Context, arg CompleteChoreInstanceParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, completeChoreInstance,
+		arg.ToStatus,
+		arg.CompletedBy,
+		arg.CompletedAt,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteChoreInstance = `-- name: DeleteChoreInstance :exec
@@ -77,6 +103,44 @@ DELETE FROM chore_instances WHERE chore_id = ?
 func (q *Queries) DeleteChoreInstances(ctx context.Context, choreID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteChoreInstances, choreID)
 	return err
+}
+
+const getChoreInstance = `-- name: GetChoreInstance :one
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
+JOIN chores c ON c.id = i.chore_id
+WHERE i.id = ?
+`
+
+type GetChoreInstanceRow struct {
+	ChoreInstance ChoreInstance `json:"chore_instance"`
+	ChoreName     string        `json:"chore_name"`
+}
+
+func (q *Queries) GetChoreInstance(ctx context.Context, id int64) (GetChoreInstanceRow, error) {
+	row := q.db.QueryRowContext(ctx, getChoreInstance, id)
+	var i GetChoreInstanceRow
+	err := row.Scan(
+		&i.ChoreInstance.ID,
+		&i.ChoreInstance.ChoreID,
+		&i.ChoreInstance.KidID,
+		&i.ChoreInstance.OccurrenceDate,
+		&i.ChoreInstance.Slot,
+		&i.ChoreInstance.Seq,
+		&i.ChoreInstance.DueAt,
+		&i.ChoreInstance.Flexible,
+		&i.ChoreInstance.Status,
+		&i.ChoreInstance.AutoAssigned,
+		&i.ChoreInstance.ManuallyReassigned,
+		&i.ChoreInstance.ReassignedFrom,
+		&i.ChoreInstance.RotationState,
+		&i.ChoreInstance.CompletedBy,
+		&i.ChoreInstance.CompletedAt,
+		&i.ChoreInstance.RejectionCount,
+		&i.ChoreInstance.CreatedAt,
+		&i.ChoreInstance.UpdatedAt,
+		&i.ChoreName,
+	)
+	return i, err
 }
 
 const insertChoreInstance = `-- name: InsertChoreInstance :one
@@ -117,6 +181,51 @@ func (q *Queries) InsertChoreInstance(ctx context.Context, arg InsertChoreInstan
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertChoreInstanceRejection = `-- name: InsertChoreInstanceRejection :exec
+INSERT INTO chore_instance_rejections (instance_id, kid_id, reason_code, reason_text, rejected_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type InsertChoreInstanceRejectionParams struct {
+	InstanceID int64         `json:"instance_id"`
+	KidID      sql.NullInt64 `json:"kid_id"`
+	ReasonCode string        `json:"reason_code"`
+	ReasonText string        `json:"reason_text"`
+	RejectedBy sql.NullInt64 `json:"rejected_by"`
+	CreatedAt  string        `json:"created_at"`
+}
+
+func (q *Queries) InsertChoreInstanceRejection(ctx context.Context, arg InsertChoreInstanceRejectionParams) error {
+	_, err := q.db.ExecContext(ctx, insertChoreInstanceRejection,
+		arg.InstanceID,
+		arg.KidID,
+		arg.ReasonCode,
+		arg.ReasonText,
+		arg.RejectedBy,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const latestChoreInstanceRejection = `-- name: LatestChoreInstanceRejection :one
+SELECT id, instance_id, kid_id, reason_code, reason_text, rejected_by, created_at FROM chore_instance_rejections WHERE instance_id = ? ORDER BY id DESC LIMIT 1
+`
+
+func (q *Queries) LatestChoreInstanceRejection(ctx context.Context, instanceID int64) (ChoreInstanceRejection, error) {
+	row := q.db.QueryRowContext(ctx, latestChoreInstanceRejection, instanceID)
+	var i ChoreInstanceRejection
+	err := row.Scan(
+		&i.ID,
+		&i.InstanceID,
+		&i.KidID,
+		&i.ReasonCode,
+		&i.ReasonText,
+		&i.RejectedBy,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const latestChoreRotationStateBefore = `-- name: LatestChoreRotationStateBefore :one
@@ -205,7 +314,7 @@ func (q *Queries) ListChoreInstanceMembersFrom(ctx context.Context, occurrenceDa
 }
 
 const listChoreInstancesBetween = `-- name: ListChoreInstancesBetween :many
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.rotation_state, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= ?1 AND i.occurrence_date <= ?2
   AND (CAST(?3 AS INTEGER) = 0 OR i.kid_id = CAST(?3 AS INTEGER)
@@ -221,21 +330,8 @@ type ListChoreInstancesBetweenParams struct {
 }
 
 type ListChoreInstancesBetweenRow struct {
-	ID                 int64          `json:"id"`
-	ChoreID            int64          `json:"chore_id"`
-	KidID              sql.NullInt64  `json:"kid_id"`
-	OccurrenceDate     string         `json:"occurrence_date"`
-	Slot               string         `json:"slot"`
-	Seq                int64          `json:"seq"`
-	DueAt              string         `json:"due_at"`
-	Flexible           int64          `json:"flexible"`
-	Status             string         `json:"status"`
-	AutoAssigned       int64          `json:"auto_assigned"`
-	ManuallyReassigned int64          `json:"manually_reassigned"`
-	RotationState      sql.NullString `json:"rotation_state"`
-	CreatedAt          string         `json:"created_at"`
-	UpdatedAt          string         `json:"updated_at"`
-	ChoreName          string         `json:"chore_name"`
+	ChoreInstance ChoreInstance `json:"chore_instance"`
+	ChoreName     string        `json:"chore_name"`
 }
 
 // Instances on [from, to] for every kid (kid = 0) or one kid, including shared instances they're a member of.
@@ -249,20 +345,24 @@ func (q *Queries) ListChoreInstancesBetween(ctx context.Context, arg ListChoreIn
 	for rows.Next() {
 		var i ListChoreInstancesBetweenRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.ChoreID,
-			&i.KidID,
-			&i.OccurrenceDate,
-			&i.Slot,
-			&i.Seq,
-			&i.DueAt,
-			&i.Flexible,
-			&i.Status,
-			&i.AutoAssigned,
-			&i.ManuallyReassigned,
-			&i.RotationState,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.ChoreInstance.ID,
+			&i.ChoreInstance.ChoreID,
+			&i.ChoreInstance.KidID,
+			&i.ChoreInstance.OccurrenceDate,
+			&i.ChoreInstance.Slot,
+			&i.ChoreInstance.Seq,
+			&i.ChoreInstance.DueAt,
+			&i.ChoreInstance.Flexible,
+			&i.ChoreInstance.Status,
+			&i.ChoreInstance.AutoAssigned,
+			&i.ChoreInstance.ManuallyReassigned,
+			&i.ChoreInstance.ReassignedFrom,
+			&i.ChoreInstance.RotationState,
+			&i.ChoreInstance.CompletedBy,
+			&i.ChoreInstance.CompletedAt,
+			&i.ChoreInstance.RejectionCount,
+			&i.ChoreInstance.CreatedAt,
+			&i.ChoreInstance.UpdatedAt,
 			&i.ChoreName,
 		); err != nil {
 			return nil, err
@@ -279,7 +379,7 @@ func (q *Queries) ListChoreInstancesBetween(ctx context.Context, arg ListChoreIn
 }
 
 const listChoreInstancesFrom = `-- name: ListChoreInstancesFrom :many
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.rotation_state, i.created_at, i.updated_at, c.estimated_minutes FROM chore_instances i
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.estimated_minutes FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= ?
 ORDER BY i.chore_id, i.occurrence_date, i.slot, i.seq, i.kid_id
@@ -297,7 +397,11 @@ type ListChoreInstancesFromRow struct {
 	Status             string         `json:"status"`
 	AutoAssigned       int64          `json:"auto_assigned"`
 	ManuallyReassigned int64          `json:"manually_reassigned"`
+	ReassignedFrom     sql.NullInt64  `json:"reassigned_from"`
 	RotationState      sql.NullString `json:"rotation_state"`
+	CompletedBy        sql.NullInt64  `json:"completed_by"`
+	CompletedAt        sql.NullString `json:"completed_at"`
+	RejectionCount     int64          `json:"rejection_count"`
 	CreatedAt          string         `json:"created_at"`
 	UpdatedAt          string         `json:"updated_at"`
 	EstimatedMinutes   sql.NullInt64  `json:"estimated_minutes"`
@@ -325,7 +429,11 @@ func (q *Queries) ListChoreInstancesFrom(ctx context.Context, occurrenceDate str
 			&i.Status,
 			&i.AutoAssigned,
 			&i.ManuallyReassigned,
+			&i.ReassignedFrom,
 			&i.RotationState,
+			&i.CompletedBy,
+			&i.CompletedAt,
+			&i.RejectionCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.EstimatedMinutes,
@@ -341,6 +449,123 @@ func (q *Queries) ListChoreInstancesFrom(ctx context.Context, occurrenceDate str
 		return nil, err
 	}
 	return items, nil
+}
+
+const listLatestChoreInstanceRejectionsBetween = `-- name: ListLatestChoreInstanceRejectionsBetween :many
+SELECT r.id, r.instance_id, r.kid_id, r.reason_code, r.reason_text, r.rejected_by, r.created_at FROM chore_instance_rejections r
+JOIN chore_instances i ON i.id = r.instance_id
+WHERE i.occurrence_date >= ? AND i.occurrence_date <= ?
+  AND r.id = (SELECT MAX(r2.id) FROM chore_instance_rejections r2 WHERE r2.instance_id = r.instance_id)
+`
+
+type ListLatestChoreInstanceRejectionsBetweenParams struct {
+	OccurrenceDate   string `json:"occurrence_date"`
+	OccurrenceDate_2 string `json:"occurrence_date_2"`
+}
+
+// The latest rejection of each instance on [from, to].
+func (q *Queries) ListLatestChoreInstanceRejectionsBetween(ctx context.Context, arg ListLatestChoreInstanceRejectionsBetweenParams) ([]ChoreInstanceRejection, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestChoreInstanceRejectionsBetween, arg.OccurrenceDate, arg.OccurrenceDate_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChoreInstanceRejection{}
+	for rows.Next() {
+		var i ChoreInstanceRejection
+		if err := rows.Scan(
+			&i.ID,
+			&i.InstanceID,
+			&i.KidID,
+			&i.ReasonCode,
+			&i.ReasonText,
+			&i.RejectedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reassignChoreInstance = `-- name: ReassignChoreInstance :execrows
+UPDATE chore_instances SET kid_id = ?1, reassigned_from = COALESCE(reassigned_from, kid_id),
+    due_at = ?2, manually_reassigned = 1, auto_assigned = 0, updated_at = ?3
+WHERE id = ?4 AND status = 'open' AND kid_id IS NOT NULL
+`
+
+type ReassignChoreInstanceParams struct {
+	KidID     sql.NullInt64 `json:"kid_id"`
+	DueAt     string        `json:"due_at"`
+	UpdatedAt string        `json:"updated_at"`
+	ID        int64         `json:"id"`
+}
+
+// A parent's pick replaces any auto-pick; manually_reassigned keeps the horizon from replanning it,
+// and reassigned_from keeps the kid it was planned for (the first, across several reassignments).
+// due_at is the new kid's (it differs for a slotless instance when their day ends differ).
+func (q *Queries) ReassignChoreInstance(ctx context.Context, arg ReassignChoreInstanceParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, reassignChoreInstance,
+		arg.KidID,
+		arg.DueAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const rejectChoreInstance = `-- name: RejectChoreInstance :execrows
+UPDATE chore_instances SET status = 'open', rejection_count = rejection_count + 1, updated_at = ?
+WHERE id = ? AND status = 'submitted'
+`
+
+type RejectChoreInstanceParams struct {
+	UpdatedAt string `json:"updated_at"`
+	ID        int64  `json:"id"`
+}
+
+func (q *Queries) RejectChoreInstance(ctx context.Context, arg RejectChoreInstanceParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, rejectChoreInstance, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setChoreInstanceStatus = `-- name: SetChoreInstanceStatus :execrows
+UPDATE chore_instances SET status = ?1, updated_at = ?2
+WHERE id = ?3 AND status = ?4
+`
+
+type SetChoreInstanceStatusParams struct {
+	ToStatus   string `json:"to_status"`
+	UpdatedAt  string `json:"updated_at"`
+	ID         int64  `json:"id"`
+	FromStatus string `json:"from_status"`
+}
+
+// Moves an instance from one status to another; 0 rows = it isn't in from_status (any more).
+func (q *Queries) SetChoreInstanceStatus(ctx context.Context, arg SetChoreInstanceStatusParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setChoreInstanceStatus,
+		arg.ToStatus,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.FromStatus,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setChoreRotationState = `-- name: SetChoreRotationState :exec

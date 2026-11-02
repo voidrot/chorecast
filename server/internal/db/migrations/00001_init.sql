@@ -279,7 +279,13 @@ CREATE TABLE chore_instances (
     status              TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'submitted', 'approved', 'missed', 'excused')),
     auto_assigned       INTEGER NOT NULL DEFAULT 0 CHECK (auto_assigned IN (0, 1)),       -- picked by the fair auto-pick
     manually_reassigned INTEGER NOT NULL DEFAULT 0 CHECK (manually_reassigned IN (0, 1)), -- a parent or swap changed the assignee
+    reassigned_from     INTEGER REFERENCES users (id) ON DELETE SET NULL, -- the planned kid a reassignment replaced (the first one); the horizon counts the instance as theirs
     rotation_state      TEXT,                         -- rotation: JSON assign.State after this instance's turn
+    -- Lifecycle (internal/instances, #25). The last completion is kept after a rejection or an
+    -- approval reversal, so a completed instance stays touched (never regenerated).
+    completed_by        INTEGER REFERENCES users (id) ON DELETE SET NULL, -- the kid who completed it (shared: the completer)
+    completed_at        TEXT,
+    rejection_count     INTEGER NOT NULL DEFAULT 0,   -- rows in chore_instance_rejections
     created_at          TEXT    NOT NULL,
     updated_at          TEXT    NOT NULL
 );
@@ -374,11 +380,25 @@ CREATE TABLE kid_chore_streaks (
     best     INTEGER NOT NULL,
     PRIMARY KEY (kid_id, chore_id)
 );
+-- ==== Instance state machine (#25) ====
+-- Every rejection of a submitted instance (internal/instances): a quick-pick reason, text, or both.
+CREATE TABLE chore_instance_rejections (
+    id          INTEGER PRIMARY KEY,
+    instance_id INTEGER NOT NULL REFERENCES chore_instances (id) ON DELETE CASCADE,
+    kid_id      INTEGER REFERENCES users (id) ON DELETE SET NULL, -- the completer whose submission was rejected
+    reason_code TEXT    NOT NULL DEFAULT '' CHECK (reason_code IN ('', 'not_done', 'not_finished', 'needs_redo', 'evidence_unclear')),
+    reason_text TEXT    NOT NULL DEFAULT '',
+    rejected_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    created_at  TEXT    NOT NULL,
+    CHECK (reason_code != '' OR reason_text != '')
+);
+CREATE INDEX chore_instance_rejections_by_instance ON chore_instance_rejections (instance_id, id);
 
 -- +goose Down
 DROP TABLE kid_chore_streaks;
 DROP TABLE kid_streaks;
 DROP TABLE streak_days;
+DROP TABLE chore_instance_rejections;
 DROP TABLE chore_instance_members;
 DROP TABLE chore_instances;
 DROP TABLE media_hashes;

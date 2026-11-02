@@ -267,6 +267,21 @@ func Tip(ctx context.Context, tx *events.Tx, kidID int64, kind string, src Sourc
 	return entry, inEffect, true, nil
 }
 
+// SourceKids lists the kids with a kind entry for src (kind is once per source, like Tip's): the
+// kids whose chains Tip can follow, by kid id.
+func SourceKids(ctx context.Context, tx *events.Tx, kind string, src Source) ([]int64, error) {
+	if !onceKind(kind) {
+		return nil, fmt.Errorf("ledger.SourceKids: %q entries aren't once per source", kind)
+	}
+	kids, err := tx.Q.ListPointsKidsBySource(ctx, sqlc.ListPointsKidsBySourceParams{
+		Kind: kind, SourceKind: nullString(src.Kind), SourceID: nullInt(src.ID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list kids by source: %w", err)
+	}
+	return kids, nil
+}
+
 // Balance is the SUM of the kid's entries. q may be a transaction's queries.
 func Balance(ctx context.Context, q *sqlc.Queries, kidID int64) (int64, error) {
 	return q.KidPointsBalance(ctx, kidID)

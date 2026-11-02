@@ -11,6 +11,12 @@ SELECT * FROM points_entries WHERE id = ?;
 SELECT * FROM points_entries
 WHERE kind = ? AND source_kind = ? AND source_id = ? AND kid_id = ?;
 
+-- name: ListPointsKidsBySource :many
+-- The kids with a kind entry for the source (the heads of their chains), by kid id.
+SELECT kid_id FROM points_entries
+WHERE kind = ? AND source_kind = ? AND source_id = ?
+ORDER BY kid_id;
+
 -- name: GetPointsReversalOf :one
 SELECT * FROM points_entries WHERE reverses_id = ?;
 

@@ -654,6 +654,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instance}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a submitted chore
+         * @description Credits the points: to the assignee, or for a shared chore to the completer or split evenly across the group. Re-approving after a reversal restores the earlier credit with its amount: the current assignee's or completer's (or posts theirs if they have none), or an even split's first split, which isn't re-split if the points or the completer changed. Returns the updated instance.
+         */
+        post: operations["approveChoreInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/approval/reversal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reverse an approval
+         * @description Sends an approved instance back to `open` and reverses its credit. Returns the updated instance.
+         */
+        post: operations["reverseChoreInstanceApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete a chore
+         * @description Marks an open instance done: `submitted` for a parent to approve, or `approved` with points credited when the chore doesn't require approval. Kids complete their own instances (or shared ones they're a member of); a parent completes for a kid and names the kid for a shared instance. An instance dated after today can't be completed yet (409 `instance_planned`), nor one whose day (or week) has closed (409 `instance_closed`): day close counts it as missed. Returns the updated instance.
+         */
+        post: operations["completeChoreInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/excusal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Excuse a missed chore
+         * @description Marks a missed instance `excused` and reverses its penalty (every member's, for a shared chore). Returns the updated instance.
+         */
+        post: operations["excuseChoreInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/reassignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give an open chore to another kid
+         * @description Marks it manually reassigned, so regenerating the horizon keeps it (as the original kid's occurrence). Without a slot, it becomes due at the new kid's day (or week) close. Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already has the same occurrence (409 `instance_taken`), or to a kid whose day (or week) has closed (409 `instance_closed`). Returns the updated instance.
+         */
+        post: operations["reassignChoreInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/rejection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a submitted chore
+         * @description Sends it back to `open` with a reason (a quick pick, text, or both) so the kid can redo it. The instance keeps a rejection count and its latest rejection. Returns the updated instance.
+         */
+        post: operations["rejectChoreInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/invites": {
         parameters: {
             query?: never;
@@ -1332,6 +1452,16 @@ export interface components {
             choreId: number;
             choreName: string;
             /**
+             * Format: date-time
+             * @description When it was completed last
+             */
+            completedAt?: string;
+            /**
+             * Format: int64
+             * @description The kid who completed it last (shared: the completer); kept after a rejection or an approval reversal
+             */
+            completedBy?: number;
+            /**
              * Format: date
              * @description The day it belongs to (flexible: the week's first active day)
              */
@@ -1349,10 +1479,17 @@ export interface components {
              * @description The assignee; absent for a shared instance
              */
             kidId?: number;
+            /** @description The latest rejection, if any */
+            lastRejection?: components["schemas"]["ChoreInstanceRejection"];
             /** @description A parent or a swap changed the assignee */
             manuallyReassigned?: boolean;
             /** @description Dated after today: a forecast that may still change */
             planned: boolean;
+            /**
+             * Format: int64
+             * @description How many times a parent rejected it
+             */
+            rejectionCount?: number;
             /**
              * Format: int64
              * @description Flexible: which of the week's completions this is (0-based)
@@ -1362,6 +1499,31 @@ export interface components {
             slot?: string;
             /** @enum {string} */
             status: "open" | "submitted" | "approved" | "missed" | "excused";
+        };
+        ChoreInstanceNoteInputBody: {
+            /** @description Why, on the reversing points entries; a default when absent */
+            note?: string;
+        };
+        ChoreInstanceRejection: {
+            /**
+             * Format: int64
+             * @description The completer whose submission was rejected
+             */
+            kidId?: number;
+            /**
+             * @description The quick-pick reason
+             * @enum {string}
+             */
+            reason?: "not_done" | "not_finished" | "needs_redo" | "evidence_unclear";
+            /** Format: date-time */
+            rejectedAt: string;
+            /**
+             * Format: int64
+             * @description The parent who rejected it
+             */
+            rejectedBy?: number;
+            /** @description The parent's own words */
+            text?: string;
         };
         ChoreInstancesOutputBody: {
             items: components["schemas"]["ChoreInstance"][];
@@ -1379,6 +1541,13 @@ export interface components {
         };
         ChoresOutputBody: {
             items: components["schemas"]["Chore"][];
+        };
+        CompleteChoreInstanceInputBody: {
+            /**
+             * Format: int64
+             * @description Parents: the kid who did it (required for a shared instance). Kids complete as themselves.
+             */
+            kidId?: number;
         };
         CompleteSetupOutputBody: {
             /**
@@ -1929,9 +2098,25 @@ export interface components {
              */
             type: string;
         };
+        ReassignChoreInstanceInputBody: {
+            /**
+             * Format: int64
+             * @description The kid who gets it
+             */
+            kidId: number;
+        };
         RecoveryCodesOutputBody: {
             /** @description Single-use codes for signing in without the authenticator app. Shown only now. */
             recoveryCodes: string[];
+        };
+        RejectChoreInstanceInputBody: {
+            /**
+             * @description A quick-pick reason
+             * @enum {string}
+             */
+            reason?: "not_done" | "not_finished" | "needs_redo" | "evidence_unclear";
+            /** @description Feedback in the parent's words */
+            text?: string;
         };
         ScheduleOccurrence: {
             /**
@@ -4116,6 +4301,407 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    approveChoreInstance: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Instance id */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChoreInstance"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reverseChoreInstanceApproval: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Instance id */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ChoreInstanceNoteInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChoreInstance"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    completeChoreInstance: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Instance id */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CompleteChoreInstanceInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChoreInstance"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    excuseChoreInstance: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Instance id */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ChoreInstanceNoteInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChoreInstance"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reassignChoreInstance: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Instance id */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReassignChoreInstanceInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChoreInstance"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    rejectChoreInstance: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Instance id */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectChoreInstanceInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChoreInstance"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

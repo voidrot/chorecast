@@ -18,6 +18,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/events"
 	"github.com/voidrot/chorecast/server/internal/horizon"
+	"github.com/voidrot/chorecast/server/internal/instances"
 	"github.com/voidrot/chorecast/server/internal/jobs"
 	"github.com/voidrot/chorecast/server/internal/kids"
 	"github.com/voidrot/chorecast/server/internal/schedule"
@@ -61,6 +62,7 @@ type fixture struct {
 	gen      *horizon.Generator
 	chores   *chores.Service
 	streaks  *streaks.Service
+	inst     *instances.Service
 	runner   *jobs.Runner
 	sched    *jobs.Scheduler
 	ann, ben int64
@@ -77,7 +79,7 @@ func newFixture(t *testing.T) *fixture {
 	runner := jobs.NewRunner(d.Queries, clk, quiet)
 	bus := events.NewBus(d, runner, clk, quiet)
 	f := &fixture{t: t, db: d, clock: clk, gen: horizon.New(d, clk), chores: chores.New(d, clk, nil),
-		streaks: streaks.New(d, bus, clk), runner: runner, sched: jobs.NewScheduler(d.Queries, runner, clk, quiet)}
+		streaks: streaks.New(d, bus, clk), inst: instances.New(d, bus, clk), runner: runner, sched: jobs.NewScheduler(d.Queries, runner, clk, quiet)}
 	closer := dayclose.New(d, bus, clk)
 	closer.AfterKidDay = f.streaks.EvaluateKidDay
 	closer.AfterShared = f.streaks.EvaluateDay
@@ -459,6 +461,42 @@ func TestLateChoresSettleAtHouseholdDayEnd(t *testing.T) {
 	f.at("2026-11-04 21:00")
 	f.wantDaily("Ben", f.ben, 1, 1, "2026-11-04")
 	f.wantDaily("Ann", f.ann, 1, 1, "2026-11-04")
+}
+
+// The real transitions count the same as the statuses set directly: a parent's approval, and a
+// completion after an early day end of a slot that the kid's next close takes (still open to
+// complete, unlike a chore whose close has passed).
+func TestTransitionsCountTowardTheStreak(t *testing.T) {
+	f := newFixture(t)
+	dishes := f.choreWith(chores.ChoreInput{Name: "Dishes", RequiresApproval: true,
+		Schedule:   &schedule.ScheduleRule{Type: schedule.TypeDaily, StartDate: date("2026-11-01")},
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeFixed, KidIDs: []int64{f.ann}}})
+	late := f.chore("Feed the cat", f.ben, "20:00")
+	f.start()
+	id := func(chore, kid int64) int64 {
+		t.Helper()
+		var id int64
+		if err := f.db.SQL.QueryRowContext(t.Context(), `SELECT id FROM chore_instances
+			WHERE chore_id = ? AND kid_id = ? AND occurrence_date = '2026-11-04'`, chore, kid).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	if _, err := f.inst.Complete(t.Context(), id(dishes.ID, f.ann), instances.Completion{By: f.ann}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.inst.Approve(t.Context(), id(dishes.ID, f.ann), 0); err != nil {
+		t.Fatal(err)
+	}
+	f.at("2026-11-04 19:00")
+	f.wantDaily("Ben", f.ben, 0, 0, "2026-11-04")
+	f.at("2026-11-04 20:30") // the 20:00 slot is after Ben's 19:00 day end: tomorrow's close takes it
+	if got, err := f.inst.Complete(t.Context(), id(late.ID, f.ben), instances.Completion{By: f.ben}); err != nil || got.Status != horizon.StatusApproved {
+		t.Fatalf("complete Ben's late slot: %+v, %v", got, err)
+	}
+	f.at("2026-11-04 21:00")
+	f.wantDaily("Ann", f.ann, 1, 1, "2026-11-04")
+	f.wantDaily("Ben", f.ben, 1, 1, "2026-11-04")
 }
 
 // Per-chore streaks count each recurring chore's occurrences in a row that were done; a one-off

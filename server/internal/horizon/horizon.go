@@ -6,8 +6,9 @@
 // Every run regenerates the whole household from the same inputs, so the result doesn't depend
 // on what triggered it, and a second run changes nothing:
 //
-//   - An instance is frozen when it's touched (not open, or manually reassigned) or its due time
-//     has passed (today's earlier slots, every earlier day). Frozen instances are never changed.
+//   - An instance is frozen when it's touched (not open, completed before, or manually reassigned)
+//     or its due time has passed (today's earlier slots, every earlier day). Frozen instances are
+//     never changed.
 //     Every other instance in the horizon is regenerable: it's replaced by the new plan, updated
 //     in place when its identity (chore, date, slot, seq, kid) is unchanged so ids stay stable.
 //   - An occurrence already due when it's planned (a slot earlier today, say on a new chore) gets
@@ -18,6 +19,8 @@
 //   - The fairness ledger starts with the frozen instances from a week before this week's start
 //     (flexible instances are dated at the week start). Chores are planned by id, occurrences in
 //     date order, one at a time; an occurrence a frozen instance already covers isn't planned again.
+//     A manually reassigned instance covers the occurrence of the kid it was planned for
+//     (reassigned_from) too, so fixed and everyone chores don't plan that kid's again.
 //   - Rotation: each instance stores the state after its turn. chores.rotation_state is the state
 //     after the chore's last instance dated before the horizon (before today, or before the week
 //     start for flexible chores), and each run resumes from it. Walking the occurrences, it takes
@@ -99,9 +102,18 @@ func (e existing) key() instKey {
 	return instKey{occKey{e.ChoreID, e.OccurrenceDate, e.Slot, e.Seq}, e.KidID.Int64}
 }
 
-// untouched: nothing has happened to it yet. Evidence (#27) and swaps also touch an instance;
-// a swap sets manually_reassigned.
-func (e existing) untouched() bool { return e.Status == StatusOpen && e.ManuallyReassigned == 0 }
+// covers reports whether the instance stands for kid's planned occurrence: it's theirs, or it
+// was reassigned away from them (the new kid does it in their place).
+func (e existing) covers(kid int64) bool {
+	return e.KidID.Int64 == kid || (e.ReassignedFrom.Valid && e.ReassignedFrom.Int64 == kid)
+}
+
+// untouched: nothing has happened to it yet. A reassignment (or swap) sets manually_reassigned,
+// and a completion stays recorded after a rejection or an approval reversal sends it back to open.
+// Evidence (#27) will touch an instance too.
+func (e existing) untouched() bool {
+	return e.Status == StatusOpen && e.ManuallyReassigned == 0 && !e.CompletedAt.Valid
+}
 
 type desired struct {
 	key      instKey
@@ -206,7 +218,7 @@ func (g *Generator) generate(ctx context.Context, q *sqlc.Queries) (Result, erro
 			if r.keptToday[e.ChoreID] == nil {
 				r.keptToday[e.ChoreID] = map[int64]bool{}
 			}
-			for _, k := range append([]int64{e.KidID.Int64}, e.members...) {
+			for _, k := range append([]int64{e.KidID.Int64, e.ReassignedFrom.Int64}, e.members...) {
 				r.keptToday[e.ChoreID][k] = true
 			}
 		}
@@ -264,14 +276,7 @@ func newPlanner(ctx context.Context, q *sqlc.Queries, cal caltime.Household, def
 			k.BirthDate, _ = caltime.ParseDate(u.BirthDate.String) // invalid = unknown, not age-gated
 		}
 		kids = append(kids, k)
-		dayEnds[u.ID] = cal.DayEnd
-		if u.DayEndOverride.Valid {
-			if o, err := caltime.ParseTimeOfDay(u.DayEndOverride.String); err == nil {
-				if end, err := cal.EffectiveDayEnd(&o); err == nil {
-					dayEnds[u.ID] = end
-				}
-			}
-		}
+		dayEnds[u.ID] = KidDayEnd(cal, u.DayEndOverride)
 	}
 	return &assign.Planner{Kids: kids, DefaultMinutes: defaultMinutes, Ledger: &assign.Ledger{}}, dayEnds, nil
 }
@@ -322,6 +327,28 @@ func b2i(b bool) int64 {
 	return 0
 }
 
+// KidDayEnd is a kid's effective day end: their day_end_override when it's valid, else the
+// household's.
+func KidDayEnd(cal caltime.Household, override sql.NullString) caltime.TimeOfDay {
+	if override.Valid {
+		if o, err := caltime.ParseTimeOfDay(override.String); err == nil {
+			if end, err := cal.EffectiveDayEnd(&o); err == nil {
+				return end
+			}
+		}
+	}
+	return cal.DayEnd
+}
+
+// SlotlessDueAt is when a kid's instance without a slot is due: at the close of its day for a
+// kid whose day ends at end, or of its week when flexible (date is then the week's first day).
+func SlotlessDueAt(cal caltime.Household, date caltime.Date, flexible bool, end caltime.TimeOfDay) time.Time {
+	if flexible {
+		return cal.WeekClose(date, end)
+	}
+	return cal.DayClose(date, end)
+}
+
 // dueAt is when an assigned occurrence is due. Without a slot, a kid's instance closes with the
 // kid's own day (or week); shared instances use the household day end.
 func (r *run) dueAt(o schedule.ScheduleOccurrence, kid int64) time.Time {
@@ -329,10 +356,7 @@ func (r *run) dueAt(o schedule.ScheduleOccurrence, kid int64) time.Time {
 	if o.Slot != "" || kid == 0 || !ok {
 		return o.DueAt
 	}
-	if o.Flexible {
-		return r.cal.WeekClose(o.Date, end)
-	}
-	return r.cal.DayClose(o.Date, end)
+	return SlotlessDueAt(r.cal, o.Date, o.Flexible, end)
 }
 
 // planChore plans one chore's occurrences in the horizon. Disabled and unscheduled chores get
@@ -415,9 +439,10 @@ func (r *run) planChore(ctx context.Context, c sqlc.Chore, overrides map[int64]b
 			due := r.dueAt(o, pl.KidID)
 			drop := !due.After(r.now) // the kid's own day already closed
 			if !single {
-				// fixed/everyone: no second instance for a kid with a kept one here, and no
-				// slot added today for a kid with a kept instance today.
-				drop = drop || slices.ContainsFunc(frozenHere, func(k existing) bool { return k.KidID.Int64 == pl.KidID }) ||
+				// fixed/everyone: no second instance for a kid with a kept one here (or whose
+				// one was reassigned to another kid), and no slot added today for a kid with a
+				// kept instance today.
+				drop = drop || slices.ContainsFunc(frozenHere, func(k existing) bool { return k.covers(pl.KidID) }) ||
 					(newToday && r.keptToday[c.ID][pl.KidID])
 			}
 			if drop {

@@ -151,6 +151,58 @@ implementation:
   closes (streaks, #30) keeps its own cursor. Closes find due instances through the partial index
   `chore_instances_open_due`.
 
+Built (#25, `internal/instances`, server only). Every transition except open → missed (day close, #24) is a
+function that runs in the caller's `bus.InTx`, so bulk approve (#28) and auto-approve (#29) call them directly:
+`Complete`, `Approve`, `Reject`, `Unapprove` (approved → open), `Excuse` and `Reassign`. Each checks its source
+status with an atomic `UPDATE … WHERE status = from` (409 `instance_not_open`, `instance_not_submitted`,
+`instance_not_approved` or `instance_not_missed` otherwise), writes ledger entries only through `internal/ledger`,
+and emits one event, `instance.<completed|approved|rejected|unapproved|excused|reassigned>` with
+`{instanceId, kidIds, from, to, by}`. Choices made in implementation:
+
+- **Credit** is posted on approval, or at completion when `requires_approval` is off (one `instance.completed`
+  event with `to: approved`, no separate approval event). It goes to the assignee; for a shared instance to the
+  completer (`completer_takes_all`) or split with `assign.SplitPoints` across every member, remainder to the
+  completer (`split_evenly`). Helper tagging (schedules.md) isn't built, so the split is over the whole group. A
+  share of 0 posts nothing. Credit entries are dated to the instance's own day; for a flexible instance that's
+  its week's first active day, so a credit is never dated ahead of today (day close dates a flexible penalty to
+  the week's last day, when the week closed).
+- **Undo and re-apply** follow the ledger's rule: `Unapprove` reverses every credit tip in effect for the instance
+  (`ledger.SourceKids`, so also one left for a kid it was reassigned away from), and re-approving reverses a
+  reversal instead of posting again, which restores the original amount even if the chore's points changed.
+  A single-kid instance is credited only to its current assignee: their earlier credit is restored, or else the
+  current points are posted, and a kid it was reassigned away from stays reversed (nobody is paid for another
+  kid's work). A shared `completer_takes_all` instance works the same way for its current completer: their
+  earlier credit is restored, or else the points are posted, and an earlier completer stays reversed. A shared
+  `split_evenly` instance can't be reassigned, so its group is stable: credits follow the split only on the
+  first approval, and a re-approval doesn't re-split, even if the points or the completer changed. It restores
+  every earlier credit to its kid with its amount and posts nothing new, so the instance's total is always what
+  was first credited. `Excuse` reverses every penalty
+  tip in effect: the assignee's, or every member's of a shared instance.
+- **Reopening a closed day.** Day close takes every open instance due by the close. When a rejection or approval
+  reversal reopens an instance whose close has already passed (`dayclose.ClosesAt`: the kid's day or week close
+  for their own instances, the household day end for shared ones), the kid can't redo that day, so the same
+  transaction hands it to day close (`dayclose.MissInTx`): it becomes `missed` with its penalty and an
+  `instance.missed` event, after the `instance.rejected` or `instance.unapproved` one, and the parent gets that
+  state back. A parent can still excuse it. While the day is open, it goes back to `open`.
+- **Completion** records `completed_by` (the kid who did it) and `completed_at`; both stay after a rejection or
+  reversal, which is how the horizon knows the instance was touched and keeps it. Kids complete their own
+  instances or shared ones they're a member of. A parent completes for a kid and names the kid for a shared
+  instance. An instance dated after today can't be completed (409 `instance_planned`), nor one whose close has
+  passed (`dayclose.ClosesAt`) while day close hasn't taken it yet, after downtime or a lagging job (409
+  `instance_closed`, nothing written): day close takes it as missed. Accepting an offline completion made before
+  the close, within a grace margin, is #35's job. Evidence (#27) hooks into `Complete` (`checkEvidence`).
+- **Reassign** moves an open single-kid instance to another active kid and sets `manually_reassigned` (clearing
+  `auto_assigned`). It records the kid it was planned for in `reassigned_from` (the first, across several
+  reassignments), and the horizon counts the instance as that kid's occurrence, so a fixed or everyone chore
+  isn't planned for them again. An instance without a slot becomes due at the new kid's own day (or week) close.
+  Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already has the same
+  occurrence (409 `instance_taken`) or whose close for it has passed (409 `instance_closed`, `dayclose.ClosesAt`
+  for the new kid).
+- **API** (each returns the updated `ChoreInstance`): `POST /instances/{id}/completion` (`chores:complete`, body
+  `{kidId?}`), `…/approval`, `…/rejection` (`{reason?, text?}`), `…/approval/reversal` and `…/excusal` (`{note?}`
+  for the reversal entries) with `chores:review`, and `…/reassignment` (`{kidId}`) with `chores:manage`.
+  `ChoreInstance` gains the optional `completedBy`, `completedAt`, `rejectionCount` and `lastRejection`.
+
 ## Streaks
 
 Evaluated at day close for each kid:

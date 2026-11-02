@@ -112,7 +112,7 @@ group size (rounded up).
   materialized for `[today, today + 7 days]`.
 - Each instance stores `(chore_id, occurrence_date, slot)` (plus a flexible week's `seq` and the kid) with a unique
   constraint, so generation is idempotent.
-- Instances are **untouched** when `status = open`, no evidence, no swap, and not manually reassigned.
+- Instances are **untouched** when `status = open`, no evidence, no swap, not manually reassigned, and never completed (a rejected or reversed completion still counts; #25).
 - **Chore edited**: delete untouched instances from tomorrow on (today too if the due slot hasn't passed and it's untouched) and regenerate.
   A slot added or moved later today isn't created today for a kid who already has a kept instance of the chore today
   (done, or already due): the edit takes full effect tomorrow. For rotation, auto and shared chores, any kept
@@ -130,7 +130,8 @@ for a shared instance, whose group is in `chore_instance_members`). `status` is 
 regenerates the whole household in one transaction (ids are never reused: `AUTOINCREMENT`), at each household day end (`HouseholdDayCloses`), once at
 startup, and on `household.calendar_changed`, `chore.changed` and `kid.changed`. Instances that are touched
 (not `open`, or manually reassigned) or already due are frozen; the others in the horizon are re-planned and updated
-in place when their identity is unchanged, so a second run changes nothing. Occurrences already due when planned
+in place when their identity is unchanged, so a second run changes nothing. A reassigned instance covers the
+occurrence of the kid in its `reassigned_from` too, so that kid's isn't planned again (#25). Occurrences already due when planned
 (a slot earlier today) get no instance. Flexible chores are expanded from the week start, so this week's
 completions stay in the horizon until week close. The fairness ledger starts with the frozen instances from a
 week before this week's start; chores are planned by id and occurrences in order. Each rotation instance stores the
