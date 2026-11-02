@@ -17,8 +17,9 @@
 // source status with an atomic UPDATE … WHERE status = from, writes ledger entries only through
 // internal/ledger, and emits one event. Ledger effects are once per (kind, kid, instance): to
 // undo or re-apply one, the transition reverses the chain's tip (ledger.Tip) and never posts
-// twice, so re-approving after a reversal restores the original credits, to the same kids with
-// the same amounts, and doesn't re-split even if the chore's points or the completer changed.
+// twice, so re-approving after a reversal restores the original credit: the current assignee's,
+// or a shared instance's first split, which isn't re-split even if the points or the completer
+// changed (see credit).
 package instances
 
 import (
@@ -340,7 +341,7 @@ func Unapprove(ctx context.Context, tx *events.Tx, clk clock.Clock, id, by int64
 	if err := move(ctx, tx, clk, in, horizon.StatusApproved, horizon.StatusOpen, ErrNotApproved); err != nil {
 		return err
 	}
-	// Every kid credited for it, even one it was reassigned away from since (credit restores theirs).
+	// Every credit in effect for it: the current kids', and any other an earlier approval left.
 	kids, err := ledger.SourceKids(ctx, tx, ledger.KindChore, in.source())
 	if err != nil {
 		return err
@@ -372,7 +373,8 @@ func Excuse(ctx context.Context, tx *events.Tx, clk clock.Clock, id, by int64, n
 
 // Reassign moves an open, single-kid instance to kidID and marks it manually reassigned, so the
 // horizon keeps it as it is and counts it as the original kid's occurrence. An instance without a
-// slot becomes due at the new kid's own day (or week) close.
+// slot becomes due at the new kid's own day (or week) close. It can't go to a kid whose close for
+// it has passed already (ErrClosed).
 func Reassign(ctx context.Context, tx *events.Tx, clk clock.Clock, id, kidID, by int64) error {
 	in, err := load(ctx, tx.Q, id)
 	if err != nil {
@@ -408,6 +410,17 @@ func Reassign(ctx context.Context, tx *events.Tx, clk clock.Clock, id, kidID, by
 			return fmt.Errorf("instance %d date: %w", in.ID, err)
 		}
 		due = db.Timestamp(horizon.SlotlessDueAt(cal, date, in.Flexible == 1, horizon.KidDayEnd(cal, k.DayEndOverride)))
+	}
+	// The new kid's close mustn't have passed: they couldn't complete it, and day close would
+	// miss it at their next close.
+	moved := in.ChoreInstance
+	moved.KidID, moved.DueAt = sql.NullInt64{Int64: kidID, Valid: true}, due
+	closes, err := dayclose.ClosesAt(ctx, tx.Q, moved)
+	if err != nil {
+		return fmt.Errorf("instance %d close: %w", in.ID, err)
+	}
+	if !closes.After(clk.Now()) {
+		return ErrClosed
 	}
 	n, err := tx.Q.ReassignChoreInstance(ctx, sqlc.ReassignChoreInstanceParams{
 		KidID: sql.NullInt64{Int64: kidID, Valid: true}, DueAt: due, UpdatedAt: db.Timestamp(clk.Now()), ID: in.ID,
@@ -450,35 +463,58 @@ func shares(in instance) map[int64]int {
 	return assign.SplitPoints(pts, in.chore.SharedPoints, in.CompletedBy.Int64, in.members)
 }
 
-// credit puts the instance's credit in effect. The first approval splits the points (shares) and
-// posts each kid's share (nothing for a share of 0). Once any credit exists, a re-approval only
-// restores the earlier credits, each to its kid with its amount (reversing a reversal tip), and
-// posts nothing new: it doesn't re-split, even if the points, the completer or the assignee
-// changed, so the instance's total stays what was first credited. The entries are dated to the
-// instance's day, like its missed penalty.
+// credit puts the instance's credit in effect. The entries are dated to the instance's day, like
+// its missed penalty.
+//
+// A single-kid instance is credited to its current assignee only: their earlier credit is
+// restored (reversing a reversal tip, with its original amount), or else the current points are
+// posted. A kid it was reassigned away from keeps their reversed credit, so nobody is paid for
+// another kid's work.
+//
+// A shared instance's group can't change, so the first approval splits the points (shares) and
+// posts each share above 0, and a re-approval restores every earlier credit, each to its kid with
+// its amount, and posts nothing new: it doesn't re-split, even if the points or the completer
+// changed, so the total stays what was first credited.
 func credit(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance, by int64, note string) error {
+	date, err := caltime.ParseDate(in.OccurrenceDate)
+	if err != nil {
+		return fmt.Errorf("instance %d date: %w", in.ID, err)
+	}
+	restore := func(kid int64) (found bool, err error) {
+		tip, inEffect, found, err := ledger.Tip(ctx, tx, kid, ledger.KindChore, in.source())
+		if err != nil || !found || inEffect {
+			return found, err
+		}
+		_, err = ledger.Reverse(ctx, tx, clk, tip.ID, cmp.Or(strings.TrimSpace(note), noteReapproved), by)
+		return true, err
+	}
+	post := func(kid int64, pts int64) error {
+		_, err := ledger.Post(ctx, tx, clk, ledger.Posting{
+			KidID: kid, Kind: ledger.KindChore, Amount: pts, Source: in.source(), LocalDate: date,
+			Note: note, CreatedBy: by,
+		})
+		return err
+	}
+
+	if in.KidID.Valid {
+		found, err := restore(in.KidID.Int64)
+		if err != nil || found || in.chore.Points == 0 {
+			return err
+		}
+		return post(in.KidID.Int64, in.chore.Points)
+	}
+
 	credited, err := ledger.SourceKids(ctx, tx, ledger.KindChore, in.source())
 	if err != nil {
 		return err
 	}
 	if len(credited) > 0 {
 		for _, kid := range credited {
-			tip, inEffect, _, err := ledger.Tip(ctx, tx, kid, ledger.KindChore, in.source())
-			if err != nil {
-				return err
-			}
-			if inEffect {
-				continue
-			}
-			if _, err := ledger.Reverse(ctx, tx, clk, tip.ID, cmp.Or(strings.TrimSpace(note), noteReapproved), by); err != nil {
+			if _, err := restore(kid); err != nil {
 				return err
 			}
 		}
 		return nil
-	}
-	date, err := caltime.ParseDate(in.OccurrenceDate)
-	if err != nil {
-		return fmt.Errorf("instance %d date: %w", in.ID, err)
 	}
 	split := shares(in)
 	kids := make([]int64, 0, len(split))
@@ -489,10 +525,7 @@ func credit(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance, by
 	}
 	slices.Sort(kids) // a stable entry order
 	for _, kid := range kids {
-		if _, err := ledger.Post(ctx, tx, clk, ledger.Posting{
-			KidID: kid, Kind: ledger.KindChore, Amount: int64(split[kid]), Source: in.source(), LocalDate: date,
-			Note: note, CreatedBy: by,
-		}); err != nil {
+		if err := post(kid, int64(split[kid])); err != nil {
 			return err
 		}
 	}

@@ -167,11 +167,14 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
   its week's first active day, so a credit is never dated ahead of today (day close dates a flexible penalty to
   the week's last day, when the week closed).
 - **Undo and re-apply** follow the ledger's rule: `Unapprove` reverses every credit tip in effect for the instance
-  (`ledger.SourceKids`, so also a kid it was reassigned away from since), and re-approving reverses those
-  reversals instead of posting again. Credits follow the current split only on the first approval, when the
-  instance has no credit yet. A re-approval doesn't re-split, even if the chore's points, the completer or the
-  assignee changed: it restores every earlier credit to its original kid with its original amount and posts
-  nothing new, so the instance's total is always what was first credited. `Excuse` reverses every penalty
+  (`ledger.SourceKids`, so also one left for a kid it was reassigned away from), and re-approving reverses a
+  reversal instead of posting again, which restores the original amount even if the chore's points changed.
+  A single-kid instance is credited only to its current assignee: their earlier credit is restored, or else the
+  current points are posted, and a kid it was reassigned away from stays reversed (nobody is paid for another
+  kid's work). A shared instance can't be reassigned, so its group is stable: credits follow the split only on
+  the first approval, and a re-approval doesn't re-split, even if the points or the completer changed. It
+  restores every earlier credit to its kid with its amount and posts nothing new, so the instance's total is
+  always what was first credited. `Excuse` reverses every penalty
   tip in effect: the assignee's, or every member's of a shared instance.
 - **Reopening a closed day.** Day close takes every open instance due by the close. When a rejection or approval
   reversal reopens an instance whose close has already passed (`dayclose.ClosesAt`: the kid's day or week close
@@ -191,7 +194,8 @@ and emits one event, `instance.<completed|approved|rejected|unapproved|excused|r
   reassignments), and the horizon counts the instance as that kid's occurrence, so a fixed or everyone chore
   isn't planned for them again. An instance without a slot becomes due at the new kid's own day (or week) close.
   Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already has the same
-  occurrence (409 `instance_taken`).
+  occurrence (409 `instance_taken`) or whose close for it has passed (409 `instance_closed`, `dayclose.ClosesAt`
+  for the new kid).
 - **API** (each returns the updated `ChoreInstance`): `POST /instances/{id}/completion` (`chores:complete`, body
   `{kidId?}`), `…/approval`, `…/rejection` (`{reason?, text?}`), `…/approval/reversal` and `…/excusal` (`{note?}`
   for the reversal entries) with `chores:review`, and `…/reassignment` (`{kidId}`) with `chores:manage`.

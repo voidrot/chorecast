@@ -665,7 +665,7 @@ export interface paths {
         put?: never;
         /**
          * Approve a submitted chore
-         * @description Credits the points: to the assignee, or for a shared chore to the completer or split evenly across the group. Re-approving after a reversal restores the earlier credits as first split, even if the points or the completer changed since. Returns the updated instance.
+         * @description Credits the points: to the assignee, or for a shared chore to the completer or split evenly across the group. Re-approving after a reversal restores the earlier credit with its amount: the current assignee's, or a shared chore's first split (not re-split if the points or the completer changed). Returns the updated instance.
          */
         post: operations["approveChoreInstance"];
         delete?: never;
@@ -745,7 +745,7 @@ export interface paths {
         put?: never;
         /**
          * Give an open chore to another kid
-         * @description Marks it manually reassigned, so regenerating the horizon keeps it (as the original kid's occurrence). Without a slot, it becomes due at the new kid's day (or week) close. Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already has the same occurrence (409 `instance_taken`). Returns the updated instance.
+         * @description Marks it manually reassigned, so regenerating the horizon keeps it (as the original kid's occurrence). Without a slot, it becomes due at the new kid's day (or week) close. Shared instances can't be reassigned (409 `instance_shared`), nor moved to a kid who already has the same occurrence (409 `instance_taken`), or to a kid whose day (or week) has closed (409 `instance_closed`). Returns the updated instance.
          */
         post: operations["reassignChoreInstance"];
         delete?: never;

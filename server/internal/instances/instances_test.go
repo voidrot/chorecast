@@ -466,10 +466,10 @@ func TestReapprovalRestoresTheCreditWithoutPostingAgain(t *testing.T) {
 	}
 }
 
-// TestReapprovalDoesNotResplit: once an instance has been credited, a re-approval restores those
-// credits, to the same kids with the same amounts, and posts nothing new, even if the chore's
-// points or the completer changed: the instance's total stays what was first credited. Shares
-// follow the current split only on the first approval (a share of 0 isn't posted).
+// TestReapprovalDoesNotResplit: a re-approval restores an earlier credit with its amount instead
+// of posting again, even if the chore's points changed. A shared instance keeps its first split
+// whoever completes it again; a single-kid one credits only its current assignee, so a kid it was
+// reassigned away from stays reversed. A first credit of 0 isn't posted.
 func TestReapprovalDoesNotResplit(t *testing.T) {
 	ctx := t.Context()
 	approve := func(f *fixture, id, kid int64) {
@@ -538,13 +538,18 @@ func TestReapprovalDoesNotResplit(t *testing.T) {
 		if _, err := f.svc.Reassign(ctx, id, f.ada, f.mom); err != nil {
 			t.Fatal(err)
 		}
+		f.exec("UPDATE chores SET points = 7 WHERE id = ?", c.ID)
 		approve(f, id, 0)
-		if got := balances(f); got != [3]int64{5, 0, 0} {
-			t.Errorf("re-approval after a reassignment: balances %v, want Sam's first credit restored", got)
+		if got := balances(f); got != [3]int64{0, 7, 0} {
+			t.Errorf("re-approval after a reassignment: balances %v, want Ada credited the points now and Sam still reversed", got)
 		}
-		unapprove(f, id) // reverses Sam's credit though Ada is the assignee now
-		if got := balances(f); got != [3]int64{0, 0, 0} {
-			t.Errorf("reversal after a reassignment: balances %v, want 0s", got)
+		unapprove(f, id)
+		approve(f, id, 0) // Ada's own credit is restored, not posted again
+		if got := balances(f); got != [3]int64{0, 7, 0} {
+			t.Errorf("Ada's re-approval: balances %v, want [0 7 0]", got)
+		}
+		if n := len(f.entries(id)); n != 5 { // Sam: credit, reversal; Ada: credit, reversal, reversal
+			t.Errorf("entries %v, want 5", f.entries(id))
 		}
 	})
 }
@@ -917,6 +922,26 @@ func TestReassignDoesNotDuplicateOnRegeneration(t *testing.T) {
 	}
 }
 
+// TestReassignToAKidWhoseDayClosedIsRefused: the new kid couldn't complete it, so it stays put.
+func TestReassignToAKidWhoseDayClosedIsRefused(t *testing.T) {
+	f := newFixture(t) // now: Saturday 13:00 in Chicago; Ada's day ends at 12:00
+	f.exec("UPDATE users SET day_end_override = '12:00' WHERE id = ?", f.ada)
+	c := f.chore(chores.ChoreInput{Name: "Dishes", Points: 5})
+	id := f.instance(c.ID, today, f.sam) // Sam's day is still open
+	before := f.get(id)
+	_, err := f.svc.Reassign(t.Context(), id, f.ada, f.mom)
+	wantErr(t, "reassign onto Ada after her close", err, instances.ErrClosed)
+	if got := f.get(id); got.KidID != f.sam || got.ManuallyReassigned || !got.DueAt.Equal(before.DueAt) {
+		t.Errorf("a refused reassignment changed it: %+v", got)
+	}
+	if got := f.eventTypes(); len(got) != 0 {
+		t.Errorf("a refused reassignment emitted %v", got)
+	}
+	if _, err := f.svc.Reassign(t.Context(), id, f.kim, f.mom); err != nil {
+		t.Errorf("reassign onto Kim, whose day is open: %v", err)
+	}
+}
+
 // TestReassignMovesTheDueTimeToTheNewKid: an instance without a slot is due at its kid's own day
 // (or week) close, so a reassignment moves it to the new kid's; a slot keeps its time.
 func TestReassignMovesTheDueTimeToTheNewKid(t *testing.T) {
@@ -1008,8 +1033,18 @@ func (m *modelInstance) credit() map[int64]int64 {
 	} else {
 		shares = assign.SplitPoints(int(m.chore.Points), m.chore.SharedPoints, m.completer, m.members)
 	}
-	// The first approval posts the split (shares of 0 aren't posted); a re-approval restores
-	// exactly those credits and doesn't re-split, whoever completed it or is assigned now.
+	// A single-kid instance credits its current assignee: their first credit, or the points now.
+	if m.kid != 0 {
+		if _, ok := m.credited[m.kid]; !ok && m.chore.Points > 0 {
+			m.credited[m.kid] = m.chore.Points
+		}
+		if v, ok := m.credited[m.kid]; ok {
+			out[m.kid] = v
+		}
+		return out
+	}
+	// Shared: the first approval posts the split (shares of 0 aren't posted); a re-approval
+	// restores exactly those credits and doesn't re-split, whoever completed it.
 	if len(m.credited) == 0 {
 		for k, pts := range shares {
 			if pts > 0 {
@@ -1140,6 +1175,8 @@ func runLedgerModel(t *testing.T, seed uint64, allowNegative bool) {
 				want = instances.ErrShared
 			case m.kid == kid:
 				want = errValidation
+			case m.pastDay:
+				want = instances.ErrClosed
 			default:
 				m.kid = kid
 			}
