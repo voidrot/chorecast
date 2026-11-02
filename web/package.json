@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
-    "@dicebear/core": "9.4.3",
+    "@dicebear/core": "10.7.0",
     "@dicebear/pixel-art": "9.4.3",
     "@pinia/testing": "^2.0.2",
     "@tailwindcss/vite": "^4.3.3",
