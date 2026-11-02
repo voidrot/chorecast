@@ -28,7 +28,7 @@
     "@dicebear/pixel-art": "9.4.3",
     "@pinia/testing": "^2.0.2",
     "@tailwindcss/vite": "^4.3.3",
-    "@tsconfig/node22": "^22.0.6",
+    "@tsconfig/node24": "^24.0.0",
     "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/test-utils": "^2.5.1",
