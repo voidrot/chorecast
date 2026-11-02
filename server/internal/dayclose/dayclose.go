@@ -298,7 +298,7 @@ func (c *Closer) Register(runner *jobs.Runner, sched *jobs.Scheduler, log *slog.
 	for _, p := range []jobs.Provider{
 		jobs.KidDayCloses(KindKidDay, cal, kids),
 		jobs.KidWeekCloses(KindKidWeek, cal, kids),
-		jobs.HouseholdDayCloses("day_close:shared", KindShared, cal),
+		jobs.HouseholdDayCloses("day_close:"+KindShared, KindShared, cal),
 	} {
 		sched.Add(func(ctx context.Context) ([]jobs.Recurring, error) {
 			if _, err := c.db.GetHousehold(ctx); errors.Is(err, sql.ErrNoRows) {
