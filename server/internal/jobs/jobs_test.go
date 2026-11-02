@@ -307,7 +307,7 @@ func TestKidDayCloseRunsExactlyOnceAndCatchesUp(t *testing.T) {
 	if rec.calls[0] != want {
 		t.Fatalf("payload = %+v, want %+v", rec.calls[0], want)
 	}
-	if j := e.job(t, "day_close:kid:1:2026-03-08"); j.RunAt != "2026-03-09T00:00:00.000Z" {
+	if j := e.job(t, "day_close:day_close:kid:1:2026-03-08@2026-03-09T00:00:00.000Z"); j.RunAt != "2026-03-09T00:00:00.000Z" {
 		t.Errorf("run_at = %s", j.RunAt)
 	}
 	for range 3 { // later ticks and runs do nothing more
@@ -352,8 +352,35 @@ func TestDayEndChangeAndNewKid(t *testing.T) {
 	mustTick(t, s, 0)
 	e.clock.Set(time.Date(2026, 6, 2, 4, 0, 0, 0, time.UTC)) // midnight EDT: kid 2's first close
 	mustTick(t, s, 1)
-	if j := e.job(t, "day_close:kid:2:2026-06-01"); j.Status != "queued" {
+	if j := e.job(t, "day_close:day_close:kid:2:2026-06-01@2026-06-02T04:00:00.000Z"); j.Status != "queued" {
 		t.Errorf("kid 2 job = %+v", j)
+	}
+}
+
+// A day end moved later after the day's close fired closes the same day again at the new time,
+// and two kinds scheduling the same kid's closes don't share a cursor.
+func TestDayEndMovedLaterAndSecondKind(t *testing.T) {
+	e := newEnv(t, time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC))
+	r := e.runner()
+	r.Register("day_close", func(context.Context, Job) error { return nil }, KindOptions{})
+	r.Register("streaks", func(context.Context, Job) error { return nil }, KindOptions{})
+	seven := caltime.MustTimeOfDay(19, 0)
+	kids := []Kid{{ID: 1, DayEnd: &seven}}
+	list := func(context.Context) ([]Kid, error) { return kids, nil }
+	s := NewScheduler(e.q, r, e.clock, quiet)
+	s.Add(KidDayCloses("day_close", nyHousehold(t), list))
+	s.Add(KidDayCloses("streaks", nyHousehold(t), list))
+	mustTick(t, s, 0)
+
+	e.clock.Set(time.Date(2026, 6, 1, 23, 0, 0, 0, time.UTC)) // 19:00 EDT
+	mustTick(t, s, 2)                                         // one per kind
+
+	half := caltime.MustTimeOfDay(20, 30)
+	kids[0].DayEnd = &half
+	e.clock.Set(time.Date(2026, 6, 2, 0, 30, 0, 0, time.UTC)) // 20:30 EDT, same day
+	mustTick(t, s, 2)
+	if j := e.job(t, "day_close:day_close:kid:1:2026-06-01@2026-06-02T00:30:00.000Z"); j.Status != "queued" {
+		t.Errorf("moved close = %+v", j)
 	}
 }
 
@@ -373,7 +400,7 @@ func TestKidWeekCloseAndHouseholdSchedules(t *testing.T) {
 	e.clock.Set(time.Date(2026, 11, 2, 5, 0, 0, 0, time.UTC))
 	// week close (1) + household day closes Wed..Sun (5) + maintenance (4 full days elapsed)
 	mustTick(t, s, 1+5+4)
-	if j := e.job(t, "week_close:kid:3:2026-11-01"); j.RunAt != "2026-11-02T05:00:00.000Z" {
+	if j := e.job(t, "week_close:week_close:kid:3:2026-11-01@2026-11-02T05:00:00.000Z"); j.RunAt != "2026-11-02T05:00:00.000Z" {
 		t.Errorf("week close run_at = %s", j.RunAt)
 	}
 	e.clock.Advance(time.Hour)
