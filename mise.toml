@@ -57,9 +57,9 @@ description = "Run all code generation"
 depends = ["gen:sql", "gen:openapi", "gen:web-client"]
 
 [tasks."gen:avatars"]
-description = "Regenerate the bundled kid avatars (DiceBear Pixel Art, CC0) and their ID lists"
+description = "Regenerate the bundled kid avatars (DiceBear Pixel Art, CC0) and their ID lists, plus the Android PNGs (needs rsvg-convert)"
 dir = "web"
-run = "node scripts/gen-avatars.mjs && pnpm exec biome format --write src/avatars.ts && gofmt -w ../server/internal/kids/avatars_gen.go"
+run = "node scripts/gen-avatars.mjs && pnpm exec biome format --write src/avatars.ts && gofmt -w ../server/internal/kids/avatars_gen.go && ./scripts/gen-android-avatars.sh"
 
 [tasks."db:new"]
 description = "Create a new SQL migration: mise run db:new <name>"

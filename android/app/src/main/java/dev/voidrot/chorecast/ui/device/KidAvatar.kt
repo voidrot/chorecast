@@ -49,14 +49,16 @@ private val bundledAvatars = intArrayOf(
 @Composable
 internal fun KidAvatar(kid: KidProfile, photos: AvatarPhotos, sizeDp: Int) {
     var photo by remember(kid.id) { mutableStateOf<ImageBitmap?>(null) }
-    val url = kid.avatarPhotoUrl
-    LaunchedEffect(kid.id, url) {
+    val url = kid.avatarPhotoUrl?.toString()
+    // The signed link gets a new signature on every picker refresh; the photo only changes with its path.
+    val photoKey = url?.substringBefore('?')
+    LaunchedEffect(kid.id, photoKey) {
         if (url == null) {
             photo = null
             return@LaunchedEffect
         }
         val bytes = photos.fetch(url) ?: return@LaunchedEffect
-        val decoded = withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
+        val decoded = withContext(Dispatchers.Default) { decodeAvatar(bytes, sizeDp) }
         if (decoded != null) photo = decoded
     }
 
@@ -67,6 +69,29 @@ internal fun KidAvatar(kid: KidProfile, photos: AvatarPhotos, sizeDp: Int) {
         shown != null -> Image(shown, contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
         bundled != null -> Image(painterResource(bundled), contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
         else -> Initials(kid.displayName, kid.color, sizeDp)
+    }
+}
+
+/** Pixels above which a decoded photo is rejected as not an avatar, before any pixels are allocated. */
+private const val MAX_AVATAR_EDGE = 4096
+
+/**
+ * Decodes [bytes] sampled down to about [sizeDp] (at most 2x that is kept), or null if it isn't an
+ * image, is absurdly large, or doesn't fit in memory.
+ */
+private fun decodeAvatar(bytes: ByteArray, sizeDp: Int): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    val longest = maxOf(bounds.outWidth, bounds.outHeight)
+    if (longest <= 0 || longest > MAX_AVATAR_EDGE) return null
+    val target = sizeDp * 3 // enough for a dense screen
+    var sample = 1
+    while (longest / (sample * 2) >= target) sample *= 2
+    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+    return try {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+    } catch (_: OutOfMemoryError) {
+        null
     }
 }
 

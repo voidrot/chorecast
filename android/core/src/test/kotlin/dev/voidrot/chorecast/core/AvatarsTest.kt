@@ -38,6 +38,11 @@ class AvatarsTest {
         assertNull(AvatarPhotos(MockEngine { respond("", HttpStatusCode.Forbidden) }).fetch("https://x/a"))
         val big = MockEngine { respond(ByteArray(10), HttpStatusCode.OK, headersOf(HttpHeaders.ContentLength, "${AvatarPhotos.MAX_BYTES + 1}")) }
         assertNull(AvatarPhotos(big).fetch("https://x/a"))
+        // No Content-Length (chunked): the cap still holds.
+        val chunked = MockEngine { respond(ByteArray((AvatarPhotos.MAX_BYTES + 1000).toInt()), HttpStatusCode.OK) }
+        assertNull(AvatarPhotos(chunked).fetch("https://x/a"))
+        val atCap = MockEngine { respond(ByteArray(AvatarPhotos.MAX_BYTES.toInt()), HttpStatusCode.OK) }
+        assertEquals(AvatarPhotos.MAX_BYTES.toInt(), AvatarPhotos(atCap).fetch("https://x/a")?.size)
         assertNull(AvatarPhotos(MockEngine { throw java.io.IOException("offline") }).fetch("https://x/a"))
     }
 }

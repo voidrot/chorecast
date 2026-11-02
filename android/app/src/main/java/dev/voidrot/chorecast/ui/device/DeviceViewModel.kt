@@ -17,6 +17,7 @@ import dev.voidrot.chorecast.core.ParentAuth
 import dev.voidrot.chorecast.core.ParentPage
 import dev.voidrot.chorecast.core.ParentReview
 import dev.voidrot.chorecast.core.PinError
+import dev.voidrot.chorecast.core.SessionCheck
 import dev.voidrot.chorecast.core.SessionLock
 import dev.voidrot.chorecast.core.ServerUrl
 import dev.voidrot.chorecast.core.SessionResult
@@ -71,6 +72,8 @@ data class DeviceState(
     val active: ActiveSession? = null,
     /** Which parent screen shows while a parent is elevated. */
     val parentPage: ParentPage = ParentPage.Overview,
+    /** Where the open elevation's parent screens keep their view models; set and cleared with [active]. */
+    val parentStore: ParentSessionStore? = null,
 )
 
 /**
@@ -85,13 +88,14 @@ class DeviceViewModel(
     private val appVersion: String,
     private val newParentReview: () -> ParentReview,
     now: () -> Instant = Instant::now,
+    elapsedNanos: () -> Long = System::nanoTime,
 ) : ViewModel() {
     private val _state = MutableStateFlow(DeviceState())
     val state: StateFlow<DeviceState> = _state.asStateFlow()
     private var lockJob: Job? = null
     private var kidSession: KidSessionStore? = null
     private var parentSession: ParentSessionStore? = null
-    private val sessionLock = SessionLock(now)
+    private val sessionLock = SessionLock(now, elapsedNanos)
 
     /** The device token the kid home already re-checked after a 401, so a persistent 401 can't loop. */
     private var recheckedToken: String? = null
@@ -148,16 +152,6 @@ class DeviceViewModel(
         kidSession = null
     }
 
-    /**
-     * Where the parent screens' view models live while [session] is elevated. A different elevation
-     * gets a fresh store, so no parent screen state outlives the elevation it was loaded under.
-     */
-    fun parentStore(session: ActiveSession.Parent): ParentSessionStore {
-        parentSession?.takeIf { it.session == session }?.let { return it }
-        clearParentStore()
-        return ParentSessionStore(session, newParentReview()).also { parentSession = it }
-    }
-
     private fun clearParentStore() {
         parentSession?.viewModelStore?.clear()
         parentSession = null
@@ -172,18 +166,11 @@ class DeviceViewModel(
 
     fun openParentPage(page: ParentPage) = _state.update { it.copy(parentPage = page) }
 
-    /** Back inside the parent screens; false when already at the overview. */
-    fun parentBack(): Boolean {
-        if (_state.value.parentPage == ParentPage.Overview) return false
-        _state.update { it.copy(parentPage = ParentPage.Overview) }
-        return true
-    }
-
     private fun endLocally(active: ActiveSession) {
         if (_state.value.active != active) return
         sessionLock.close()
         lockJob?.cancel()
-        _state.update { it.copy(active = null, parentPage = ParentPage.Overview) }
+        _state.update { it.copy(active = null, parentPage = ParentPage.Overview, parentStore = null) }
         clearSessionStores()
     }
 
@@ -268,11 +255,15 @@ class DeviceViewModel(
             val result = call(token)
             val started = (result as? SessionResult.Started)?.let { toActive(it.session) }
             if (started != null) sessionLock.open(started)
+            // A new elevation gets a fresh store, so no parent screen state outlives the elevation it was loaded under.
+            clearParentStore()
+            val store = (started as? ActiveSession.Parent)?.let { ParentSessionStore(it, newParentReview()) }
+            parentSession = store
             if (result is SessionResult.Unpaired) tokens.clear()
             _state.update {
                 val idle = it.copy(busy = false)
                 when {
-                    started != null -> idle.copy(pinTarget = null, active = started, parentPage = ParentPage.Overview)
+                    started != null -> idle.copy(pinTarget = null, active = started, parentPage = ParentPage.Overview, parentStore = store)
                     result is SessionResult.Unpaired -> idle.copy(unpaired = true)
                     else -> idle.copy(pinError = PinError.from(result))
                 }
@@ -300,7 +291,7 @@ class DeviceViewModel(
         lockJob?.cancel()
         val active = _state.value.active ?: return
         sessionLock.close()
-        _state.update { it.copy(active = null, parentPage = ParentPage.Overview) }
+        _state.update { it.copy(active = null, parentPage = ParentPage.Overview, parentStore = null) }
         clearSessionStores()
         viewModelScope.launch { client.lock(url, active.token) }
     }

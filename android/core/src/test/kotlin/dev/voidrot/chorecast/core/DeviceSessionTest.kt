@@ -9,20 +9,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
+/** A wall clock (which tests can step back) and a monotonic one (which only moves forward). */
 private class FakeClock(var instant: Instant = Instant.parse("2026-11-02T10:00:00Z")) : () -> Instant {
+    var nanos = 5_000_000_000L
     override fun invoke() = instant
 
     fun advance(d: Duration) {
         instant = instant.plusMillis(d.inWholeMilliseconds)
+        nanos += d.inWholeNanoseconds
+    }
+
+    /** Someone sets the wall clock back; real time does not move. */
+    fun setWallClockBack(d: Duration) {
+        instant = instant.minusMillis(d.inWholeMilliseconds)
     }
 }
 
 class SessionLockTest {
     private val clock = FakeClock()
-    private val lock = SessionLock(clock)
+    private val lock = SessionLock(clock, { clock.nanos })
     private val kid = ActiveSession.Kid(KidProfile(id = 1, slug = "ada", displayName = "Ada", color = "#fff", pinRequired = false), "kid-token")
     private fun parent(expiresIn: Duration = 2.minutes) = ActiveSession.Parent(
         ParentProfile(id = 7, displayName = "Sam"),
@@ -63,6 +72,26 @@ class SessionLockTest {
         lock.open(parent())
         clock.advance(100.seconds)
         lock.touch()
+        assertEquals(20.seconds, lock.remaining())
+        clock.advance(20.seconds)
+        assertTrue(lock.due())
+    }
+
+    @Test
+    fun wallClockSteppedBackDoesNotExtendAKidSession() {
+        lock.open(kid)
+        clock.advance(100.seconds)
+        clock.setWallClockBack(1.hours)
+        assertEquals(20.seconds, lock.remaining())
+        clock.advance(20.seconds)
+        assertTrue(lock.due())
+    }
+
+    @Test
+    fun wallClockSteppedBackDoesNotExtendAParentElevation() {
+        lock.open(parent())
+        clock.advance(100.seconds)
+        clock.setWallClockBack(1.hours)
         assertEquals(20.seconds, lock.remaining())
         clock.advance(20.seconds)
         assertTrue(lock.due())

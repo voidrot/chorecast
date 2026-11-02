@@ -84,10 +84,10 @@ fun DeviceScreen(
                     onUnauthorized = viewModel::sessionRefused,
                 )
             }
-            active is ActiveSession.Parent -> ParentMode(
+            active is ActiveSession.Parent && state.parentStore != null -> ParentMode(
                 session = active,
                 page = state.parentPage,
-                store = viewModel.parentStore(active),
+                store = state.parentStore!!,
                 models = parentModels,
                 onPage = viewModel::openParentPage,
                 onLock = viewModel::lock,

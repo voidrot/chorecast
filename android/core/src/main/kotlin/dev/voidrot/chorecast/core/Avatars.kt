@@ -1,10 +1,12 @@
 package dev.voidrot.chorecast.core
 
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
-import io.ktor.client.request.get
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readRemaining
+import kotlinx.io.readByteArray
 import kotlinx.coroutines.CancellationException
 
 /** How many bundled avatars the app ships (`pixel-01` to `pixel-24`, as on the server). */
@@ -27,12 +29,14 @@ class AvatarPhotos(engine: HttpClientEngine) {
 
     /** The image bytes, or null if the link is refused, expired, too large or unreachable. */
     suspend fun fetch(url: String): ByteArray? = try {
-        val resp = http.get(url)
-        val length = resp.headers["Content-Length"]?.toLongOrNull()
-        if (!resp.status.isSuccess() || (length != null && length > MAX_BYTES)) {
-            null
-        } else {
-            resp.body<ByteArray>().takeIf { it.size <= MAX_BYTES }
+        // Streams at most MAX_BYTES + 1, so an oversized body is never buffered whole.
+        http.prepareGet(url).execute { resp ->
+            val length = resp.headers["Content-Length"]?.toLongOrNull()
+            if (!resp.status.isSuccess() || (length != null && length > MAX_BYTES)) {
+                null
+            } else {
+                resp.bodyAsChannel().readRemaining(MAX_BYTES + 1).readByteArray().takeIf { it.size <= MAX_BYTES }
+            }
         }
     } catch (e: CancellationException) {
         throw e

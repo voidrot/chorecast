@@ -6,6 +6,7 @@ import java.time.Instant
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 
 /** A session open on a shared device: a kid, or a parent elevated with their PIN. */
@@ -40,14 +41,27 @@ sealed interface PinError {
 /**
  * When the open session ends by itself. A kid session locks after [idle] without a touch. A parent
  * elevation ends at the server's expiry and a touch never extends it.
+ *
+ * Time is measured on [elapsedNanos], a monotonic clock that keeps counting while the device sleeps
+ * (on Android `SystemClock.elapsedRealtimeNanos`), so setting the wall clock back cannot extend a
+ * session. The wall clock [now] is read once, at [open], to turn the server's `expiresAt` into a deadline.
  */
-class SessionLock(private val now: () -> Instant, private val idle: Duration = KID_IDLE) {
+class SessionLock(
+    private val now: () -> Instant,
+    private val elapsedNanos: () -> Long,
+    private val idle: Duration = KID_IDLE,
+) {
     private var session: ActiveSession? = null
-    private var lastTouch: Instant = Instant.EPOCH
+    private var lastTouchNanos = 0L
+    private var deadlineNanos = 0L
 
     fun open(session: ActiveSession) {
         this.session = session
-        lastTouch = now()
+        lastTouchNanos = elapsedNanos()
+        if (session is ActiveSession.Parent) {
+            val left = (session.expiresAt.toEpochMilli() - now().toEpochMilli()).coerceAtLeast(0)
+            deadlineNanos = lastTouchNanos + left.milliseconds.inWholeNanoseconds
+        }
     }
 
     fun close() {
@@ -55,13 +69,13 @@ class SessionLock(private val now: () -> Instant, private val idle: Duration = K
     }
 
     fun touch() {
-        if (session is ActiveSession.Kid) lastTouch = now()
+        if (session is ActiveSession.Kid) lastTouchNanos = elapsedNanos()
     }
 
     /** Time until the session ends, or null when none is open. Zero once it is due. */
-    fun remaining(): Duration? = when (val s = session) {
-        is ActiveSession.Kid -> (idle - (now().toEpochMilli() - lastTouch.toEpochMilli()).milliseconds).coerceAtLeast(Duration.ZERO)
-        is ActiveSession.Parent -> (s.expiresAt.toEpochMilli() - now().toEpochMilli()).coerceAtLeast(0).milliseconds
+    fun remaining(): Duration? = when (session) {
+        is ActiveSession.Kid -> (idle - (elapsedNanos() - lastTouchNanos).nanoseconds).coerceAtLeast(Duration.ZERO)
+        is ActiveSession.Parent -> (deadlineNanos - elapsedNanos()).nanoseconds.coerceAtLeast(Duration.ZERO)
         null -> null
     }
 

@@ -1,6 +1,7 @@
 package dev.voidrot.chorecast.ui
 
 import android.os.Build
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -79,6 +80,7 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     DeviceViewModel(
                         currentUrl(), container.deviceClient, container.parentAuth, container.tokenStore, BuildConfig.VERSION_NAME,
                         container::elevatedParentReview,
+                        elapsedNanos = SystemClock::elapsedRealtimeNanos,
                     )
                 },
                 todayViewModel = { kid -> TodayViewModel(currentUrl(), container.kidChores, container.choreCompleter(), container.captures, kid.kidId, kid.token) },
