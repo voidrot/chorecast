@@ -62,6 +62,9 @@ type ChoreInstance struct {
 	AutoAssigned       int64          `json:"auto_assigned"`
 	ManuallyReassigned int64          `json:"manually_reassigned"`
 	RotationState      sql.NullString `json:"rotation_state"`
+	CompletedBy        sql.NullInt64  `json:"completed_by"`
+	CompletedAt        sql.NullString `json:"completed_at"`
+	RejectionCount     int64          `json:"rejection_count"`
 	CreatedAt          string         `json:"created_at"`
 	UpdatedAt          string         `json:"updated_at"`
 }
@@ -69,6 +72,16 @@ type ChoreInstance struct {
 type ChoreInstanceMember struct {
 	InstanceID int64 `json:"instance_id"`
 	KidID      int64 `json:"kid_id"`
+}
+
+type ChoreInstanceRejection struct {
+	ID         int64         `json:"id"`
+	InstanceID int64         `json:"instance_id"`
+	KidID      sql.NullInt64 `json:"kid_id"`
+	ReasonCode string        `json:"reason_code"`
+	ReasonText string        `json:"reason_text"`
+	RejectedBy sql.NullInt64 `json:"rejected_by"`
+	CreatedAt  string        `json:"created_at"`
 }
 
 type Device struct {

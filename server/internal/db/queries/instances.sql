@@ -46,7 +46,7 @@ UPDATE chore_instances SET rotation_state = NULL WHERE chore_id = ?;
 
 -- name: ListChoreInstancesBetween :many
 -- Instances on [from, to] for every kid (kid = 0) or one kid, including shared instances they're a member of.
-SELECT i.*, c.name AS chore_name FROM chore_instances i
+SELECT sqlc.embed(i), c.name AS chore_name FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= sqlc.arg(from_date) AND i.occurrence_date <= sqlc.arg(to_date)
   AND (CAST(sqlc.arg(kid) AS INTEGER) = 0 OR i.kid_id = CAST(sqlc.arg(kid) AS INTEGER)
@@ -63,7 +63,48 @@ ORDER BY m.instance_id, m.kid_id;
 -- name: ChoreHasHistory :one
 -- Whether the chore has an instance to keep: touched, or already due.
 SELECT EXISTS (SELECT 1 FROM chore_instances
-    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR due_at <= ?));
+    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR completed_at IS NOT NULL OR due_at <= ?));
 
 -- name: DeleteChoreInstances :exec
 DELETE FROM chore_instances WHERE chore_id = ?;
+
+-- name: GetChoreInstance :one
+SELECT sqlc.embed(i), c.name AS chore_name FROM chore_instances i
+JOIN chores c ON c.id = i.chore_id
+WHERE i.id = ?;
+
+-- name: ListChoreInstanceMemberIDs :many
+SELECT kid_id FROM chore_instance_members WHERE instance_id = ? ORDER BY kid_id;
+
+-- name: SetChoreInstanceStatus :execrows
+-- Moves an instance from one status to another; 0 rows = it isn't in from_status (any more).
+UPDATE chore_instances SET status = sqlc.arg(to_status), updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id) AND status = sqlc.arg(from_status);
+
+-- name: CompleteChoreInstance :execrows
+UPDATE chore_instances SET status = sqlc.arg(to_status), completed_by = sqlc.arg(completed_by),
+    completed_at = sqlc.arg(completed_at), updated_at = sqlc.arg(completed_at)
+WHERE id = sqlc.arg(id) AND status = 'open';
+
+-- name: RejectChoreInstance :execrows
+UPDATE chore_instances SET status = 'open', rejection_count = rejection_count + 1, updated_at = ?
+WHERE id = ? AND status = 'submitted';
+
+-- name: ReassignChoreInstance :execrows
+-- A parent's pick replaces any auto-pick; manually_reassigned keeps the horizon from replanning it.
+UPDATE chore_instances SET kid_id = ?, manually_reassigned = 1, auto_assigned = 0, updated_at = ?
+WHERE id = ? AND status = 'open' AND kid_id IS NOT NULL;
+
+-- name: InsertChoreInstanceRejection :exec
+INSERT INTO chore_instance_rejections (instance_id, kid_id, reason_code, reason_text, rejected_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: LatestChoreInstanceRejection :one
+SELECT * FROM chore_instance_rejections WHERE instance_id = ? ORDER BY id DESC LIMIT 1;
+
+-- name: ListLatestChoreInstanceRejectionsBetween :many
+-- The latest rejection of each instance on [from, to].
+SELECT r.* FROM chore_instance_rejections r
+JOIN chore_instances i ON i.id = r.instance_id
+WHERE i.occurrence_date >= ? AND i.occurrence_date <= ?
+  AND r.id = (SELECT MAX(r2.id) FROM chore_instance_rejections r2 WHERE r2.instance_id = r.instance_id);

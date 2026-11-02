@@ -6,8 +6,9 @@
 // Every run regenerates the whole household from the same inputs, so the result doesn't depend
 // on what triggered it, and a second run changes nothing:
 //
-//   - An instance is frozen when it's touched (not open, or manually reassigned) or its due time
-//     has passed (today's earlier slots, every earlier day). Frozen instances are never changed.
+//   - An instance is frozen when it's touched (not open, completed before, or manually reassigned)
+//     or its due time has passed (today's earlier slots, every earlier day). Frozen instances are
+//     never changed.
 //     Every other instance in the horizon is regenerable: it's replaced by the new plan, updated
 //     in place when its identity (chore, date, slot, seq, kid) is unchanged so ids stay stable.
 //   - An occurrence already due when it's planned (a slot earlier today, say on a new chore) gets
@@ -99,9 +100,12 @@ func (e existing) key() instKey {
 	return instKey{occKey{e.ChoreID, e.OccurrenceDate, e.Slot, e.Seq}, e.KidID.Int64}
 }
 
-// untouched: nothing has happened to it yet. Evidence (#27) and swaps also touch an instance;
-// a swap sets manually_reassigned.
-func (e existing) untouched() bool { return e.Status == StatusOpen && e.ManuallyReassigned == 0 }
+// untouched: nothing has happened to it yet. A reassignment (or swap) sets manually_reassigned,
+// and a completion stays recorded after a rejection or an approval reversal sends it back to open.
+// Evidence (#27) will touch an instance too.
+func (e existing) untouched() bool {
+	return e.Status == StatusOpen && e.ManuallyReassigned == 0 && !e.CompletedAt.Valid
+}
 
 type desired struct {
 	key      instKey
