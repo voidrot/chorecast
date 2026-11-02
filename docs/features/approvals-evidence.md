@@ -125,6 +125,14 @@ is uploaded again), 409 `instance_closed` / `instance_not_open` (the list refres
 `video_evidence_unsupported`. Resubmitting after a rejection is the same flow. The logic is in `:core`
 (`Completion.kt`, `CompleteChore.kt`).
 
+Built (#102, Android): the kid's home has a History button. It lists finished chores (every status but `open`,
+nothing planned) from `GET /instances?kidId=&from=&to=`, newest day first, in pages of 62 days (the server's
+limit); "Show older" fetches the page before the oldest loaded one, up to about two years. Opening a chore reads
+`GET /instances/{id}/evidence` again (the signed links last 10 minutes) and shows the latest submission's note,
+the ticked steps and the photos as rows, each opened one at a time with the system's viewer; a photo retention
+removed (`expired`, no links) shows as expired. There is no gallery. The kid app no longer reads `GET /chores`:
+instances carry the chore's points, steps and evidence rules. The logic is in `:core` (`KidHistory.kt`).
+
 ## Fresh-evidence rules (no reusing old photos)
 
 Goal: a kid can't satisfy today's chore with an old photo or one taken from the gallery or downloaded.

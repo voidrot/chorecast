@@ -1,11 +1,11 @@
 package dev.voidrot.chorecast.core
 
-import dev.voidrot.chorecast.api.apis.ChoresApi
 import dev.voidrot.chorecast.api.apis.InstancesApi
 import dev.voidrot.chorecast.api.apis.PointsApi
 import dev.voidrot.chorecast.api.infrastructure.HttpResponse
-import dev.voidrot.chorecast.api.models.Chore
+import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.DailyStreak
+import dev.voidrot.chorecast.api.models.InstanceEvidence
 import dev.voidrot.chorecast.api.models.PointsBalance
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CancellationException
@@ -24,28 +24,21 @@ sealed interface Fetch<out T> {
     data class Failed(val code: String) : Fetch<Nothing>
 }
 
-/**
- * What the kid's home and today screens show. [chores] is empty when the chore list couldn't be read
- * (rows then have no points); [balance] and [streak] are null when theirs couldn't.
- */
+/** What the kid's home and today screens show. [balance] and [streak] are null when theirs couldn't be read. */
 data class KidToday(
     val plan: TodayPlan,
-    val chores: Map<Long, Chore>,
     val balance: PointsBalance?,
     val streak: DailyStreak?,
 )
 
 /**
  * A kid's chores, as the kid's device token or kid session token sees them. The server limits a kid
- * to their own instances, points and streaks; chore definitions (`chores:read`) are household-wide.
+ * to their own instances, evidence, points and streaks. Instances carry the chore's points, steps and
+ * evidence rules, so the app never reads chore definitions (`chores:read`).
  */
 class KidChores(private val engine: HttpClientEngine? = null) {
     private fun instances(url: ServerUrl, token: String) =
         InstancesApi(baseUrl = url.apiBase, httpClientEngine = engine, httpClientConfig = ApiClients.config)
-            .apply { setBearerToken(token) }
-
-    private fun chores(url: ServerUrl, token: String) =
-        ChoresApi(baseUrl = url.apiBase, httpClientEngine = engine, httpClientConfig = ApiClients.config)
             .apply { setBearerToken(token) }
 
     private fun points(url: ServerUrl, token: String) =
@@ -54,22 +47,19 @@ class KidChores(private val engine: HttpClientEngine? = null) {
 
     /**
      * Today's chores plus the next days (the server's default range), with points, balance and streak.
-     * Only the instance list is required; the rest degrade to missing values.
+     * Only the instance list is required; the balance and streak degrade to missing values.
      */
     suspend fun today(url: ServerUrl, token: String, kidId: Long): Fetch<KidToday> = guard {
         coroutineScope {
             val list = async { instances(url, token).listChoreInstances(kidId = kidId) }
-            val defs = async { optional { chores(url, token).listChores() } }
             val balance = async { optional { points(url, token).getKidPointsBalance(kidId.toString()) } }
             val streaks = async { optional { points(url, token).getKidStreaks(kidId.toString()) } }
 
             val resp = list.await()
             if (!resp.success) return@coroutineScope resp.failure()
-            val byId = defs.await()?.items.orEmpty().associateBy { it.id }
             Fetch.Ok(
                 KidToday(
-                    plan = buildTodayPlan(resp.body().items, byId),
-                    chores = byId,
+                    plan = buildTodayPlan(resp.body().items),
                     balance = balance.await(),
                     streak = streaks.await()?.daily,
                 ),
@@ -77,10 +67,16 @@ class KidChores(private val engine: HttpClientEngine? = null) {
         }
     }
 
-    /** One chore with its steps and evidence rules. */
-    suspend fun chore(url: ServerUrl, token: String, choreId: Long): Fetch<Chore> = guard {
-        val resp = chores(url, token).getChore(choreId)
-        if (resp.success) Fetch.Ok(resp.body()) else resp.failure()
+    /** The instances dated in [range] (at most [HISTORY_PAGE_DAYS] days), planned and open ones included. */
+    suspend fun instancesIn(url: ServerUrl, token: String, kidId: Long, range: DateRange): Fetch<List<ChoreInstance>> = guard {
+        val resp = instances(url, token).listChoreInstances(kidId = kidId, from = range.from.toString(), to = range.to.toString())
+        if (resp.success) Fetch.Ok(resp.body().items) else resp.failure()
+    }
+
+    /** Every submission for one instance, oldest first. The photo links are signed and short-lived, so read when needed. */
+    suspend fun evidence(url: ServerUrl, token: String, instanceId: Long): Fetch<List<InstanceEvidence>> = guard {
+        val resp = instances(url, token).getChoreInstanceEvidence(instanceId)
+        if (resp.success) Fetch.Ok(resp.body().items) else resp.failure()
     }
 
     private fun HttpResponse<*>.failure(): Fetch<Nothing> = when (status) {

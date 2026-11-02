@@ -1,6 +1,5 @@
 package dev.voidrot.chorecast.core
 
-import dev.voidrot.chorecast.api.models.Chore
 import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.EvidenceRules
 import java.time.Duration
@@ -35,8 +34,11 @@ fun ChoreInstance.statusView(): ChoreStatusView = when (status) {
     ChoreInstance.Status.UNKNOWN_DEFAULT_OPEN_API -> ChoreStatusView.UNKNOWN
 }
 
-/** One row of the today list. [points] is null when the chore's details couldn't be read. */
-data class TodayChore(val instance: ChoreInstance, val points: Long?) {
+/** One row of the today list. */
+data class TodayChore(val instance: ChoreInstance) {
+    /** The chore's points; null when the server sent none (a chore worth nothing). */
+    val points: Long? get() = instance.points
+
     val status: ChoreStatusView = instance.statusView()
 
     /** Only today's open chores can be completed; planned days are a forecast. */
@@ -59,16 +61,16 @@ data class TodayPlan(val today: List<SlotSection>, val planned: List<PlannedDay>
 /**
  * Splits [instances] into today (grouped by due time, earliest first, day-close chores last) and the
  * planned days after it (grouped by date). The server decides "planned" (dated after today in the
- * household's timezone), so the device's clock and timezone don't matter. [chores] supplies points.
+ * household's timezone), so the device's clock and timezone don't matter.
  */
-fun buildTodayPlan(instances: List<ChoreInstance>, chores: Map<Long, Chore>): TodayPlan {
+fun buildTodayPlan(instances: List<ChoreInstance>): TodayPlan {
     val (planned, today) = instances.partition { it.planned }
     val order = compareBy<TodayChore>(
         { slotTime(it.instance.slot) ?: LocalTime.MAX },
         { it.instance.choreName.lowercase() },
         { it.instance.id },
     )
-    fun row(i: ChoreInstance) = TodayChore(i, chores[i.choreId]?.points)
+    fun row(i: ChoreInstance) = TodayChore(i)
     return TodayPlan(
         today = today.map(::row).groupBy { slotTime(it.instance.slot) }
             .map { (time, rows) -> SlotSection(time, rows.sortedWith(order)) }

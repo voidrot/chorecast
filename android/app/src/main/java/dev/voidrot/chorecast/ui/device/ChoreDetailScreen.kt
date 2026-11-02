@@ -21,7 +21,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.voidrot.chorecast.R
-import dev.voidrot.chorecast.api.models.Chore
 import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.ChoreInstanceRejection
 import dev.voidrot.chorecast.core.CompleteError
@@ -33,14 +32,12 @@ import dev.voidrot.chorecast.core.slotTime
 
 /**
  * One chore: when it's due, what to do (steps), what to hand in (evidence rules) and, after a
- * parent sent it back, why. [details] is null until the chore has been read; the instance's own
- * facts show meanwhile. The complete button starts the flow in [CompleteForm].
+ * parent sent it back, why. The instance carries the steps and evidence rules. The complete button
+ * starts the flow in [CompleteForm].
  */
 @Composable
 fun ChoreDetailScreen(
     chore: TodayChore,
-    details: Chore?,
-    detailsFailed: Boolean,
     completeError: CompleteError?,
     onComplete: () -> Unit,
     onBack: () -> Unit,
@@ -59,25 +56,21 @@ fun ChoreDetailScreen(
                 chore.points?.let { PointsLabel(it) }
             }
             if (chore.status == ChoreStatusView.REDO) instance.lastRejection?.let { RejectionCard(it) }
-            details?.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
-            details?.steps?.takeIf { it.isNotEmpty() }?.let { steps ->
+            instance.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
+            instance.steps?.takeIf { it.isNotEmpty() }?.let { steps ->
                 Section(stringResource(R.string.chore_steps)) {
                     steps.forEachIndexed { i, step -> Text("${i + 1}. $step") }
                 }
             }
-            details?.evidence?.requirements()?.takeIf { it.isNotEmpty() }?.let { needs ->
+            instance.evidence?.requirements()?.takeIf { it.isNotEmpty() }?.let { needs ->
                 Section(stringResource(R.string.chore_evidence)) {
                     needs.forEach { Text("• " + requirementText(it)) }
                 }
             }
-            if (details == null && detailsFailed) {
-                Text(stringResource(R.string.chore_loading_failed), color = MaterialTheme.colorScheme.error)
-            }
         }
         completeError?.let { Text(completeErrorText(it), color = MaterialTheme.colorScheme.error) }
-        // The evidence rules come with the chore, so the complete flow waits for them.
         if (chore.canComplete) {
-            Button(onClick = onComplete, enabled = details != null, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onComplete, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.chore_complete))
             }
         }

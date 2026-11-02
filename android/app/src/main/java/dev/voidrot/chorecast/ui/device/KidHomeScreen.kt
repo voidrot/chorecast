@@ -60,8 +60,10 @@ fun KidHomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    BackHandler(enabled = state.selected != null) {
+    BackHandler(enabled = state.selected != null || state.history.open) {
         when {
+            state.history.selected != null -> viewModel.closeHistoryChore()
+            state.history.open -> viewModel.closeHistory()
             state.cameraOpen -> viewModel.closeCamera()
             state.completing -> if (!state.submitting) viewModel.cancelComplete()
             else -> viewModel.close()
@@ -73,12 +75,25 @@ fun KidHomeScreen(
         onPauseOrDispose {}
     }
     // The token was refused (session ended, or the device was unpaired): let the device decide what's next.
-    LaunchedEffect(state.error) { if (state.error == TodayError.SignedOut) onUnauthorized() }
+    val historyErrors = listOfNotNull(state.history.error, (state.history.evidence as? EvidenceLoad.Failed)?.error)
+    LaunchedEffect(state.error, historyErrors) {
+        if (state.error == TodayError.SignedOut || TodayError.SignedOut in historyErrors) onUnauthorized()
+    }
 
     val selected = state.selectedChore
     val needs = state.selectedNeeds
     val draft = state.selectedDraft
-    if (selected != null && state.completing && state.cameraOpen) {
+    if (state.history.open) {
+        HistoryScreen(
+            state = state.history,
+            onOpen = viewModel::openHistoryChore,
+            onCloseChore = viewModel::closeHistoryChore,
+            onLoadOlder = viewModel::loadHistory,
+            onRetry = viewModel::retryHistory,
+            onBack = viewModel::closeHistory,
+            modifier = modifier,
+        )
+    } else if (selected != null && state.completing && state.cameraOpen) {
         CameraCapture(
             newFile = viewModel::newCaptureFile,
             onCaptured = viewModel::onCaptured,
@@ -104,15 +119,13 @@ fun KidHomeScreen(
     } else if (selected != null) {
         ChoreDetailScreen(
             chore = selected,
-            details = state.selectedChoreDetails,
-            detailsFailed = state.choreFailed,
             completeError = state.completeError,
             onComplete = viewModel::beginComplete,
             onBack = viewModel::close,
             modifier = modifier,
         )
     } else {
-        TodayContent(state, name, viewModel::refresh, viewModel::open, onLock, onParent, modifier)
+        TodayContent(state, name, viewModel::refresh, viewModel::open, viewModel::openHistory, onLock, onParent, modifier)
     }
 }
 
@@ -123,6 +136,7 @@ private fun TodayContent(
     name: String,
     onRefresh: () -> Unit,
     onOpen: (Long) -> Unit,
+    onHistory: () -> Unit,
     onLock: (() -> Unit)?,
     onParent: (() -> Unit)?,
     modifier: Modifier,
@@ -130,6 +144,7 @@ private fun TodayContent(
     Column(modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.device_hi, name), style = MaterialTheme.typography.headlineMedium)
+            TextButton(onClick = onHistory) { Text(stringResource(R.string.kid_history_open)) }
             onLock?.let { OutlinedButton(onClick = it) { Text(stringResource(R.string.device_done)) } }
             onParent?.let { TextButton(onClick = it) { Text(stringResource(R.string.device_parent)) } }
         }
@@ -266,7 +281,7 @@ internal fun StatusLabel(status: ChoreStatusView) {
 }
 
 @Composable
-private fun errorText(e: TodayError): String = when (e) {
+internal fun errorText(e: TodayError): String = when (e) {
     is TodayError.Offline -> stringResource(R.string.device_offline, e.reason)
     TodayError.SignedOut -> stringResource(R.string.kid_loading_error_signed_out)
     is TodayError.Failed -> stringResource(R.string.kid_loading_error_failed, e.code)
