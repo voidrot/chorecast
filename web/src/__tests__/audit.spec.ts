@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AUDIT_ACTIONS,
   type AuditEntry,
   actorLabel,
   auditQuery,
@@ -7,6 +8,17 @@ import {
   detailLines,
   mergeEntries,
 } from '@/audit/log'
+import en from '@/locales/en.json'
+
+describe('AUDIT_ACTIONS', () => {
+  it('has each action once, with its sentence and filter name', () => {
+    expect(new Set(AUDIT_ACTIONS).size).toBe(AUDIT_ACTIONS.length)
+    for (const a of AUDIT_ACTIONS) {
+      expect(en.audit.actions[a], a).toBeTruthy()
+      expect(en.audit.actionNames[a], a).toBeTruthy()
+    }
+  })
+})
 
 const t = (key: string, params?: Record<string, unknown>) =>
   params ? `${key} ${JSON.stringify(params)}` : key

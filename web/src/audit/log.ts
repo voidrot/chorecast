@@ -4,27 +4,30 @@ export type AuditEntry = components['schemas']['AuditEntry']
 export type AuditAction = AuditEntry['action']
 export type AuditQuery = NonNullable<operations['listAuditLog']['parameters']['query']>
 
+// A Record, so an action the API adds is a type error here until it is listed.
+const actions: Record<AuditAction, true> = {
+  settings_updated: true,
+  chore_approved: true,
+  chore_rejected: true,
+  chore_unapproved: true,
+  chore_excused: true,
+  points_adjusted: true,
+  points_reversed: true,
+  invite_created: true,
+  invite_revoked: true,
+  invite_accepted: true,
+  parent_role_changed: true,
+  parent_removed: true,
+  parent_password_reset: true,
+  parent_totp_disabled: true,
+  device_paired: true,
+  device_revoked: true,
+  kid_archived: true,
+  kid_unarchived: true,
+}
+
 /** Every action, in the order the action filter lists them. */
-export const AUDIT_ACTIONS: readonly AuditAction[] = [
-  'settings_updated',
-  'chore_approved',
-  'chore_rejected',
-  'chore_unapproved',
-  'chore_excused',
-  'points_adjusted',
-  'points_reversed',
-  'invite_created',
-  'invite_revoked',
-  'invite_accepted',
-  'parent_role_changed',
-  'parent_removed',
-  'parent_password_reset',
-  'parent_totp_disabled',
-  'device_paired',
-  'device_revoked',
-  'kid_archived',
-  'kid_unarchived',
-]
+export const AUDIT_ACTIONS = Object.keys(actions) as readonly AuditAction[]
 
 /** The actor filter: the system, the CLI, or a parent's id; null for everyone. */
 export type ActorFilter = 'system' | 'cli' | number | null

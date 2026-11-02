@@ -134,16 +134,15 @@ watch([actorFilter, actionFilter, range], () => void load())
             :input-props="{ id: 'af-action' }"
           />
         </div>
-        <div class="flex flex-col gap-1">
-          <span id="af-dates" class="text-sm font-medium">{{ t('audit.filterDates') }}</span>
+        <fieldset>
+          <legend class="mb-1 text-sm font-medium">{{ t('audit.filterDates') }}</legend>
           <NDatePicker
             v-model:formatted-value="range"
             type="daterange"
             value-format="yyyy-MM-dd"
             clearable
-            aria-labelledby="af-dates"
           />
-        </div>
+        </fieldset>
       </div>
 
       <NAlert v-if="loadError" type="error">{{ loadError }}</NAlert>
