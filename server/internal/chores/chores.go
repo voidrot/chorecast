@@ -260,7 +260,7 @@ func (c Chore) assignedTo(kidID int64) bool {
 }
 
 // ListForKid returns the chores a kid may see: those whose assignment includes them, and those
-// they have (or had) an instance of, since a reassignment or a swap hands them another kid's.
+// they still have an instance of (any status), since a reassignment or a swap hands them another kid's.
 func (s *Service) ListForKid(ctx context.Context, kidID int64) ([]Chore, error) {
 	all, err := s.List(ctx)
 	if err != nil {

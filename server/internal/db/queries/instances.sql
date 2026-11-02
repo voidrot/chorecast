@@ -64,7 +64,7 @@ WHERE i.occurrence_date >= ? AND i.occurrence_date <= ?
 ORDER BY m.instance_id, m.kid_id;
 
 -- name: ListKidChoreIDsWithInstances :many
--- The chores the kid has (or had) an instance of: assigned, or a member of the shared group.
+-- The chores the kid still has an instance of (any status): assigned, or a member of the shared group.
 SELECT i.chore_id FROM chore_instances i WHERE i.kid_id = CAST(sqlc.arg(kid_id) AS INTEGER)
 UNION
 SELECT i.chore_id FROM chore_instances i

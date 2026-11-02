@@ -154,9 +154,9 @@ carries its chore's `points`, `steps` and `evidence` rules, in the chore's shape
 absent means 0 points, no steps, nothing to hand in. Kids (a kid-bound device or a kid session on a shared tablet)
 read only their chores: `GET /chores` lists the chores whose assignment includes them (everyone, an auto-pick from
 every kid, or listed as fixed kid, rotation turn, auto pool or shared member, unless an eligibility exception says
-they never get it) plus any chore they have or had an instance of, since a reassignment or a swap can hand them a
-sibling's. `GET /chores/{id}` answers 404 `not_found` for any other chore. The minimum age isn't applied. Parents and
-displays still read every chore.
+they never get it) plus any chore they still have an instance of (any status), since a reassignment or a swap can
+hand them a sibling's. `GET /chores/{id}` answers 404 `not_found` for any other chore. The minimum age isn't
+applied. Parents and displays still read every chore; any other principal kind gets 403.
 
 ## Disruptions
 

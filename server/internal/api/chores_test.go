@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/voidrot/chorecast/server/internal/auth"
+	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/horizon"
 )
 
@@ -285,7 +287,11 @@ func TestKidChoreReads(t *testing.T) {
 	create("Auto pool", assignment("auto", sam2.ID))
 	create("Auto, every kid", assignment("auto"))
 	create("Shared", assignment("shared", sam.ID, sam2.ID))
-	create("Not Sam", map[string]any{"eligibility": []map[string]any{{"kidId": sam.ID, "allow": false}}})
+	daily := map[string]any{"type": "daily", "startDate": "2026-10-31"}
+	create("Not Sam", map[string]any{"eligibility": []map[string]any{{"kidId": sam.ID, "allow": false}}, "schedule": daily})
+	create("Allow Sam", map[string]any{"eligibility": []map[string]any{{"kidId": sam.ID, "allow": true}, {"kidId": sam2.ID, "allow": false}}})
+	create("Disabled", map[string]any{"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam.ID}}, "disabled": true})
+	create("Leaving group", map[string]any{"assignment": map[string]any{"mode": "shared", "kidIds": []int64{sam.ID, sam2.ID}}, "schedule": daily})
 	if _, err := horizon.New(s.store, s.clk).Generate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -295,6 +301,15 @@ func TestKidChoreReads(t *testing.T) {
 	rec := s.bearer("POST", "/api/v1/devices/session", tablet, map[string]string{"kid": "sam-2"})
 	wantCode(t, "sam-2's tablet session", rec, 200, "")
 	sam2Session := decode[struct{ Token string }](t, rec).Token
+	display, err := auth.GenerateToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.CreateToken(t.Context(), sqlc.CreateTokenParams{
+		TokenHash: auth.HashToken(display), Kind: string(auth.TokenDisplay), Label: "Kitchen", CreatedAt: db.Timestamp(s.clk.Now()),
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	names := func(what string, rec *httptest.ResponseRecorder) []string {
 		t.Helper()
@@ -325,29 +340,50 @@ func TestKidChoreReads(t *testing.T) {
 	for name, id := range ids {
 		wantCode(t, "parent reads "+name, s.do("GET", "/api/v1/chores/"+itoa(id), nil, mom), 200, "")
 	}
+	want("the display", names("display list", s.bearer("GET", "/api/v1/chores", display, nil)), all...)
+	wantCode(t, "the display reads sam's", get("Sam's", display), 200, "")
 
 	want("sam's phone", names("kid device list", s.bearer("GET", "/api/v1/chores", samPhone, nil)),
-		"Everyone", "Sam's", "Rotation", "Auto, every kid", "Shared")
+		"Everyone", "Sam's", "Rotation", "Auto, every kid", "Shared", "Allow Sam", "Disabled", "Leaving group")
 	wantCode(t, "sam reads a shared chore he's in", get("Shared", samPhone), 200, "")
+	wantCode(t, "sam reads a disabled chore he's on", get("Disabled", samPhone), 200, "")
 	for _, name := range []string{"Sam 2's", "Auto pool", "Not Sam"} {
 		wantCode(t, "sam reads "+name, get(name, samPhone), 404, "not_found")
 	}
 	wantCode(t, "sam reads a missing chore", s.bearer("GET", "/api/v1/chores/99999", samPhone, nil), 404, "not_found")
 
 	want("sam-2's tablet session", names("kid session list", s.bearer("GET", "/api/v1/chores", sam2Session, nil)),
-		"Everyone", "Sam 2's", "Rotation", "Auto pool", "Auto, every kid", "Shared", "Not Sam")
+		"Everyone", "Sam 2's", "Rotation", "Auto pool", "Auto, every kid", "Shared", "Not Sam", "Leaving group")
 	wantCode(t, "sam-2 reads sam's", get("Sam's", sam2Session), 404, "not_found")
+	wantCode(t, "sam-2 reads a chore she's excluded from", get("Allow Sam", sam2Session), 404, "not_found")
 	wantCode(t, "sam-2 reads her own", get("Sam 2's", sam2Session), 200, "")
 
-	// A reassigned instance lets the new kid read its chore.
-	var tomorrow int64
-	if err := s.store.SQL.QueryRowContext(t.Context(),
-		"SELECT id FROM chore_instances WHERE chore_id = ? AND occurrence_date = '2026-11-01'", ids["Sam 2's"]).Scan(&tomorrow); err != nil {
+	// A reassigned instance lets the new kid read its chore, even one an exception keeps from them.
+	handTomorrowToSam := func(chore string) {
+		t.Helper()
+		var id int64
+		if err := s.store.SQL.QueryRowContext(t.Context(),
+			"SELECT id FROM chore_instances WHERE chore_id = ? AND occurrence_date = '2026-11-01'", ids[chore]).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		wantCode(t, "reassign "+chore+" to sam", s.do("POST", fmt.Sprintf("/api/v1/instances/%d/reassignment", id), map[string]any{"kidId": sam.ID}, mom), 200, "")
+	}
+	handTomorrowToSam("Sam 2's")
+	handTomorrowToSam("Not Sam")
+	wantCode(t, "sam reads the chore he was handed", get("Sam 2's", samPhone), 200, "")
+	wantCode(t, "sam reads the excluded chore he was handed", get("Not Sam", samPhone), 200, "")
+	if got := names("kid device list", s.bearer("GET", "/api/v1/chores", samPhone, nil)); !slices.Contains(got, "Sam 2's") || !slices.Contains(got, "Not Sam") {
+		t.Errorf("after the reassignments sam sees %q, want Sam 2's and Not Sam too", got)
+	}
+
+	// A kid dropped from a shared group still reads the chore while a shared instance lists them.
+	wantCode(t, "drop sam from the group", s.do("PUT", "/api/v1/chores/"+itoa(ids["Leaving group"]), map[string]any{
+		"name": "Leaving group", "points": 2, "requiresApproval": false, "evidence": map[string]any{"photos": 0}, "schedule": daily,
+		"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam2.ID}},
+	}, mom), 200, "")
+	wantCode(t, "sam reads the chore of his shared instance", get("Leaving group", samPhone), 200, "")
+	if _, err := s.store.SQL.ExecContext(t.Context(), "DELETE FROM chore_instances WHERE chore_id = ?", ids["Leaving group"]); err != nil {
 		t.Fatal(err)
 	}
-	wantCode(t, "reassign to sam", s.do("POST", fmt.Sprintf("/api/v1/instances/%d/reassignment", tomorrow), map[string]any{"kidId": sam.ID}, mom), 200, "")
-	wantCode(t, "sam reads the chore he was handed", get("Sam 2's", samPhone), 200, "")
-	if got := names("kid device list", s.bearer("GET", "/api/v1/chores", samPhone, nil)); !slices.Contains(got, "Sam 2's") {
-		t.Errorf("after the reassignment sam sees %q, want Sam 2's too", got)
-	}
+	wantCode(t, "sam reads it once the instances are gone", get("Leaving group", samPhone), 404, "not_found")
 }

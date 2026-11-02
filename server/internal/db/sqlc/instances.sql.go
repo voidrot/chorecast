@@ -555,7 +555,7 @@ JOIN chore_instance_members m ON m.instance_id = i.id
 WHERE m.kid_id = CAST(?1 AS INTEGER)
 `
 
-// The chores the kid has (or had) an instance of: assigned, or a member of the shared group.
+// The chores the kid still has an instance of (any status): assigned, or a member of the shared group.
 func (q *Queries) ListKidChoreIDsWithInstances(ctx context.Context, kidID int64) ([]int64, error) {
 	rows, err := q.db.QueryContext(ctx, listKidChoreIDsWithInstances, kidID)
 	if err != nil {

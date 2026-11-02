@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/chores"
 )
@@ -17,13 +18,13 @@ func registerChores(hapi huma.API, h *handlers) {
 		Summary: "Chore definitions",
 		Description: "Parents and displays get every chore. A kid gets the chores assigned to them (everyone, an auto-pick from every kid, " +
 			"or listed in the assignment, unless an exception excludes them) and those they have an instance of.",
-		Tags: []string{"chores"}, Security: read,
+		Tags: []string{"chores"}, Security: read, Errors: []int{http.StatusForbidden},
 	}, h.listChores)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getChore", Method: http.MethodGet, Path: "/chores/{id}",
 		Summary:     "A chore definition",
 		Description: "A kid gets 404 for a chore they can't see (see `listChores`).",
-		Tags:        []string{"chores"}, Security: read, Errors: []int{http.StatusNotFound},
+		Tags:        []string{"chores"}, Security: read, Errors: []int{http.StatusForbidden, http.StatusNotFound},
 	}, h.getChore)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "createChore", Method: http.MethodPost, Path: "/chores",
@@ -55,6 +56,9 @@ func registerChores(hapi huma.API, h *handlers) {
 	registerCatalog(hapi, "Equipment", "/equipment", "equipment", func() *chores.Catalog { return h.chores.Equipment() })
 }
 
+// errChoresForbidden refuses chore reads to principal kinds without a visibility rule (fail closed).
+var errChoresForbidden = apierr.New(http.StatusForbidden, apierr.CodeForbidden, "you can't read chores")
+
 type ChoresOutput struct {
 	Body struct {
 		Items []chores.Chore `json:"items" nullable:"false"`
@@ -64,10 +68,13 @@ type ChoresOutput struct {
 func (h *handlers) listChores(ctx context.Context, _ *struct{}) (*ChoresOutput, error) {
 	var items []chores.Chore
 	var err error
-	if p, _ := auth.PrincipalFrom(ctx); p.Kind == auth.KindKid {
-		items, err = h.chores.ListForKid(ctx, p.UserID)
-	} else {
+	switch p, _ := auth.PrincipalFrom(ctx); p.Kind {
+	case auth.KindParent, auth.KindDisplay:
 		items, err = h.chores.List(ctx)
+	case auth.KindKid:
+		items, err = h.chores.ListForKid(ctx, p.UserID)
+	default:
+		return nil, errChoresForbidden
 	}
 	if err != nil {
 		return nil, err
@@ -88,10 +95,13 @@ type ChoreOutput struct {
 func (h *handlers) getChore(ctx context.Context, in *ChoreIDInput) (*ChoreOutput, error) {
 	var c chores.Chore
 	var err error
-	if p, _ := auth.PrincipalFrom(ctx); p.Kind == auth.KindKid {
-		c, err = h.chores.GetForKid(ctx, in.ID, p.UserID)
-	} else {
+	switch p, _ := auth.PrincipalFrom(ctx); p.Kind {
+	case auth.KindParent, auth.KindDisplay:
 		c, err = h.chores.Get(ctx, in.ID)
+	case auth.KindKid:
+		c, err = h.chores.GetForKid(ctx, in.ID, p.UserID)
+	default:
+		return nil, errChoresForbidden
 	}
 	if err != nil {
 		return nil, err

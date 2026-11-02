@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"testing"
@@ -88,30 +89,59 @@ func TestChoreInstanceCarriesChoreDetails(t *testing.T) {
 		"schedule":   map[string]any{"type": "daily", "startDate": "2026-10-31"},
 		"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam.ID}},
 	}, mom), 201, "")
+	wantCode(t, "create a bare chore", s.do("POST", "/api/v1/chores", map[string]any{
+		"name": "Bare", "points": 0, "requiresApproval": false, "evidence": map[string]any{"photos": 0},
+		"schedule":   map[string]any{"type": "daily", "startDate": "2026-10-31"},
+		"assignment": map[string]any{"mode": "fixed", "kidIds": []int64{sam.ID}},
+	}, mom), 201, "")
 	if _, err := horizon.New(s.store, s.clk).Generate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	_, token := pairDevice(t, s, pair(t, s, mom, "sam").Code)
 	rec := s.bearer("GET", "/api/v1/instances", token, nil)
 	wantCode(t, "kid lists instances", rec, 200, "")
+
+	// Optional in the spec: a bare chore's instances leave all three out.
+	bare := 0
+	for _, raw := range decode[struct{ Items []map[string]json.RawMessage }](t, rec).Items {
+		if string(raw["choreName"]) != `"Bare"` {
+			continue
+		}
+		bare++
+		for _, key := range []string{"points", "steps", "evidence"} {
+			if v, ok := raw[key]; ok {
+				t.Errorf("bare chore instance has %s = %s, want it absent", key, v)
+			}
+		}
+	}
+	if bare == 0 {
+		t.Fatal("no instances of the bare chore")
+	}
+
 	items := decode[struct {
 		Items []struct {
-			Points   int
-			Steps    []string
-			Evidence struct {
+			ChoreName string
+			Points    int
+			Steps     []string
+			Evidence  struct {
 				Photos                       int
 				BeforeAfter, Checklist, Note bool
 			}
 		}
 	}](t, rec).Items
-	if len(items) == 0 {
-		t.Fatal("no instances")
-	}
+	dishes := 0
 	for _, i := range items {
+		if i.ChoreName != "Dishes" {
+			continue
+		}
+		dishes++
 		if i.Points != 5 || !slices.Equal(i.Steps, []string{"Wash", "Dry"}) ||
 			i.Evidence.Photos != 2 || !i.Evidence.BeforeAfter || !i.Evidence.Checklist || !i.Evidence.Note {
 			t.Errorf("instance = %+v, want the chore's points, steps and evidence", i)
 		}
+	}
+	if dishes == 0 {
+		t.Fatal("no instances of Dishes")
 	}
 }
 
