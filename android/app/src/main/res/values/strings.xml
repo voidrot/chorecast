@@ -149,7 +149,21 @@
     <string name="kid_history_photo_expired">This photo has expired and was removed.</string>
 
     <string name="devices_title">Devices</string>
-    <string name="devices_none">No devices paired yet. Pair one from the web admin\'s Devices page.</string>
+    <string name="devices_none">No devices paired yet.</string>
+    <string name="devices_pair">Pair a new device</string>
+    <string name="pair_device_title">Pair a device</string>
+    <string name="pair_device_choose">Who is this device for?</string>
+    <string name="pair_device_shared">Shared family tablet</string>
+    <string name="pair_device_for_kid">%1$s\'s own device</string>
+    <string name="pair_device_show_code">Show pairing code</string>
+    <string name="pair_device_scan_hint">On the other device, open Chorecast and scan this code, or type the code below.</string>
+    <string name="pair_device_server">Server: %1$s</string>
+    <string name="pair_device_expires_in">Expires in %1$s</string>
+    <string name="pair_device_expired">This code has expired.</string>
+    <string name="pair_device_new_code">Create a new code</string>
+    <string name="pair_device_done">Done</string>
+    <string name="pair_device_qr_description">Pairing QR code</string>
+    <string name="pair_device_failed">Couldn\'t create a code (%1$s).</string>
     <string name="devices_shared">Shared family device</string>
     <string name="devices_for_kid">%1$s\'s device</string>
     <string name="devices_in_use">%1$s is using it</string>

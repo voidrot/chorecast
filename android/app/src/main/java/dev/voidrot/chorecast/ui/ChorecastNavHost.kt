@@ -19,6 +19,8 @@ import dev.voidrot.chorecast.ui.device.ParentModels
 import dev.voidrot.chorecast.ui.device.TodayViewModel
 import dev.voidrot.chorecast.ui.devices.DevicesScreen
 import dev.voidrot.chorecast.ui.devices.DevicesViewModel
+import dev.voidrot.chorecast.ui.devices.PairDeviceScreen
+import dev.voidrot.chorecast.ui.devices.PairDeviceViewModel
 import dev.voidrot.chorecast.ui.pair.PairScreen
 import dev.voidrot.chorecast.ui.pair.PairViewModel
 import dev.voidrot.chorecast.ui.welcome.WelcomeScreen
@@ -157,6 +159,15 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
             val route = entry.toRoute<DevicesRoute>()
             DevicesScreen(
                 viewModel = viewModel { DevicesViewModel(currentUrl(), container.deviceClient, container.tokenStore) },
+                onBack = { nav.popBackStack() },
+                onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
+                onPairDevice = { nav.navigate(PairDeviceRoute(route.serverUrl)) },
+            )
+        }
+        composable<PairDeviceRoute> { entry ->
+            val route = entry.toRoute<PairDeviceRoute>()
+            PairDeviceScreen(
+                viewModel = viewModel { PairDeviceViewModel(currentUrl(), container.deviceClient, container.tokenStore) },
                 onBack = { nav.popBackStack() },
                 onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
             )

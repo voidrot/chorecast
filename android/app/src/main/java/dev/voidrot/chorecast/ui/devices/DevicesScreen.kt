@@ -33,7 +33,7 @@ import java.time.format.FormatStyle
 private val lastSeenFormat = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
 
 @Composable
-fun DevicesScreen(viewModel: DevicesViewModel, onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifier = Modifier) {
+fun DevicesScreen(viewModel: DevicesViewModel, onBack: () -> Unit, onSignedOut: () -> Unit, onPairDevice: () -> Unit, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     LaunchedEffect(state.signedOut) { if (state.signedOut) onSignedOut() }
@@ -50,6 +50,7 @@ fun DevicesScreen(viewModel: DevicesViewModel, onBack: () -> Unit, onSignedOut: 
             Text(stringResource(R.string.devices_title), style = MaterialTheme.typography.headlineSmall)
             TextButton(onClick = onBack) { Text(stringResource(R.string.action_back)) }
         }
+        Button(onClick = onPairDevice, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.devices_pair)) }
         when {
             state.loading && state.devices.isEmpty() -> CircularProgressIndicator()
             state.error != null -> {

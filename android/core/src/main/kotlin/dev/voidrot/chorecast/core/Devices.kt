@@ -1,10 +1,13 @@
 package dev.voidrot.chorecast.core
 
 import dev.voidrot.chorecast.api.apis.DevicesApi
+import dev.voidrot.chorecast.api.apis.KidsApi
 import dev.voidrot.chorecast.api.infrastructure.HttpResponse
 import dev.voidrot.chorecast.api.models.Device
 import dev.voidrot.chorecast.api.models.DevicePicker
+import dev.voidrot.chorecast.api.models.CreatePairingInputBody
 import dev.voidrot.chorecast.api.models.ElevateInputBody
+import dev.voidrot.chorecast.api.models.Kid
 import dev.voidrot.chorecast.api.models.KidSessionInputBody
 import dev.voidrot.chorecast.api.models.ListedDevice
 import dev.voidrot.chorecast.api.models.PairDeviceInputBody
@@ -12,7 +15,9 @@ import dev.voidrot.chorecast.api.models.Problem
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.util.reflect.typeInfo
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
 import java.time.Instant
@@ -33,6 +38,26 @@ data class PairingQr(val server: ServerUrl, val code: String) {
             return PairingQr(url, code)
         }
     }
+
+    /** The payload [parse] reads back; this is what the pairing QR code encodes. */
+    fun toPayload(): String = buildJsonObject {
+        put("server", server.value)
+        put("code", code)
+    }.toString()
+}
+
+/** A pairing code a parent created: show [qr] and the typed [code] until [expiresAt]. */
+data class IssuedPairing(val qr: PairingQr, val expiresAt: Instant, val kidId: Long?) {
+    val code: String get() = qr.code
+}
+
+sealed interface CreatePairingResult {
+    data class Created(val pairing: IssuedPairing) : CreatePairingResult
+
+    /** The parent's token stopped working. */
+    data object SignedOut : CreatePairingResult
+    data class Unreachable(val reason: String) : CreatePairingResult
+    data class Failed(val code: String) : CreatePairingResult
 }
 
 sealed interface PairResult {
@@ -126,6 +151,51 @@ class DeviceClient(private val engine: HttpClientEngine? = null) {
     suspend fun revoke(url: ServerUrl, appToken: String, deviceId: Long): Boolean = guard({ false }, { false }) {
         val resp = api(url, appToken).revokeDevice(deviceId)
         resp.success || resp.status == 404
+    }
+
+    /** The active kids a device can be paired to, or null if the parent's token stopped working. Throws IOException when offline. */
+    suspend fun kids(url: ServerUrl, appToken: String): List<Kid>? {
+        val resp = try {
+            KidsApi(baseUrl = url.apiBase, httpClientEngine = engine, httpClientConfig = ApiClients.config)
+                .apply { setBearerToken(appToken) }
+                .listKids()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException(e.message ?: e::class.simpleName.orEmpty(), e) // e.g. an unreadable body
+        }
+        return when {
+            resp.success -> try {
+                resp.body().items
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw IOException(e.message ?: e::class.simpleName.orEmpty(), e)
+            }
+            resp.status == 401 || resp.status == 403 -> null
+            else -> throw IOException("HTTP ${resp.status}")
+        }
+    }
+
+    /**
+     * Creates a single-use pairing code for [kidId]'s own device, or for a shared family device when
+     * null. No Idempotency-Key: every call is meant to make a new code.
+     */
+    suspend fun createPairing(url: ServerUrl, appToken: String, kidId: Long?): CreatePairingResult = guard(
+        { CreatePairingResult.Unreachable(it) },
+        { CreatePairingResult.Failed("unexpected") },
+    ) {
+        val resp = api(url, appToken).createPairing(CreatePairingInputBody(kid = kidId?.toString()))
+        if (resp.success) {
+            val b = resp.body()
+            // The code is for a phone that has to reach the server, so use the address the server gave.
+            val server = (ServerUrl.parse(b.server) as? Result.Ok)?.value
+                ?: return@guard CreatePairingResult.Failed("bad_server_url")
+            return@guard CreatePairingResult.Created(IssuedPairing(PairingQr(server, b.code), b.expiresAt.toInstant(), b.kidId))
+        }
+        if (resp.status == 401 || resp.status == 403) CreatePairingResult.SignedOut else CreatePairingResult.Failed(resp.problemCode())
     }
 
     private suspend fun session(call: suspend () -> HttpResponse<dev.voidrot.chorecast.api.models.DeviceSession>): SessionResult =
