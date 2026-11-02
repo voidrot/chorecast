@@ -225,6 +225,8 @@ func TestEditMidWeekKeepsPassedSlotsAndTouchedInstances(t *testing.T) {
 	reassigned := before["2026-11-07 18:00 #0 kid 1"]
 	f.exec("UPDATE chore_instances SET status = 'submitted' WHERE id = ?", submitted.ID)
 	f.exec("UPDATE chore_instances SET manually_reassigned = 1 WHERE id = ?", reassigned.ID)
+	withEvidence := before["2026-11-05 18:00 #0 kid 1"]
+	f.exec("INSERT INTO chore_instance_evidence (instance_id, attempt, created_at) VALUES (?, 1, '2026-11-04T18:00:00.000Z')", withEvidence.ID)
 
 	c.Slots = []string{"07:00", "19:00"}
 	f.update(c)
@@ -249,12 +251,15 @@ func TestEditMidWeekKeepsPassedSlotsAndTouchedInstances(t *testing.T) {
 	if _, ok := after["2026-11-07 19:00 #0 kid 1"]; !ok {
 		t.Error("the reassigned day's new slot is missing")
 	}
+	if got := after["2026-11-05 18:00 #0 kid 1"]; got.ID != withEvidence.ID {
+		t.Errorf("an instance with evidence wasn't preserved: %+v", got)
+	}
 	// Untouched future instances whose identity didn't change keep their rows.
 	if after["2026-11-08 07:00 #0 kid 1"].ID != before["2026-11-08 07:00 #0 kid 1"].ID {
 		t.Error("an unchanged future instance got a new row")
 	}
-	if n := len(after); n != 2*8 {
-		t.Errorf("%d instances, want today's kept 07:00, 7 days x 2 slots and the kept 18:00: %v", n, keys(f.list()))
+	if n := len(after); n != 2*8+1 {
+		t.Errorf("%d instances, want today's kept 07:00, 7 days x 2 slots and the two kept 18:00s: %v", n, keys(f.list()))
 	}
 }
 

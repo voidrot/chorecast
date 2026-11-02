@@ -2,6 +2,7 @@ package dayclose_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -696,6 +697,44 @@ func TestClosesAt(t *testing.T) {
 			t.Errorf("%s: closes at %s, want %s", tc.name, got.In(chicago), tc.want)
 		}
 	}
+}
+
+// OpensAt (the evidence capture window's start) is the previous day's close for the instance's
+// day end, or the close before a flexible instance's week began.
+func TestOpensAt(t *testing.T) {
+	f := newFixture(t)
+	for _, tc := range []struct {
+		name     string
+		kid      int64
+		date     string
+		flexible bool
+		want     string
+	}{
+		{"Ann's day", f.ann, "2026-11-04", false, "2026-11-03 21:00"},
+		{"Ben's day (ends at 19:00)", f.ben, "2026-11-04", false, "2026-11-03 19:00"},
+		{"shared", 0, "2026-11-04", false, "2026-11-03 21:00"},
+		{"flexible, dated at the week start", f.ben, "2026-11-01", true, "2026-10-31 19:00"},
+		{"flexible, any day of the week", f.ann, "2026-11-04", true, "2026-10-31 21:00"},
+	} {
+		inst := sqlc.ChoreInstance{OccurrenceDate: tc.date, Flexible: b2i(tc.flexible)}
+		if tc.kid != 0 {
+			inst.KidID = sql.NullInt64{Int64: tc.kid, Valid: true}
+		}
+		got, err := dayclose.OpensAt(t.Context(), f.db.Queries, inst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.Equal(local(tc.want)) {
+			t.Errorf("%s: opens at %s, want %s", tc.name, got.In(chicago), tc.want)
+		}
+	}
+}
+
+func b2i(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // The kid-day hook runs after the close has marked the day's misses, and a hook error fails the
