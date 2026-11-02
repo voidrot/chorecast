@@ -173,6 +173,36 @@ func (q *Queries) ListStreakDays(ctx context.Context, arg ListStreakDaysParams) 
 	return items, nil
 }
 
+const streakMilestonePaid = `-- name: StreakMilestonePaid :one
+SELECT EXISTS (
+    SELECT 1 FROM points_entries
+    WHERE kid_id = ?1 AND kind = 'streak_bonus' AND source_kind = 'streak_milestone'
+      AND source_id >= CAST(?2 AS INTEGER) AND source_id <= CAST(?3 AS INTEGER)
+      AND source_id % 10000 = CAST(?4 AS INTEGER)
+)
+`
+
+type StreakMilestonePaidParams struct {
+	KidID   int64 `json:"kid_id"`
+	FirstID int64 `json:"first_id"`
+	LastID  int64 `json:"last_id"`
+	Days    int64 `json:"days"`
+}
+
+// Whether the kid has a streak bonus for the milestone of `days` dated in [first_id, last_id]: the
+// ids are streaks.MilestoneSource ids (YYYYMMDD * 10000 + days) of a run's first and last day.
+func (q *Queries) StreakMilestonePaid(ctx context.Context, arg StreakMilestonePaidParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, streakMilestonePaid,
+		arg.KidID,
+		arg.FirstID,
+		arg.LastID,
+		arg.Days,
+	)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const tallyStreakDays = `-- name: TallyStreakDays :many
 SELECT i.occurrence_date,
     COUNT(*) AS total,

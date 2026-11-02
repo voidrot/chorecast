@@ -11,8 +11,9 @@
 //     re-checked at each evaluation for RecheckDays, so a chore finished after an early day end,
 //     or a miss a parent excuses, repairs it.
 //   - Each evaluation recomputes the streak from the stored days and posts a streak_bonus entry
-//     for every counted day on which the run reaches a milestone, once per (day, milestone).
-//     Bonuses are never reversed. Evaluating a day again, or out of order, changes nothing new.
+//     for every counted day on which the run reaches a milestone, unless the run was already paid
+//     that milestone on another of its days (a repair joined two runs). Bonuses are never
+//     reversed. Evaluating a day again, or out of order, changes nothing new.
 //   - Per-chore streaks are display only, recomputed from the kid's instance history each time.
 package streaks
 
@@ -90,18 +91,20 @@ func (s *Service) EvaluateKidDay(ctx context.Context, kidID int64, day caltime.D
 
 // EvaluateDay evaluates the day for every kid, archived ones included (they have no
 // instances, so their days are none). It's the dayclose.Closer AfterShared hook: by the
-// household day end every instance of the day is due, shared ones included.
+// household day end every instance of the day is due, shared ones included. One kid's failure
+// doesn't stop the others; the errors are joined.
 func (s *Service) EvaluateDay(ctx context.Context, day caltime.Date) error {
 	kids, err := s.db.ListKids(ctx, true)
 	if err != nil {
 		return fmt.Errorf("list kids: %w", err)
 	}
+	var errs []error
 	for _, k := range kids {
 		if err := s.EvaluateKidDay(ctx, k.ID, day); err != nil {
-			return fmt.Errorf("kid %d: %w", k.ID, err)
+			errs = append(errs, fmt.Errorf("kid %d: %w", k.ID, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func evaluate(ctx context.Context, tx *events.Tx, clk clock.Clock, kidID int64, day caltime.Date) error {
@@ -161,8 +164,16 @@ func evaluate(ctx context.Context, tx *events.Tx, clk clock.Clock, kidID int64, 
 	if err != nil {
 		return fmt.Errorf("list streak days: %w", err)
 	}
+	// Walk the days into runs: each counted day's length so far and its run's first day, and
+	// each run's last counted day.
+	type countedDay struct {
+		date, start caltime.Date
+		run         int
+	}
+	var counted []countedDay
+	ends := map[caltime.Date]caltime.Date{} // run start -> last counted day
 	var run, best int
-	var prev caltime.Date
+	var start, prev caltime.Date
 	for _, r := range days {
 		d, err := caltime.ParseDate(r.Day)
 		if err != nil {
@@ -176,14 +187,35 @@ func evaluate(ctx context.Context, tx *events.Tx, clk clock.Clock, kidID int64, 
 		case outcomeBroken:
 			run = 0
 		case outcomeCounted:
+			if run == 0 {
+				start = d
+			}
 			run++
 			best = max(best, run)
-			// Only runs through the days just evaluated can have changed.
-			if points, ok := bonus[run]; ok && !d.Before(from) {
-				if err := postBonus(ctx, tx, clk, kidID, d, run, points); err != nil {
-					return err
-				}
-			}
+			counted = append(counted, countedDay{date: d, start: start, run: run})
+			ends[start] = d
+		}
+	}
+	for _, c := range counted {
+		// Only runs through the days just evaluated can have changed.
+		points, ok := bonus[c.run]
+		if !ok || c.date.Before(from) {
+			continue
+		}
+		// A run pays each milestone once: when a repair joins two runs, the later part may
+		// already have been paid this milestone on another day.
+		paid, err := q.StreakMilestonePaid(ctx, sqlc.StreakMilestonePaidParams{
+			KidID: kidID, FirstID: MilestoneSource(c.start, c.run).ID, LastID: MilestoneSource(ends[c.start], c.run).ID,
+			Days: int64(c.run),
+		})
+		if err != nil {
+			return fmt.Errorf("streak bonus paid: %w", err)
+		}
+		if paid {
+			continue
+		}
+		if err := postBonus(ctx, tx, clk, kidID, c.date, c.run, points); err != nil {
+			return err
 		}
 	}
 	if err := q.UpsertKidStreak(ctx, sqlc.UpsertKidStreakParams{

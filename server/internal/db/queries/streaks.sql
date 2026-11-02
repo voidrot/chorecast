@@ -13,6 +13,16 @@ SELECT day, outcome FROM streak_days WHERE kid_id = ? AND day >= ? ORDER BY day;
 INSERT INTO streak_days (kid_id, day, outcome) VALUES (?, ?, ?)
 ON CONFLICT (kid_id, day) DO UPDATE SET outcome = excluded.outcome;
 
+-- name: StreakMilestonePaid :one
+-- Whether the kid has a streak bonus for the milestone of `days` dated in [first_id, last_id]: the
+-- ids are streaks.MilestoneSource ids (YYYYMMDD * 10000 + days) of a run's first and last day.
+SELECT EXISTS (
+    SELECT 1 FROM points_entries
+    WHERE kid_id = sqlc.arg(kid_id) AND kind = 'streak_bonus' AND source_kind = 'streak_milestone'
+      AND source_id >= CAST(sqlc.arg(first_id) AS INTEGER) AND source_id <= CAST(sqlc.arg(last_id) AS INTEGER)
+      AND source_id % 10000 = CAST(sqlc.arg(days) AS INTEGER)
+);
+
 -- name: TallyStreakDays :many
 -- Per day in [from_day, to_day]: the kid's required instances (their own and shared ones they're a
 -- member of; flexible ones belong to their week, not a day) and how many are done. Days without

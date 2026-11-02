@@ -1,9 +1,11 @@
 package streaks_test
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -358,7 +360,7 @@ func TestExcusedDaysCount(t *testing.T) {
 }
 
 // A repair that lengthens a run posts the longer milestone even on a day that already earned a
-// shorter one, and keeps the bonuses already posted.
+// shorter one, but doesn't pay the joined run the shorter one again.
 func TestRepairPostsLongerMilestoneOnTheSameDay(t *testing.T) {
 	f := newFixture(t)
 	c := f.chore("Dishes", f.ann)
@@ -376,8 +378,54 @@ func TestRepairPostsLongerMilestoneOnTheSameDay(t *testing.T) {
 	f.set(c.ID, f.ann, "2026-11-08", horizon.StatusApproved)
 	f.endDay("2026-11-08")
 	f.wantDaily("Ann", f.ann, 4, 4, "2026-11-08")
-	f.wantBonuses("Ann", f.ann, bonus{"2026-11-06", 5, "2-day streak"},
-		bonus{"2026-11-07", 5, "2-day streak"}, bonus{"2026-11-07", 10, "3-day streak"})
+	f.wantBonuses("Ann", f.ann, bonus{"2026-11-07", 5, "2-day streak"}, bonus{"2026-11-07", 10, "3-day streak"})
+}
+
+// One run is paid each milestone once: when an excuse joins a run to the day before it, the
+// joined run reaches the milestone earlier, on a day that wasn't paid, and still isn't paid again.
+func TestJoinedRunIsPaidEachMilestoneOnce(t *testing.T) {
+	f := newFixture(t)
+	f.exec(`UPDATE household SET streak_milestones = '[{"days":2,"points":5}]'`)
+	c := f.chore("Dishes", f.ann)
+	f.start()
+
+	f.endDay("2026-11-04") // missed
+	f.endDay("2026-11-05") // missed
+	for _, d := range []string{"2026-11-06", "2026-11-07"} {
+		f.set(c.ID, f.ann, d, horizon.StatusApproved)
+		f.endDay(d)
+	}
+	f.wantBonuses("Ann", f.ann, bonus{"2026-11-07", 5, "2-day streak"})
+
+	f.set(c.ID, f.ann, "2026-11-05", horizon.StatusExcused) // the run is now 05..07, reaching 2 days on 06
+	f.set(c.ID, f.ann, "2026-11-08", horizon.StatusApproved)
+	f.endDay("2026-11-08")
+	f.wantDaily("Ann", f.ann, 4, 4, "2026-11-08")
+	f.wantBonuses("Ann", f.ann, bonus{"2026-11-07", 5, "2-day streak"})
+
+	// A new run after a break earns it again.
+	f.endDay("2026-11-09") // missed
+	for _, d := range []string{"2026-11-10", "2026-11-11"} {
+		f.set(c.ID, f.ann, d, horizon.StatusApproved)
+		f.endDay(d)
+	}
+	f.wantBonuses("Ann", f.ann, bonus{"2026-11-07", 5, "2-day streak"}, bonus{"2026-11-11", 5, "2-day streak"})
+}
+
+// At the household day end, one kid's failed evaluation doesn't stop the others'.
+func TestEvaluateDayContinuesPastAKidsError(t *testing.T) {
+	f := newFixture(t)
+	c := f.chore("Trash", f.ben)
+	f.start()
+	f.exec(`INSERT INTO kid_streaks (kid_id, current, best, last_day) VALUES (?, 0, 0, 'garbage')`, f.ann)
+	f.set(c.ID, f.ben, "2026-11-04", horizon.StatusApproved)
+	f.clock.Set(local("2026-11-04 21:00"))
+
+	err := f.streaks.EvaluateDay(t.Context(), date("2026-11-04"))
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("kid %d:", f.ann)) {
+		t.Fatalf("err = %v, want Ann's", err)
+	}
+	f.wantDaily("Ben", f.ben, 1, 1, "2026-11-04")
 }
 
 // A day that counted stays counted when a submitted chore is later rejected and missed.

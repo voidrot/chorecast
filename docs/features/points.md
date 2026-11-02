@@ -183,9 +183,10 @@ Built (#30, `internal/streaks`, server only). Choices made in implementation:
   milestone's `days` on a counted day, a `streak_bonus` entry of its `points` is posted, dated that day, from the
   system, with the note "N-day streak". The source is (`streak_milestone`, YYYYMMDD × 10000 + days), so each (day,
   milestone) posts once however often the day is evaluated, and a new run that reaches the milestone again earns
-  it again. Bonuses are never reversed. When a repair joins two runs, the bonuses the second run already earned
-  stay, and the joined run earns the milestones it now reaches, even on a day that already had a shorter one.
-  Milestones are checked only from the evaluated days on, so a changed setting applies from then.
+  it again. A run is paid each milestone at most once: when a repair joins two runs, a milestone already paid on
+  any day of the joined run isn't paid again on the earlier day it now falls on, while a milestone the joined run
+  reaches for the first time is paid, even on a day that already had a shorter one. Bonuses already posted are
+  never reversed. Milestones are checked only from the evaluated days on, so a changed setting applies from then.
 - **Per-chore streaks** (`kid_chore_streaks`) are recomputed from the kid's instance history at each evaluation,
   per recurring chore (any schedule but `once`; flexible instances left out): `current` is the latest run of
   occurrences that were approved, submitted or excused, `best` the longest. They follow the instances' current
