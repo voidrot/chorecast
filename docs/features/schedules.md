@@ -106,6 +106,12 @@ evidence rules; tagged helpers can attach extra evidence until a parent decides.
 member, or to none, as a per-chore setting. For fairness, each member's load gets the chore's minutes divided by the
 group size (rounded up).
 
+Built (#93, web): the chore form has a "Who does it" section. It picks the mode (each with a one-line
+explanation), the kids (archived kids show, marked, only while assigned), the rotation turn order (move up and down),
+and the shared points and penalty options. It checks the same kid minimums as the server (one for fixed and rotation,
+two for shared), shows the server's 422 messages at the kid and option controls, and warns when saving would restart
+an existing rotation. The form always sends an explicit `assignment`, so a PUT never drops it.
+
 ## Rolling horizon generation
 
 - A scheduler in the Go binary runs at day close (per household timezone) and on startup, keeping instances
