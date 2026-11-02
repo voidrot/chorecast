@@ -417,6 +417,58 @@
       "name": "Give the chore a name.",
       "beforeAfter": "Before & after needs at least 2 photos.",
       "checklist": "A checklist needs at least one step."
+    },
+    "assignment": {
+      "title": "Who does it",
+      "mode": "How it is handed out",
+      "modes": {
+        "fixed": "Specific kids",
+        "everyone": "Everyone",
+        "rotation": "Take turns",
+        "auto": "Fair pick",
+        "shared": "Shared"
+      },
+      "modeHints": {
+        "fixed": "Each kid you pick gets their own copy.",
+        "everyone": "Every eligible kid gets their own copy.",
+        "rotation": "One kid at a time, in the order you set.",
+        "auto": "One kid each time: whoever has the least work this week.",
+        "shared": "One copy for the group. Any member can finish it."
+      },
+      "kids": "Kids",
+      "kidsHint": {
+        "fixed": "Pick at least one kid.",
+        "rotation": "Pick at least one kid, then set the turn order.",
+        "auto": "Pick the kids to choose from, or none to choose from every kid.",
+        "shared": "Pick at least two kids for the group."
+      },
+      "noKids": "No kids yet. Add a kid first.",
+      "archivedKid": "{name} (archived)",
+      "order": "Turn order",
+      "orderHint": "The first kid goes first, then the next, and back to the start.",
+      "moveUp": "Move {name} earlier",
+      "moveDown": "Move {name} later",
+      "sharedPoints": "Points",
+      "sharedPenalty": "If it is missed",
+      "points": {
+        "completer_takes_all": "The kid who finishes it gets all the points",
+        "split_evenly": "Split evenly with the helpers they tag"
+      },
+      "penalty": {
+        "all": "Every group member gets the penalty",
+        "none": "Nobody gets the penalty"
+      },
+      "resetWarning": "Changing the mode or the kids restarts the rotation from the first kid.",
+      "errors": {
+        "kids": "Pick at least one kid.",
+        "sharedKids": "Pick at least two kids for a shared chore."
+      },
+      "serverErrors": {
+        "mode": "Pick a valid way to hand this out.",
+        "kidIds": "The server rejected the kids you picked. Check them and try again.",
+        "sharedPoints": "Pick a valid points option.",
+        "sharedPenalty": "Pick a valid penalty option."
+      }
     }
   },
   "schedule": {

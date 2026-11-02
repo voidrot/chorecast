@@ -16,19 +16,25 @@ import {
   useDialog,
   useMessage,
 } from 'naive-ui'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, toRaw, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
 import type { components } from '@/api/schema'
 import {
+  type AssignmentFieldErrors,
+  type AssignmentForm,
+  assignmentFieldErrors,
+  assignmentProblems,
   type ChoreForm,
   choreProblems,
   emptyChoreForm,
   formFromChore,
   inputFromForm,
+  resetsRotation,
 } from '@/chores/form'
+import AssignmentEditor from './AssignmentEditor.vue'
 import ScheduleEditor from './ScheduleEditor.vue'
 
 type Kid = components['schemas']['Kid']
@@ -52,6 +58,22 @@ const locations = ref<Item[]>([])
 const equipment = ref<Item[]>([])
 
 const problems = computed(() => choreProblems(form.value))
+// The assignment as loaded: saving a changed rotation restarts it on the server.
+const originalAssignment = ref<AssignmentForm>()
+const rotationReset = computed(
+  () =>
+    !!originalAssignment.value && resetsRotation(originalAssignment.value, form.value.assignment),
+)
+// Server 422s for the assignment controls; cleared once the assignment is edited.
+const assignmentErrors = ref<AssignmentFieldErrors>({})
+watch(
+  () => form.value.assignment,
+  () => (assignmentErrors.value = {}),
+  { deep: true },
+)
+const assignmentProblem = computed(() =>
+  shown.value ? assignmentProblems(form.value.assignment)[0] : undefined,
+)
 const locationOptions = computed(() => locations.value.map((l) => ({ value: l.id, label: l.name })))
 const equipmentOptions = computed(() =>
   equipment.value.map((e) => ({ value: e.id, label: e.name })),
@@ -60,13 +82,13 @@ const kidName = (kidId: number) =>
   kids.value.find((k) => k.id === kidId)?.displayName ?? `#${kidId}`
 const kidOptions = computed(() =>
   kids.value
-    .filter((k) => !form.value.eligibility.some((e) => e.kidId === k.id))
+    .filter((k) => !k.archivedAt && !form.value.eligibility.some((e) => e.kidId === k.id))
     .map((k) => ({ value: k.id, label: k.displayName })),
 )
 
 onMounted(async () => {
   const [k, l, e] = await Promise.all([
-    api.GET('/kids'),
+    api.GET('/kids', { params: { query: { archived: true } } }),
     api.GET('/locations'),
     api.GET('/equipment'),
   ])
@@ -79,8 +101,10 @@ onMounted(async () => {
       error: err,
       response,
     } = await api.GET('/chores/{id}', { params: { path: { id: id.value } } })
-    if (data) form.value = formFromChore(data)
-    else error.value = ApiError.fromProblem(response.status, err)
+    if (data) {
+      form.value = formFromChore(data)
+      originalAssignment.value = structuredClone(toRaw(form.value.assignment))
+    } else error.value = ApiError.fromProblem(response.status, err)
   }
   loading.value = false
 })
@@ -101,6 +125,7 @@ async function save() {
       : await api.PUT('/chores/{id}', { params: { path: { id: id.value } }, body })
     if (!res.data) {
       error.value = ApiError.fromProblem(res.response.status, res.error)
+      assignmentErrors.value = assignmentFieldErrors(error.value.fieldErrors)
       return
     }
     message.success(t('chores.saved', { name: res.data.name }))
@@ -194,6 +219,16 @@ function remove() {
 
       <NCard :title="t('schedule.title')">
         <ScheduleEditor v-model="form.schedule" :slots="form.slots" />
+      </NCard>
+
+      <NCard :title="t('chores.assignment.title')">
+        <AssignmentEditor
+          v-model="form.assignment"
+          :kids="kids"
+          :errors="assignmentErrors"
+          :resets-rotation="rotationReset"
+          :problem="assignmentProblem"
+        />
       </NCard>
 
       <NCard :title="t('chores.whenTitle')">
