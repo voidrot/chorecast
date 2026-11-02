@@ -110,6 +110,7 @@ private fun rejectionReasonText(r: ChoreInstanceRejection.Reason): String = stri
         ChoreInstanceRejection.Reason.NOT_FINISHED -> R.string.chore_reject_not_finished
         ChoreInstanceRejection.Reason.NEEDS_REDO -> R.string.chore_reject_needs_redo
         ChoreInstanceRejection.Reason.EVIDENCE_UNCLEAR -> R.string.chore_reject_evidence_unclear
+        ChoreInstanceRejection.Reason.UNKNOWN_DEFAULT_OPEN_API -> R.string.chore_reject_unknown
     },
 )
 

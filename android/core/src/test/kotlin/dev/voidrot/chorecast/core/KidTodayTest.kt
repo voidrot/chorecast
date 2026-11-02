@@ -4,6 +4,7 @@ import dev.voidrot.chorecast.api.models.Chore
 import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.ChoreInstanceRejection
 import dev.voidrot.chorecast.api.models.EvidenceRules
+import kotlinx.serialization.decodeFromString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -121,6 +122,18 @@ class KidTodayTest {
             ChoreInstance.Status.EXCUSED to ChoreStatusView.EXCUSED,
         )
         for ((status, view) in expected) assertEquals(view, instance(1, status = status).statusView())
+    }
+
+    @Test
+    fun aStatusFromANewerServerDecodesAndIsNotActionable() {
+        val json = """
+            {"choreId":1,"choreName":"Dishes","date":"2026-05-04","dueAt":"2026-05-04T20:00:00-05:00",
+             "id":1,"planned":false,"status":"frozen"}
+        """.trimIndent()
+        val decoded = ApiClients.json.decodeFromString<ChoreInstance>(json)
+        assertEquals(ChoreInstance.Status.UNKNOWN_DEFAULT_OPEN_API, decoded.status)
+        assertEquals(ChoreStatusView.UNKNOWN, decoded.statusView())
+        assertFalse(TodayChore(decoded, null).canComplete)
     }
 
     @Test

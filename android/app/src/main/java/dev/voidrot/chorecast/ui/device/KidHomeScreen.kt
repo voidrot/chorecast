@@ -260,6 +260,7 @@ internal fun StatusLabel(status: ChoreStatusView) {
         ChoreStatusView.APPROVED -> stringResource(R.string.kid_status_approved) to colors.primary
         ChoreStatusView.MISSED -> stringResource(R.string.kid_status_missed) to colors.error
         ChoreStatusView.EXCUSED -> stringResource(R.string.kid_status_excused) to colors.onSurfaceVariant
+        ChoreStatusView.UNKNOWN -> stringResource(R.string.kid_status_unknown) to colors.onSurfaceVariant
     }
     Text(text, color = color, style = MaterialTheme.typography.bodyMedium)
 }

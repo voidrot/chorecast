@@ -77,6 +77,7 @@
     <string name="kid_status_approved">Done</string>
     <string name="kid_status_missed">Missed</string>
     <string name="kid_status_excused">Excused</string>
+    <string name="kid_status_unknown">Update the app to see this</string>
 
     <string name="chore_steps">Steps</string>
     <string name="chore_evidence">What to hand in</string>
@@ -93,6 +94,7 @@
     <string name="chore_reject_not_finished">It wasn\'t finished.</string>
     <string name="chore_reject_needs_redo">It needs to be redone.</string>
     <string name="chore_reject_evidence_unclear">The photo wasn\'t clear enough.</string>
+    <string name="chore_reject_unknown">A parent sent this back.</string>
     <string name="chore_complete">Complete</string>
     <string name="complete_note_required">Note (required)</string>
     <string name="complete_note_optional">Note (optional)</string>

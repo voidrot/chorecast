@@ -20,6 +20,7 @@ openApiGenerate {
         mapOf(
             "serializationLibrary" to "kotlinx_serialization",
             "enumPropertyNaming" to "UPPERCASE",
+            "enumUnknownDefaultCase" to "true",
             "omitGradleWrapper" to "true",
             "sourceFolder" to "src/main/kotlin",
         ),
