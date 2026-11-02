@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -43,6 +44,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.voidrot.chorecast.R
@@ -84,6 +87,7 @@ fun DeviceScreen(
                 todayViewModel,
                 onLock = viewModel::lock,
                 onParent = null,
+                onUnauthorized = viewModel::sessionRefused,
             )
             active is ActiveSession.Parent -> Centered {
                 Text(stringResource(R.string.device_parent_mode, active.parent.displayName), style = MaterialTheme.typography.headlineSmall)
@@ -96,6 +100,8 @@ fun DeviceScreen(
                 todayViewModel,
                 onLock = null,
                 onParent = if (picker?.parents.isNullOrEmpty()) null else ({ viewModel.chooseParent(true) }),
+                // load() re-checks the device token with the picker and unpairs if it was revoked.
+                onUnauthorized = viewModel::load,
             )
             picker != null -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(stringResource(R.string.device_who), style = MaterialTheme.typography.headlineSmall)
@@ -155,16 +161,27 @@ fun DeviceScreen(
     }
 }
 
-/** The kid's chores. One [TodayViewModel] per kid session, so a new session starts with fresh data. */
+/**
+ * The kid's chores. Each kid session gets its own [ViewModelStore], cleared when the session's home
+ * leaves the composition, so a finished session's [TodayViewModel] (and its token) doesn't pile up
+ * in the device screen's store. A new session starts with fresh data.
+ */
 @Composable
 private fun KidHome(
     access: KidAccess,
     todayViewModel: (KidAccess) -> TodayViewModel,
     onLock: (() -> Unit)?,
     onParent: (() -> Unit)?,
+    onUnauthorized: () -> Unit,
 ) {
-    val vm = viewModel<TodayViewModel>(key = "today-${access.kidId}-${access.token.hashCode()}") { todayViewModel(access) }
-    KidHomeScreen(vm, access.name, onLock, onParent)
+    val owner = remember(access.kidId, access.token) {
+        object : ViewModelStoreOwner {
+            override val viewModelStore = ViewModelStore()
+        }
+    }
+    DisposableEffect(owner) { onDispose { owner.viewModelStore.clear() } }
+    val vm = viewModel<TodayViewModel>(viewModelStoreOwner = owner) { todayViewModel(access) }
+    KidHomeScreen(vm, access.name, onLock, onParent, onUnauthorized)
 }
 
 @Composable

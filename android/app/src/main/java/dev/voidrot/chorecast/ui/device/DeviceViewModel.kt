@@ -103,6 +103,11 @@ class DeviceViewModel(
         }
     }
 
+    /** The API refused the open kid session's token (a parent locked the device, or it expired): back to the picker. */
+    fun sessionRefused() {
+        _state.value.active?.let(::endLocally)
+    }
+
     private fun endLocally(active: ActiveSession) {
         if (_state.value.active != active) return
         lockJob?.cancel()

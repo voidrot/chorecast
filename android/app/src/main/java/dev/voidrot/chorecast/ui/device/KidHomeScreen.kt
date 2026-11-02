@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,6 +28,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.core.ChoreStatusView
@@ -54,10 +56,18 @@ fun KidHomeScreen(
     name: String,
     onLock: (() -> Unit)?,
     onParent: (() -> Unit)?,
+    onUnauthorized: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     BackHandler(enabled = state.selected != null, onBack = viewModel::close)
+    // A phone left open overnight shows yesterday's chores until it is looked at again.
+    LifecycleResumeEffect(viewModel) {
+        viewModel.refreshIfStale()
+        onPauseOrDispose {}
+    }
+    // The token was refused (session ended, or the device was unpaired): let the device decide what's next.
+    LaunchedEffect(state.error) { if (state.error == TodayError.SignedOut) onUnauthorized() }
 
     val selected = state.selectedChore
     if (selected != null) {

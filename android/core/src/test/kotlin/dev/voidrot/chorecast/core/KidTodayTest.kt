@@ -25,6 +25,7 @@ class KidTodayTest {
         planned: Boolean = false,
         date: LocalDate = day,
         rejected: Boolean = false,
+        completedAt: OffsetDateTime? = null,
         choreId: Long = id,
     ) = ChoreInstance(
         choreId = choreId,
@@ -35,6 +36,7 @@ class KidTodayTest {
         planned = planned,
         status = status,
         slot = slot,
+        completedAt = completedAt,
         lastRejection = if (rejected) ChoreInstanceRejection(rejectedAt = due, text = "again") else null,
     )
 
@@ -95,6 +97,18 @@ class KidTodayTest {
         assertEquals(ChoreStatusView.OPEN, instance(1).statusView())
         // A resubmission keeps lastRejection but is waiting for review again.
         assertEquals(ChoreStatusView.SUBMITTED, instance(1, status = ChoreInstance.Status.SUBMITTED, rejected = true).statusView())
+    }
+
+    @Test
+    fun aRejectionOlderThanTheLastCompletionIsNotShown() {
+        // Rejected, resubmitted and approved later, then the approval was reversed: open, not "do it again".
+        val reversed = instance(1, rejected = true, completedAt = due.plusHours(2))
+        assertEquals(ChoreStatusView.OPEN, reversed.statusView())
+        assertFalse(reversed.isRejected())
+        // Completed, then rejected: back to the kid with feedback.
+        assertEquals(ChoreStatusView.REDO, instance(1, rejected = true, completedAt = due.minusHours(2)).statusView())
+        assertTrue(instance(1, rejected = true, completedAt = null).isRejected())
+        assertFalse(instance(1, completedAt = due).isRejected())
     }
 
     @Test

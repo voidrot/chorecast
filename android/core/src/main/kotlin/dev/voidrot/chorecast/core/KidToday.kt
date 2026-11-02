@@ -13,8 +13,18 @@ import java.time.format.DateTimeParseException
  */
 enum class ChoreStatusView { OPEN, REDO, SUBMITTED, APPROVED, MISSED, EXCUSED }
 
+/**
+ * True when the latest rejection is why the chore is open again. `lastRejection` is kept after a
+ * later approval is reversed, so a rejection older than the last completion doesn't count.
+ */
+fun ChoreInstance.isRejected(): Boolean {
+    val rejection = lastRejection ?: return false
+    val completed = completedAt ?: return true
+    return rejection.rejectedAt.isAfter(completed)
+}
+
 fun ChoreInstance.statusView(): ChoreStatusView = when (status) {
-    ChoreInstance.Status.OPEN -> if (lastRejection != null) ChoreStatusView.REDO else ChoreStatusView.OPEN
+    ChoreInstance.Status.OPEN -> if (isRejected()) ChoreStatusView.REDO else ChoreStatusView.OPEN
     ChoreInstance.Status.SUBMITTED -> ChoreStatusView.SUBMITTED
     ChoreInstance.Status.APPROVED -> ChoreStatusView.APPROVED
     ChoreInstance.Status.MISSED -> ChoreStatusView.MISSED
