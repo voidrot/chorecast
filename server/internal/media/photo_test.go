@@ -2,12 +2,13 @@ package media_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
-	"hash/crc32"
-	"image"
 	"image/png"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/gen2brain/vpx/webp"
 
@@ -36,7 +37,7 @@ func TestProcessPhotoStripsMetadataAndOrients(t *testing.T) {
 	if !bytes.Contains(src, []byte(mediatest.GPSMarker)) {
 		t.Fatal("fixture should carry GPS data")
 	}
-	p, err := media.ProcessPhoto(src)
+	p, err := media.ProcessPhoto(t.Context(), src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestProcessPhotoScalesDown(t *testing.T) {
 		{1000, 2500, 640, 1600, 128, 320},
 		{800, 600, 800, 600, 320, 240}, // never scaled up
 	} {
-		p, err := media.ProcessPhoto(mediatest.JPEG(t, mediatest.Halves(tc.w, tc.h)))
+		p, err := media.ProcessPhoto(t.Context(), mediatest.JPEG(t, mediatest.Halves(tc.w, tc.h)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,18 +103,18 @@ func TestProcessPhotoScalesDown(t *testing.T) {
 
 func TestPhotoHashesArePixelBased(t *testing.T) {
 	plain := mediatest.JPEG(t, mediatest.Halves(64, 48))
-	a, err := media.ProcessPhoto(plain)
+	a, err := media.ProcessPhoto(t.Context(), plain)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := media.ProcessPhoto(mediatest.WithExif(plain, 1)) // same pixels, other metadata
+	b, err := media.ProcessPhoto(t.Context(), mediatest.WithExif(plain, 1)) // same pixels, other metadata
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a.SHA256 != b.SHA256 || a.DHash != b.DHash {
 		t.Error("the same pixels with different metadata should hash the same")
 	}
-	c, err := media.ProcessPhoto(mediatest.JPEG(t, mediatest.Halves(64, 49)))
+	c, err := media.ProcessPhoto(t.Context(), mediatest.JPEG(t, mediatest.Halves(64, 49)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +136,7 @@ func TestProcessPhotoAcceptsPNGAndWebP(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, b := range map[string][]byte{"png": p.Bytes(), "webp": w.Bytes()} {
-		got, err := media.ProcessPhoto(b)
+		got, err := media.ProcessPhoto(t.Context(), b)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -159,25 +160,81 @@ func TestProcessPhotoRejects(t *testing.T) {
 		"heic":            {heic, media.ErrHEIC},
 		"truncated jpeg":  {jpg[:len(jpg)/2], media.ErrInvalidImage},
 		"jpeg magic only": {[]byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0}, media.ErrInvalidImage},
-		"pixel bomb":      {pngClaiming(t, 20000, 20000), media.ErrTooManyPixels},
+		// A tiny PNG claiming 40,000,000×1: small area, but kernel scalers allocate per column.
+		"thin bomb":         {mediatest.PNGHeader(40_000_000, 1, 8, 0, 0), media.ErrTooManyPixels},
+		"one side too long": {mediatest.PNGHeader(media.MaxSide+1, 10, 8, 0, 0), media.ErrTooManyPixels},
+		"over the area cap": {mediatest.PNGHeader(6000, 4001, 8, 0, 0), media.ErrTooManyPixels},
+		// Within the size caps, but decoding would need more than MaxDecodeBytes.
+		"16-bit RGBA png":        {mediatest.PNGHeader(4800, 4800, 16, 6, 0), media.ErrTooComplex},
+		"interlaced RGBA png":    {mediatest.PNGHeader(4800, 4800, 8, 6, 1), media.ErrTooComplex},
+		"progressive CMYK jpeg":  {jpegHeader(0xC2, 4000, 3000, 4), media.ErrTooComplex},
+		"progressive 4:4:4 jpeg": {jpegHeader(0xC2, 4000, 4000, 3), media.ErrTooComplex},
+		"animated webp":          {mediatest.AnimatedWebP(t), media.ErrAnimated},
 	} {
-		if _, err := media.ProcessPhoto(tc.data); !errors.Is(err, tc.want) {
+		if _, err := media.ProcessPhoto(t.Context(), tc.data); !errors.Is(err, tc.want) {
 			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
 		}
 	}
 }
 
-// pngClaiming is a tiny PNG whose header claims w×h pixels.
-func pngClaiming(t *testing.T, w, h uint32) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, image.NewGray(image.Rect(0, 0, 1, 1))); err != nil {
+// jpegHeader is a JPEG with only a start-of-frame (marker sof) for nc 1×1-sampled components,
+// followed by a start of scan: enough for its header to be checked.
+func jpegHeader(sof byte, w, h uint16, nc byte) []byte {
+	seg := []byte{8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), nc} //nolint:gosec // big-endian bytes, truncation intended
+	for i := range nc {
+		seg = append(seg, i+1, 0x11, 0)
+	}
+	out := []byte{0xFF, 0xD8, 0xFF, sof, 0, byte(len(seg) + 2)} //nolint:gosec // short test segment
+	out = append(out, seg...)
+	return append(out, 0xFF, 0xDA, 0, 2)
+}
+
+// The orientation of a WebP comes from its raw EXIF chunk, read with the bounded parser: EXIF
+// built so that a parser reading every string does gigabytes of work is handled at once.
+func TestWebPExifOrientation(t *testing.T) {
+	tiff := mediatest.ExifWithFiller(6, 16000, 1<<20) // ~16 GB of string reads for a naive parser
+	src := mediatest.WebPWithExif(t, mediatest.WebP(t, mediatest.Halves(40, 20)), 40, 20, tiff)
+	start := time.Now() //nolint:forbidigo // measuring this test's own run time
+	p, err := media.ProcessPhoto(t.Context(), src)
+	if err != nil {
 		t.Fatal(err)
 	}
-	b := buf.Bytes()
-	// Signature (8), IHDR length (4), "IHDR" (4), then width and height; CRC after 13 data bytes.
-	binary.BigEndian.PutUint32(b[16:20], w)
-	binary.BigEndian.PutUint32(b[20:24], h)
-	binary.BigEndian.PutUint32(b[29:33], crc32.ChecksumIEEE(b[12:29]))
-	return b
+	if d := time.Since(start); d > 2*time.Second { //nolint:forbidigo // as above
+		t.Errorf("processing took %v", d)
+	}
+	if p.Width != 20 || p.Height != 40 {
+		t.Errorf("size = %dx%d, want 20x40 (turned by EXIF orientation 6)", p.Width, p.Height)
+	}
+	if bytes.Contains(p.WebP, []byte("AAAA")) {
+		t.Error("the EXIF strings were copied into the output")
+	}
+}
+
+// One upload's allocations stay within the documented budget for a large ordinary photo. The
+// total allocated is an upper bound on the peak.
+func TestProcessPhotoMemory(t *testing.T) {
+	src := mediatest.JPEG(t, mediatest.Halves(6000, 4000)) // 24 MP, the area cap
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	p, err := media.ProcessPhoto(t.Context(), src)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Width != 1600 || p.Height != 1067 {
+		t.Errorf("size = %dx%d", p.Width, p.Height)
+	}
+	t.Logf("allocated %d MB", (after.TotalAlloc-before.TotalAlloc)>>20)
+	if mb := (after.TotalAlloc - before.TotalAlloc) >> 20; mb > 120 {
+		t.Errorf("processing a 24 MP JPEG allocated %d MB, want at most 120", mb)
+	}
+}
+
+func TestProcessPhotoStopsWhenCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := media.ProcessPhoto(ctx, mediatest.JPEG(t, mediatest.Halves(64, 48))); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
 }

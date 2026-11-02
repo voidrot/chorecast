@@ -3,14 +3,12 @@ package api
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
@@ -33,7 +31,9 @@ func registerMedia(hapi huma.API, h *handlers) {
 			"not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo " +
 			"to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any " +
 			"metadata (EXIF, GPS). The photo is pending until it is attached to evidence. A kid's photo that exactly " +
-			"matches earlier kid evidence is rejected with 409 `duplicate_media`.",
+			"matches earlier kid evidence is rejected with 409 `duplicate_media`. Images over 24 MP or 12,000 px on a " +
+			"side, or that would need too much memory to decode, get 413; animated images get 415. Photos are processed " +
+			"one at a time; when several uploads are already waiting the answer is 503 `media_busy` with Retry-After.",
 		Tags:          []string{"media"},
 		Security:      auth.Require(auth.ScopeChoresComplete),
 		DefaultStatus: http.StatusCreated,
@@ -41,7 +41,7 @@ func registerMedia(hapi huma.API, h *handlers) {
 		MaxBodyBytes:    h.cfg.Media.MaxPhotoBytes() + multipartOverhead,
 		BodyReadTimeout: 2 * time.Minute,
 		Errors: []int{http.StatusConflict, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
-			http.StatusUnprocessableEntity},
+			http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 	}, h.uploadPhoto)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "getMedia",
@@ -132,20 +132,12 @@ type UploadPhotoInput struct {
 func (h *handlers) uploadPhoto(ctx context.Context, in *UploadPhotoInput) (*MediaItemOutput, error) {
 	p, _ := auth.PrincipalFrom(ctx)
 	f := in.RawBody.Data().File
+	defer func() { _ = f.Close() }()
 	limit := h.cfg.Media.MaxPhotoBytes()
-	tooLarge := apierr.New(http.StatusRequestEntityTooLarge, apierr.CodePayloadTooLarge,
-		fmt.Sprintf("photos can be at most %d MB", limit>>20))
 	if f.Size > limit {
-		return nil, tooLarge
+		return nil, media.TooLarge(limit)
 	}
-	data, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > limit {
-		return nil, tooLarge
-	}
-	m, err := h.media.UploadPhoto(ctx, p, data)
+	m, err := h.media.UploadPhoto(ctx, p, f, limit)
 	if err != nil {
 		return nil, err
 	}

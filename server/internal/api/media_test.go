@@ -214,6 +214,9 @@ func TestUploadPhotoValidation(t *testing.T) {
 	wantCode(t, "heic", e.upload(e.sam, heic, "image/heic"), 415, "unsupported_media_type")
 	jpg := photo(t, 30, 22)
 	wantCode(t, "truncated jpeg", e.upload(e.sam, jpg[:len(jpg)/2], "image/jpeg"), 422, "invalid_image")
+	wantCode(t, "animated webp", e.upload(e.sam, mediatest.AnimatedWebP(t), "image/webp"), 415, "unsupported_media_type")
+	wantCode(t, "thin bomb", e.upload(e.sam, mediatest.PNGHeader(40_000_000, 1, 8, 0, 0), "image/png"), 413, "image_too_large")
+	wantCode(t, "16-bit png", e.upload(e.sam, mediatest.PNGHeader(4800, 4800, 16, 6, 0), "image/png"), 413, "image_too_complex")
 
 	// Size: the file part over the limit, and a body far over it.
 	big := make([]byte, 1<<20+1)

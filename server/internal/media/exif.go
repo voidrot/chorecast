@@ -27,7 +27,7 @@ func jpegOrientation(data []byte) int {
 			continue
 		}
 		n := int(binary.BigEndian.Uint16(data[i+2 : i+4]))
-		if n < 2 || i+2+n > len(data) {
+		if n < 2 || n > len(data)-i-2 {
 			return 1
 		}
 		seg := data[i+4 : i+2+n]
@@ -56,14 +56,14 @@ func tiffOrientation(t []byte) int {
 	if bo.Uint16(t[2:4]) != 42 {
 		return 1
 	}
-	off := int(bo.Uint32(t[4:8]))
-	if off < 8 || off+2 > len(t) {
+	off := int(bo.Uint32(t[4:8]))  // negative on 32-bit platforms for offsets ≥ 2³¹
+	if off < 8 || off > len(t)-2 { // no off+2: it could overflow
 		return 1
 	}
 	count := int(bo.Uint16(t[off : off+2]))
 	for e := range count {
 		p := off + 2 + 12*e
-		if p+12 > len(t) {
+		if p > len(t)-12 {
 			return 1
 		}
 		if bo.Uint16(t[p:p+2]) != 0x0112 {

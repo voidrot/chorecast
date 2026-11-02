@@ -955,7 +955,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a photo
-         * @description A multipart form with the image in `file` (JPEG, PNG or WebP, recognized by its content, not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any metadata (EXIF, GPS). The photo is pending until it is attached to evidence. A kid's photo that exactly matches earlier kid evidence is rejected with 409 `duplicate_media`.
+         * @description A multipart form with the image in `file` (JPEG, PNG or WebP, recognized by its content, not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any metadata (EXIF, GPS). The photo is pending until it is attached to evidence. A kid's photo that exactly matches earlier kid evidence is rejected with 409 `duplicate_media`. Images over 24 MP or 12,000 px on a side, or that would need too much memory to decode, get 413; animated images get 415. Photos are processed one at a time; when several uploads are already waiting the answer is 503 `media_busy` with Retry-After.
          */
         post: operations["uploadPhoto"];
         delete?: never;
@@ -5159,6 +5159,15 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

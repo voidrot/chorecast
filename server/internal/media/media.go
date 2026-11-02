@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -44,7 +46,11 @@ var (
 	errHEIC        = apierr.New(http.StatusUnsupportedMediaType, apierr.CodeUnsupportedMedia,
 		"HEIC and AVIF photos aren't supported; upload a JPEG, PNG or WebP photo")
 	errTooManyPixels = apierr.New(http.StatusRequestEntityTooLarge, apierr.CodeImageTooLarge,
-		fmt.Sprintf("the image is larger than %d megapixels", MaxPixels/1_000_000))
+		fmt.Sprintf("the image is larger than %d megapixels or %d pixels on a side", MaxPixels/1_000_000, MaxSide))
+	errTooComplex = apierr.New(http.StatusRequestEntityTooLarge, apierr.CodeImageTooComplex,
+		"the image needs too much memory to process; save it as an ordinary JPEG and try again")
+	errAnimated = apierr.New(http.StatusUnsupportedMediaType, apierr.CodeUnsupportedMedia,
+		"animated images aren't supported; upload a still photo")
 	errInvalidImage = apierr.New(http.StatusUnprocessableEntity, apierr.CodeInvalidImage, "the image is damaged or can't be read")
 )
 
@@ -55,14 +61,20 @@ type Service struct {
 	store  Storage
 	signer *Signer // verifies the local storage's signed URLs
 	// sem bounds concurrent photo processing, so a Raspberry Pi isn't asked to hold several
-	// decoded full-size photos at once.
-	sem chan struct{}
+	// decoded full-size photos at once. queue bounds the uploads holding or waiting for it.
+	sem   chan struct{}
+	queue chan struct{}
 }
+
+// MaxQueuedUploads is how many uploads may wait for the processing slot; more get 503
+// media_busy with Retry-After.
+const MaxQueuedUploads = 4
 
 // New returns the media service. It doesn't touch d or store until a request needs them.
 // signer verifies the URLs Open serves; it should be the one store signs with.
 func New(d *db.DB, c clock.Clock, store Storage, signer *Signer) *Service {
-	return &Service{db: d, clock: c, store: store, signer: signer, sem: make(chan struct{}, 1)}
+	return &Service{db: d, clock: c, store: store, signer: signer,
+		sem: make(chan struct{}, 1), queue: make(chan struct{}, 1+MaxQueuedUploads)}
 }
 
 // NewKey returns a new random storage key (32 hex digits).
@@ -74,27 +86,18 @@ func NewKey() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// UploadPhoto processes an uploaded photo and stores it as pending media uploaded by p. A kid's
-// photo whose pixels exactly match earlier kid evidence in the household is rejected (409
-// duplicate_media), and its hash is recorded so later reuse is caught, even after the media is
-// deleted. Parents' uploads are neither checked nor recorded (fresh-evidence rule 5).
-func (s *Service) UploadPhoto(ctx context.Context, p *auth.Principal, data []byte) (sqlc.Medium, error) {
-	photo, err := s.process(ctx, data)
+// UploadPhoto reads a photo of at most limit bytes from r, processes it and stores it as pending
+// media uploaded by p. It reads r only once it holds the processing slot, so waiting uploads
+// don't hold their photos in memory; when MaxQueuedUploads are already waiting it fails at once
+// with 503 media_busy. A kid's photo whose pixels exactly match earlier kid evidence in the
+// household is rejected (409 duplicate_media) before it is encoded, and its hash is recorded so
+// later reuse is caught, even after the media is deleted. Parents' uploads are neither checked
+// nor recorded (fresh-evidence rule 5).
+func (s *Service) UploadPhoto(ctx context.Context, p *auth.Principal, r io.Reader, limit int64) (sqlc.Medium, error) {
+	photo, err := s.process(ctx, p, r, limit)
 	if err != nil {
 		return sqlc.Medium{}, err
 	}
-	kid := p.Kind == auth.KindKid
-	if kid {
-		// Cheap early answer; the insert below is what guarantees it.
-		dup, err := s.db.MediaHashExists(ctx, photo.SHA256[:])
-		if err != nil {
-			return sqlc.Medium{}, err
-		}
-		if dup {
-			return sqlc.Medium{}, errDuplicate
-		}
-	}
-
 	key, err := NewKey()
 	if err != nil {
 		return sqlc.Medium{}, err
@@ -107,7 +110,7 @@ func (s *Service) UploadPhoto(ctx context.Context, p *auth.Principal, data []byt
 		s.removeFiles(key, thumbKey)
 		return sqlc.Medium{}, err
 	}
-	m, err := s.insert(ctx, p, kid, key, thumbKey, photo)
+	m, err := s.insert(ctx, p, p.Kind == auth.KindKid, key, thumbKey, photo)
 	if err != nil {
 		s.removeFiles(key, thumbKey)
 		return sqlc.Medium{}, err
@@ -115,27 +118,74 @@ func (s *Service) UploadPhoto(ctx context.Context, p *auth.Principal, data []byt
 	return m, nil
 }
 
-func (s *Service) process(ctx context.Context, data []byte) (*Photo, error) {
+// TooLarge is the 413 for an upload over limit bytes.
+func TooLarge(limit int64) error {
+	return apierr.New(http.StatusRequestEntityTooLarge, apierr.CodePayloadTooLarge,
+		fmt.Sprintf("photos can be at most %d MB", limit>>20))
+}
+
+var errBusy = huma.ErrorWithHeaders(
+	apierr.New(http.StatusServiceUnavailable, apierr.CodeMediaBusy, "the server is busy processing other photos; try again shortly"),
+	http.Header{"Retry-After": {"5"}})
+
+// process reads, decodes and encodes the photo while holding the processing slot.
+func (s *Service) process(ctx context.Context, p *auth.Principal, r io.Reader, limit int64) (*Photo, error) {
+	select {
+	case s.queue <- struct{}{}:
+		defer func() { <-s.queue }()
+	default:
+		return nil, errBusy
+	}
 	select {
 	case s.sem <- struct{}{}:
 		defer func() { <-s.sem }()
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	photo, err := ProcessPhoto(data)
-	switch {
-	case err == nil:
-		return photo, nil
-	case errors.Is(err, ErrHEIC):
-		return nil, errHEIC
-	case errors.Is(err, ErrUnsupportedFormat):
-		return nil, errUnsupported
-	case errors.Is(err, ErrTooManyPixels):
-		return nil, errTooManyPixels
-	case errors.Is(err, ErrInvalidImage):
-		return nil, errInvalidImage
-	default:
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
 		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, TooLarge(limit)
+	}
+	d, err := DecodePhoto(ctx, data)
+	if err != nil {
+		return nil, photoError(err)
+	}
+	if p.Kind == auth.KindKid {
+		// Answer before paying for the encode; the insert in the transaction is what guarantees it.
+		dup, err := s.db.MediaHashExists(ctx, d.SHA256[:])
+		if err != nil {
+			return nil, err
+		}
+		if dup {
+			return nil, errDuplicate
+		}
+	}
+	photo, err := d.Encode(ctx)
+	if err != nil {
+		return nil, photoError(err)
+	}
+	return photo, nil
+}
+
+func photoError(err error) error {
+	switch {
+	case errors.Is(err, ErrHEIC):
+		return errHEIC
+	case errors.Is(err, ErrAnimated):
+		return errAnimated
+	case errors.Is(err, ErrUnsupportedFormat):
+		return errUnsupported
+	case errors.Is(err, ErrTooManyPixels):
+		return errTooManyPixels
+	case errors.Is(err, ErrTooComplex):
+		return errTooComplex
+	case errors.Is(err, ErrInvalidImage):
+		return errInvalidImage
+	default:
+		return err
 	}
 }
 
