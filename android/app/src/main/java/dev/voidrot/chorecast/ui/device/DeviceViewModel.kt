@@ -46,14 +46,17 @@ sealed interface ActiveSession {
     data class Parent(val parent: ParentProfile, override val token: String, val expiresAt: Instant) : ActiveSession
 }
 
+/** A kid looking at their chores, with the token to ask the API with (their session, or their own device's). */
+data class KidAccess(val kidId: Long, val name: String, val token: String)
+
 data class DeviceState(
     val loading: Boolean = true,
     /** The device token stopped working (revoked, or the kid was archived): pair again. */
     val unpaired: Boolean = false,
     val offline: String? = null,
     val picker: DevicePicker? = null,
-    /** Kid-bound devices: the kid's name. */
-    val kidName: String? = null,
+    /** Kid-bound devices: the kid who owns this device. */
+    val ownKid: KidAccess? = null,
     val choosingParent: Boolean = false,
     val pinTarget: PinTarget? = null,
     val pinError: PinError? = null,
@@ -132,12 +135,14 @@ class DeviceViewModel(
                     _state.update { it.copy(loading = false, unpaired = true) }
                     return@launch
                 }
-                val kidName = if (!picker.device.shared) {
-                    (auth.check(url, token) as? SessionCheck.SignedIn)?.me?.displayName
+                val kidId = picker.device.kidId
+                val ownKid = if (!picker.device.shared && kidId != null) {
+                    val name = (auth.check(url, token) as? SessionCheck.SignedIn)?.me?.displayName
+                    KidAccess(kidId, name.orEmpty(), token)
                 } else {
                     null
                 }
-                _state.update { it.copy(loading = false, picker = picker, kidName = kidName) }
+                _state.update { it.copy(loading = false, picker = picker, ownKid = ownKid) }
             } catch (e: IOException) {
                 _state.update { it.copy(loading = false, offline = e.message.orEmpty()) }
             }

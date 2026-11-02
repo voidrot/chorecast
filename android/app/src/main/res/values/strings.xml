@@ -43,12 +43,59 @@
         <item quantity="other">Too many wrong PINs. Try again in %d minutes.</item>
     </plurals>
     <string name="device_hi">Hi %1$s!</string>
-    <string name="device_chores_soon">Your chores will show up here soon.</string>
     <string name="device_done">I\'m done</string>
     <string name="device_parent_mode">Parent mode: %1$s</string>
     <string name="device_parent_left">Locks in %1$d:%2$02d</string>
     <string name="device_parent_soon">Reviews and quick actions will show up here soon.</string>
     <string name="device_lock">Lock</string>
+
+    <string name="kid_balance_label">Points</string>
+    <string name="kid_streak_label">Daily streak</string>
+    <plurals name="kid_streak_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <string name="kid_today_title">Today</string>
+    <string name="kid_planned_title">Coming up</string>
+    <string name="kid_planned_note">These may still change.</string>
+    <string name="kid_due_at">Due %1$s</string>
+    <string name="kid_due_day_close">Due by the end of the day</string>
+    <string name="kid_due_week_close">Due by the end of the week</string>
+    <string name="kid_due_planned">Planned for %1$s</string>
+    <string name="kid_group_day_close">By the end of the day</string>
+    <string name="kid_empty">Nothing to do today. Enjoy!</string>
+    <string name="kid_loading_error_signed_out">This session has ended. Lock the device and pick your profile again.</string>
+    <string name="kid_loading_error_failed">Something went wrong (%1$s).</string>
+    <string name="kid_refresh_failed">Couldn\'t refresh. Showing what we had.</string>
+    <plurals name="kid_points">
+        <item quantity="one">%d point</item>
+        <item quantity="other">%d points</item>
+    </plurals>
+    <string name="kid_status_open">To do</string>
+    <string name="kid_status_redo">Do it again</string>
+    <string name="kid_status_submitted">Waiting for a parent</string>
+    <string name="kid_status_approved">Done</string>
+    <string name="kid_status_missed">Missed</string>
+    <string name="kid_status_excused">Excused</string>
+
+    <string name="chore_steps">Steps</string>
+    <string name="chore_evidence">What to hand in</string>
+    <plurals name="chore_evidence_photos">
+        <item quantity="one">%d photo</item>
+        <item quantity="other">%d photos</item>
+    </plurals>
+    <string name="chore_evidence_before_after">Include a before photo and an after photo</string>
+    <string name="chore_evidence_checklist">Tick every step</string>
+    <string name="chore_evidence_note">Write a note</string>
+    <string name="chore_evidence_video">A short video</string>
+    <string name="chore_rejected_title">A parent asked you to do this again</string>
+    <string name="chore_reject_not_done">It wasn\'t done.</string>
+    <string name="chore_reject_not_finished">It wasn\'t finished.</string>
+    <string name="chore_reject_needs_redo">It needs to be redone.</string>
+    <string name="chore_reject_evidence_unclear">The photo wasn\'t clear enough.</string>
+    <string name="chore_complete">Complete</string>
+    <string name="chore_complete_soon">Completing chores is coming soon.</string>
+    <string name="chore_loading_failed">Couldn\'t load the details.</string>
 
     <string name="devices_title">Devices</string>
     <string name="devices_none">No devices paired yet. Pair one from the web admin\'s Devices page.</string>

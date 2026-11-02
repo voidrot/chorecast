@@ -208,7 +208,7 @@ Three Gradle modules (`android/`):
 | Module | What | Tests |
 |---|---|---|
 | `:api-client` | Kotlin client **generated at build time** by openapi-generator (`kotlin`, `jvm-ktor`, kotlinx.serialization) from `api/openapi-3.0.json`. Nothing generated is committed, so it can't drift; the committed spec is drift-checked in CI. | — |
-| `:core` | Plain Kotlin/JVM logic: `ServerUrl` parsing, `Compatibility` (API major check), `ServerChecker` (`GET /api/v1/version` via the generated client), `TokenStore` interface, shared client config (`ApiClients`: JSON with `ignoreUnknownKeys`, per the compatibility policy). | JUnit + ktor `MockEngine`, run on any JVM |
+| `:core` | Plain Kotlin/JVM logic: `ServerUrl` parsing, `Compatibility` (API major check), `ServerChecker` (`GET /api/v1/version` via the generated client), `TokenStore` interface, shared client config (`ApiClients`: JSON with `ignoreUnknownKeys`, per the compatibility policy), `KidChores` (a kid's instances, points and streak) and the pure today-list logic in `KidToday.kt`. | JUnit + ktor `MockEngine`, run on any JVM |
 | `:app` | Compose UI: type-safe navigation (`ui/Routes.kt`), screens + ViewModels (`StateFlow` state), manual DI via `AppContainer` (created in `ChorecastApp`), `KeystoreTokenStore` (AES-256-GCM key in the Android Keystore), OkHttp engine. All UI text in `strings.xml`. | Android unit tests |
 
 - The generated client registers no JSON converter: always build API clients with `ApiClients.config`.

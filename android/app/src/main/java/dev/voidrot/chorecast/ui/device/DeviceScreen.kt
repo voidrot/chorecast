@@ -44,12 +44,18 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.voidrot.chorecast.R
 import kotlinx.coroutines.delay
 import java.time.Instant
 
 @Composable
-fun DeviceScreen(viewModel: DeviceViewModel, onUnpaired: () -> Unit, modifier: Modifier = Modifier) {
+fun DeviceScreen(
+    viewModel: DeviceViewModel,
+    todayViewModel: (KidAccess) -> TodayViewModel,
+    onUnpaired: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.unpaired) { if (state.unpaired) onUnpaired() }
 
@@ -66,31 +72,31 @@ fun DeviceScreen(viewModel: DeviceViewModel, onUnpaired: () -> Unit, modifier: M
     ) {
         val active = state.active
         val picker = state.picker
+        val ownKid = state.ownKid
         when {
             state.loading -> Centered { CircularProgressIndicator() }
             state.offline != null -> Centered {
                 Text(stringResource(R.string.device_offline, state.offline.orEmpty()))
                 Button(onClick = viewModel::load) { Text(stringResource(R.string.action_retry)) }
             }
-            active is ActiveSession.Kid -> Centered {
-                Initials(active.kid.displayName, active.kid.color, 96)
-                Text(stringResource(R.string.device_hi, active.kid.displayName), style = MaterialTheme.typography.headlineMedium)
-                Text(stringResource(R.string.device_chores_soon))
-                OutlinedButton(onClick = viewModel::lock) { Text(stringResource(R.string.device_done)) }
-            }
+            active is ActiveSession.Kid -> KidHome(
+                KidAccess(active.kid.id, active.kid.displayName, active.token),
+                todayViewModel,
+                onLock = viewModel::lock,
+                onParent = null,
+            )
             active is ActiveSession.Parent -> Centered {
                 Text(stringResource(R.string.device_parent_mode, active.parent.displayName), style = MaterialTheme.typography.headlineSmall)
                 Countdown(active.expiresAt)
                 Text(stringResource(R.string.device_parent_soon))
                 OutlinedButton(onClick = viewModel::lock) { Text(stringResource(R.string.device_lock)) }
             }
-            picker != null && !picker.device.shared -> Centered {
-                Text(stringResource(R.string.device_hi, state.kidName ?: ""), style = MaterialTheme.typography.headlineMedium)
-                Text(stringResource(R.string.device_chores_soon))
-                if (picker.parents.isNotEmpty()) {
-                    TextButton(onClick = { viewModel.chooseParent(true) }) { Text(stringResource(R.string.device_parent)) }
-                }
-            }
+            ownKid != null -> KidHome(
+                ownKid,
+                todayViewModel,
+                onLock = null,
+                onParent = if (picker?.parents.isNullOrEmpty()) null else ({ viewModel.chooseParent(true) }),
+            )
             picker != null -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(stringResource(R.string.device_who), style = MaterialTheme.typography.headlineSmall)
                 LazyVerticalGrid(
@@ -147,6 +153,18 @@ fun DeviceScreen(viewModel: DeviceViewModel, onUnpaired: () -> Unit, modifier: M
             )
         }
     }
+}
+
+/** The kid's chores. One [TodayViewModel] per kid session, so a new session starts with fresh data. */
+@Composable
+private fun KidHome(
+    access: KidAccess,
+    todayViewModel: (KidAccess) -> TodayViewModel,
+    onLock: (() -> Unit)?,
+    onParent: (() -> Unit)?,
+) {
+    val vm = viewModel<TodayViewModel>(key = "today-${access.kidId}-${access.token.hashCode()}") { todayViewModel(access) }
+    KidHomeScreen(vm, access.name, onLock, onParent)
 }
 
 @Composable

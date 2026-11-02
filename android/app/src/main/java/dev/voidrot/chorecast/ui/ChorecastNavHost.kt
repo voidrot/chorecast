@@ -14,6 +14,7 @@ import dev.voidrot.chorecast.BuildConfig
 import dev.voidrot.chorecast.ui.connect.ConnectScreen
 import dev.voidrot.chorecast.ui.device.DeviceScreen
 import dev.voidrot.chorecast.ui.device.DeviceViewModel
+import dev.voidrot.chorecast.ui.device.TodayViewModel
 import dev.voidrot.chorecast.ui.devices.DevicesScreen
 import dev.voidrot.chorecast.ui.devices.DevicesViewModel
 import dev.voidrot.chorecast.ui.pair.PairScreen
@@ -71,6 +72,7 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 viewModel = viewModel {
                     DeviceViewModel(currentUrl(), container.deviceClient, container.parentAuth, container.tokenStore, BuildConfig.VERSION_NAME)
                 },
+                todayViewModel = { kid -> TodayViewModel(currentUrl(), container.kidChores, kid.kidId, kid.token) },
                 onUnpaired = {
                     container.settings.mode = null
                     nav.reset(WelcomeRoute)
