@@ -1,5 +1,6 @@
 package dev.voidrot.chorecast.core
 
+import dev.voidrot.chorecast.api.models.InboxPage
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
@@ -88,6 +89,23 @@ class InboxTest {
         val feed = (InboxClient(engine).list(url, "tok", cursor = "c1") as Fetch.Ok).value
         assertTrue("cursor=c1" in query)
         assertEquals("c2", feed.nextCursor)
+    }
+
+    @Test
+    fun unknownKindDecodesAsOtherInsteadOfFailingThePage() = runTest {
+        val body = page(item(1, "chore_missed"), item(2, "brand_new_kind"))
+        val decoded = ApiClients.json.decodeFromString<InboxPage>(body)
+        assertEquals(2, decoded.items.size)
+        val feed = load(body)
+        assertEquals(InboxMessage.Missed("Make bed"), feed.entries[0].message)
+        assertEquals(InboxMessage.Other, feed.entries[1].message)
+    }
+
+    @Test
+    fun unknownRefKindDecodesWithoutAnInstance() = runTest {
+        val feed = load(page(item(1, "chore_missed", refKind = "brand_new_ref"), item(2, "chore_missed")))
+        assertNull(feed.entries[0].instanceId)
+        assertEquals(20L, feed.entries[1].instanceId)
     }
 
     @Test
