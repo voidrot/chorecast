@@ -46,7 +46,7 @@ Run from the repo root with mise, or from `server/` with plain Go.
 - `internal/db`: `Open` sets WAL and foreign keys, pins the pool to one connection, and runs embedded goose migrations. `migrations/` holds the schema, `queries/` holds sqlc input, `sqlc/` holds generated code.
 - Domain: `chores` (definitions), `schedule` (rules), `assign` (who gets each occurrence; pure and deterministic), `kids` (profiles and slugs), `ledger` (points entries and balances), `household`, `parents`, `account`, `sso`, `devices`, `setup`.
 - Cross-cutting: `apierr`, `paging`, `idempotency`, `auth`, `clock`, `caltime`, `events`, `jobs`, `webui`.
-- Services take `(*db.DB, clock.Clock)`. `household.New` takes the bus instead.
+- Services take `(*db.DB, clock.Clock)`. `household.New` takes the bus instead, and `ledger.New` takes `(*db.DB, *events.Bus, clock.Clock)`.
 
 ## Adding an endpoint
 
