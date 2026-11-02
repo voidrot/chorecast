@@ -45,7 +45,7 @@ chorecast/
 ├── api/openapi.json          # generated from Go (mise run gen:openapi) — committed, consumed by web (OpenAPI 3.1)
 ├── api/openapi-3.0.json      # 3.0 export of the same spec, consumed by android (openapi-generator)
 ├── server/                   # Go module github.com/voidrot/chorecast/server
-│   ├── cmd/chorecast/        # `chorecast serve | openapi | version`
+│   ├── cmd/chorecast/        # `chorecast serve | admin | backup | restore | openapi | version`
 │   ├── internal/api/         # Huma operations (one file per resource as it grows)
 │   ├── internal/config/      # CHORECAST_* env config
 │   ├── internal/db/          # Open + embedded goose migrations
@@ -281,6 +281,8 @@ utility classes (`src/style.css`). Naive's runtime styles are unlayered, so they
   - Streaks (`internal/streaks`) have no kind of their own. Hooks run inside the dayclose jobs:
     `EvaluateKidDay` after `dayclose.kid_day` and `EvaluateDay` after `dayclose.shared`.
   - `autoapprove.run` (every 5 minutes): approves submitted instances nobody reviewed within their timeout.
+  - `backup.scheduled` (daily, `CHORECAST_BACKUP_AFTER_DAY_END` after the household day end; queue `backup`):
+    writes `backups/chorecast-<time>.tar.gz` (`internal/backup`) and prunes to `CHORECAST_BACKUP_KEEP`.
 - Tests drive time with `clock.Fake` and call `Scheduler.Tick` / `Runner.RunDue` directly.
 
 ## Domain events
@@ -334,5 +336,5 @@ infrastructure.
 2. **Google Play after v1** (v1 ships GitHub Release APKs). Before Play: Families policy review, data-safety form, privacy policy, no ads SDKs.
 3. Trusted-proxy handling for client IPs (explicit `CHORECAST_TRUSTED_PROXIES`, not blanket `X-Forwarded-For`).
 4. Helm chart in `deploy/helm` **after v1** (single replica + PVC; SQLite means no horizontal scaling).
-5. Backups: `chorecast backup` command using SQLite `VACUUM INTO`.
+5. Backups: built in #36 (`docs/features/household.md`, Backups & export). S3 upload comes with S3 storage.
 6. `applicationId` is **`dev.voidrot.chorecast`** (owner controls voidrot.dev). Permanent once on Play.

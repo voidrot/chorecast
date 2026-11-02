@@ -2,9 +2,11 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -15,8 +17,9 @@ type Config struct {
 	// links the server prints or shares (setup URL, invites, pairing). Optional.
 	PublicURL string
 
-	OIDC  OIDCConfig
-	Media MediaConfig
+	OIDC   OIDCConfig
+	Media  MediaConfig
+	Backup BackupConfig
 
 	// FromEnv records which CHORECAST_* variables were set, so the admin can show those settings
 	// as "set by environment".
@@ -49,12 +52,25 @@ func (m MediaConfig) MaxPhotoBytes() int64 {
 	return int64(min(mb, 1<<30)) << 20 // the cap only keeps absurd values from overflowing
 }
 
+// BackupConfig schedules the backups the server writes to <DataDir>/backups
+// (docs/features/household.md, Backups & export).
+type BackupConfig struct {
+	Keep        int           // scheduled backups kept; older ones are deleted
+	AfterDayEnd time.Duration // delay after the household day end, in [0, 24h)
+}
+
+// Defaults for CHORECAST_BACKUP_KEEP and CHORECAST_BACKUP_AFTER_DAY_END, used when unset or invalid.
+const (
+	DefaultBackupKeep        = 7
+	DefaultBackupAfterDayEnd = time.Hour
+)
+
 func Load() Config {
 	fromEnv := map[string]bool{}
 	for _, k := range []string{
 		"CHORECAST_ADDR", "CHORECAST_DATA_DIR", "CHORECAST_DEV", "CHORECAST_PUBLIC_URL",
 		"CHORECAST_OIDC_ISSUER", "CHORECAST_OIDC_CLIENT_ID", "CHORECAST_OIDC_CLIENT_SECRET",
-		"CHORECAST_MEDIA_MAX_PHOTO_MB",
+		"CHORECAST_MEDIA_MAX_PHOTO_MB", "CHORECAST_BACKUP_KEEP", "CHORECAST_BACKUP_AFTER_DAY_END",
 	} {
 		if v, ok := os.LookupEnv(k); ok && v != "" {
 			fromEnv[k] = true
@@ -72,6 +88,10 @@ func Load() Config {
 			ClientSecret: os.Getenv("CHORECAST_OIDC_CLIENT_SECRET"),
 		},
 		Media: MediaConfig{MaxPhotoMB: envPositiveInt("CHORECAST_MEDIA_MAX_PHOTO_MB", DefaultMaxPhotoMB)},
+		Backup: BackupConfig{
+			Keep:        envPositiveInt("CHORECAST_BACKUP_KEEP", DefaultBackupKeep),
+			AfterDayEnd: envDayOffset("CHORECAST_BACKUP_AFTER_DAY_END", DefaultBackupAfterDayEnd),
+		},
 	}
 }
 
@@ -84,11 +104,32 @@ func env(key, def string) string {
 
 // envPositiveInt reads a positive integer, falling back to def when unset or invalid.
 func envPositiveInt(key string, def int) int {
-	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key)))
+	v := os.Getenv(key)
+	n, err := strconv.Atoi(strings.TrimSpace(v))
 	if err != nil || n <= 0 {
+		warnInvalid(key, v, def)
 		return def
 	}
 	return n
+}
+
+// warnInvalid logs that a set variable was ignored for its default; unset ones aren't mentioned.
+func warnInvalid(key, value string, def any) {
+	if strings.TrimSpace(value) != "" {
+		slog.Warn("ignoring an invalid setting; using the default", "env", key, "value", value, "default", def)
+	}
+}
+
+// envDayOffset reads a Go duration such as "1h" or "90m" in [0, 24h), falling back to def when
+// unset or invalid.
+func envDayOffset(key string, def time.Duration) time.Duration {
+	v := os.Getenv(key)
+	d, err := time.ParseDuration(strings.TrimSpace(v))
+	if err != nil || d < 0 || d >= 24*time.Hour {
+		warnInvalid(key, v, def.String())
+		return def
+	}
+	return d
 }
 
 func envBool(key string) bool {

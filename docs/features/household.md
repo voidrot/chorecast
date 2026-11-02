@@ -142,9 +142,62 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
   With S3 media storage, backups include the DB only and the docs say media is the bucket's responsibility.
 - **CLI**: `chorecast backup [--out file]`, `chorecast restore <file>` (refuses to run while the server is running
   against the same data dir; checks schema version, runs migrations after restore).
-- **No web download** of backups, by decision. Backups contain every kid's data and photos.
+- **No web download** of backups, by decision. Backups contain every kid's data and photos, and every secret in
+  the database: the media signing key (`server_keys` row `media_url`), parents' TOTP secrets, password and token
+  hashes. Anyone holding a backup can forge media links and generate TOTP codes, so keep backups as private as
+  the data dir. After a leak, rotate with `chorecast admin rotate-media-key` and re-enroll TOTP.
 - **Export** (**any parent**; audit-logged): household or single kid, as a zip of JSON (complete) plus CSVs (ledger, instances,
   behavior). Media is optional. Generated as a background job, available for 24 h, then deleted.
+
+Built (#36): the server takes a backup daily at the household day end plus `CHORECAST_BACKUP_AFTER_DAY_END`
+(default `1h`, any Go duration under 24 h) and keeps the newest `CHORECAST_BACKUP_KEEP` (default 7) in
+`$DATA_DIR/backups`. A `CHORECAST_BACKUP_KEEP` under 1 (or not a number) falls back to 7 with a warning in the
+log; there is no setting that turns scheduled backups off. These are server settings from the environment;
+there is no backup UI. The job (`backup.scheduled`, its own queue) names each file after its scheduled time, so
+a retried run finds its own file and leaves it unchanged, and it skips runs more than 24 h late (caught up after
+downtime) because the newest one covers them. Pruning counts every `chorecast-<timestamp>.tar.gz` in that dir,
+CLI backups written there included. The snapshot runs on a read-only connection of its own, so it doesn't block
+the server's single connection. In WAL mode `VACUUM INTO` is a reader: on a 108 MB database it took about 0.1 s,
+and concurrent writes stayed under 1 ms. The archive holds `chorecast.db`, then `media/aa/bb/<key>` streamed from
+disk, then `manifest.json` (format, app version and commit, creation time, goose schema version, row count per
+table, media file count and bytes). It is written owner-only (0600) to a temp file next to the target and
+hard-linked into place, so an existing file is never replaced. A backup holds a lock inside its work dir
+(`.chorecast-backup-*`) while it runs; the next backup removes work dirs that are over an hour old and unlocked
+(left by a crash). A failed backup is logged, and the job makes up to 3
+attempts. The `problems` notification arrives with notifications. S3 is not built yet.
+
+`chorecast backup [--out PATH]` writes the same archive, by default into `$DATA_DIR/backups`, and is safe while
+the server runs. With no server running it takes the server's lock for its duration (a server starting meanwhile
+is refused) and opens the database read-write, so closing it removes the `-wal`/`-shm` files instead of leaving
+them behind. `chorecast restore [--force] <file>` restores into `CHORECAST_DATA_DIR`. **Restore only archives
+you created**: an archive replaces every account, secret and photo. **Run backup and restore as the server's
+user** (uid 65532 in the images, which `docker compose run` does): files they create in the data dir would
+otherwise belong to another user, and the server couldn't write them.
+- Locks (`flock`, released by the kernel even after a crash): the server holds `chorecast.lock` exclusively, so
+  restore refuses while a server uses the data dir, and a second server is refused too. Restore also holds
+  `chorecast-restore.lock` exclusively, which `chorecast admin` and `chorecast backup` take shared: they work beside
+  a running server but not during a restore, and a restore is refused while they run. In Docker, stop the service
+  and restore with `docker compose run --rm chorecast restore /data/backups/<file>`.
+- It refuses a data dir that already has a database or media, unless `--force`, and one whose `chorecast.db` or
+  `media` is a symlink or a mount point (the swap would replace the link with plain files).
+- It extracts into a staging dir (`.restore-*` in the data dir) and accepts only regular files named
+  `manifest.json`, `chorecast.db` or `media/aa/bb/<key>` in the storage layout. Any other path, absolute paths,
+  `..`, symlinks, hard links, sparse files, directories and duplicate entries are refused, and nothing is written
+  outside the staging dir. Extraction stops at a budget: the free space on the data disk minus 256 MiB, with
+  1 GiB at most per media file. It copies in chunks and stops on Ctrl-C.
+- It checks the gzip checksum, the database integrity (`PRAGMA quick_check`), and that the row counts and media
+  totals match the manifest.
+- A schema newer than this binary's is refused. An older one is migrated in staging with the embedded
+  migrations. Until v1 the single migration is edited in place, so two builds can both report schema 1 with
+  different tables; the check only protects across releases once migrations are forward-only.
+- Only then does it write the marker `chorecast.restoring` (naming where the previous data goes), move the old
+  database (with its `-wal`/`-shm`) and media aside into the staging dir, move the restored ones in, and remove
+  the marker and the staging dir. A restore refused before this step leaves the data dir untouched. If a move
+  fails, the moves are undone and the data dir is as it was. If undoing fails too, or the process dies mid-swap,
+  the marker and the staging dir stay: `serve`, `restore`, `backup` and `admin` then refuse to start and print
+  where the previous data is. Move it back (or keep the restored data), then delete the marker. A crash just
+  after the marker is removed can leave a `.restore-*` dir holding the previous data; delete it by hand. The
+  `backups` dir is never touched.
 
 ## Audit log
 

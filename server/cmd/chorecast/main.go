@@ -35,6 +35,8 @@ const usage = `usage: chorecast <command>
 commands:
   serve     run the server (default)
   admin     account recovery: reset-password, disable-2fa (run "chorecast admin" for help)
+  backup    write a backup of the database and media ([--out PATH])
+  restore   restore a backup into the data dir, with the server stopped ([--force] <file>)
   openapi   print the OpenAPI spec as JSON (-3.0 for an OpenAPI 3.0 copy, for client generators)
   version   print the version`
 
@@ -49,6 +51,15 @@ func main() {
 		err = serve()
 	case "admin":
 		err = admin(context.Background(), os.Args[2:], os.Stdout)
+	case "backup", "restore":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		dataDir := config.Load().DataDir
+		if cmd == "backup" {
+			err = backupCmd(ctx, os.Args[2:], dataDir, clock.Real{}, os.Stdout)
+		} else {
+			err = restoreCmd(ctx, os.Args[2:], dataDir, os.Stdout)
+		}
+		stop()
 	case "openapi":
 		err = printOpenAPI(len(os.Args) > 2 && os.Args[2] == "-3.0")
 	case "version":
@@ -68,15 +79,16 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	store, err := db.Open(ctx, cfg.DataDir)
+	lock, store, err := openServerDataDir(ctx, cfg.DataDir)
 	if err != nil {
 		return err
 	}
+	defer func() { _ = lock.Unlock() }()
 	defer func() { _ = store.Close() }()
 
 	clk := clock.Real{}
 	// Retention only deletes files, so this storage needs no URL signer.
-	runner, sched, bus := newBackground(store, clk, media.NewLocal(cfg.DataDir, "", nil), slog.Default())
+	runner, sched, bus := newBackground(store, clk, media.NewLocal(cfg.DataDir, "", nil), cfg.DataDir, cfg.Backup, slog.Default())
 	if err := runner.Recover(ctx); err != nil {
 		return err
 	}
@@ -127,6 +139,26 @@ func serve() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// openServerDataDir takes the data dir lock, held until exit so a restore can't replace the
+// database under a running server and two servers can't share a data dir, then refuses a data
+// dir an interrupted restore left mixed, and only then opens (and migrates) the database.
+func openServerDataDir(ctx context.Context, dataDir string) (*db.DataDirLock, *db.DB, error) {
+	lock, err := db.LockDataDir(dataDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", dataDir, err)
+	}
+	if err := db.CheckRestoreMarker(dataDir); err != nil {
+		_ = lock.Unlock()
+		return nil, nil, err
+	}
+	store, err := db.Open(ctx, dataDir)
+	if err != nil {
+		_ = lock.Unlock()
+		return nil, nil, err
+	}
+	return lock, store, nil
 }
 
 // publicBase is the server's URL for printed links: CHORECAST_PUBLIC_URL, or localhost on the

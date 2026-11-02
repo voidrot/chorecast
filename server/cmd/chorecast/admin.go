@@ -33,7 +33,13 @@ func admin(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) != want {
 		return errors.New(adminUsage)
 	}
-	store, err := db.Open(ctx, config.Load().DataDir)
+	dataDir := config.Load().DataDir
+	release, err := blockRestore(dataDir)
+	if err != nil {
+		return err
+	}
+	defer release()
+	store, err := db.Open(ctx, dataDir)
 	if err != nil {
 		return err
 	}

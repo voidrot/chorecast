@@ -9,9 +9,11 @@ import (
 
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/autoapprove"
+	"github.com/voidrot/chorecast/server/internal/backup"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
+	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/dayclose"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/devices"
@@ -39,8 +41,8 @@ const (
 // newBackground builds the job runner, scheduler and event bus with every job kind, recurring
 // schedule and event subscriber. Feature work adds its kinds, providers and subscribers here
 // (day close, week close, horizon, notifications, ...). files is the media storage retention
-// deletes from.
-func newBackground(store *db.DB, clk clock.Clock, files media.Storage, log *slog.Logger) (*jobs.Runner, *jobs.Scheduler, *events.Bus) {
+// deletes from; scheduled backups go to dataDir/backups.
+func newBackground(store *db.DB, clk clock.Clock, files media.Storage, dataDir string, backups config.BackupConfig, log *slog.Logger) (*jobs.Runner, *jobs.Scheduler, *events.Bus) {
 	runner := jobs.NewRunner(store.Queries, clk, log)
 	sched := jobs.NewScheduler(store.Queries, runner, clk, log)
 	bus := events.NewBus(store, runner, clk, log)
@@ -141,6 +143,9 @@ func newBackground(store *db.DB, clk clock.Clock, files media.Storage, log *slog
 
 	// In-app inbox rows are written from the domain events above.
 	inboxSvc.Register(bus)
+
+	// Daily backups after the household day end, the newest few kept.
+	backup.NewScheduler(store, clk, dataDir, backups).Register(runner, sched, log)
 
 	return runner, sched, bus
 }
