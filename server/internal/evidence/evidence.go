@@ -381,7 +381,7 @@ func list(ctx context.Context, q *sqlc.Queries, instanceID, kid int64, sign Sign
 		if !shown[ev] {
 			continue
 		}
-		p, err := toPhoto(ctx, r, sign)
+		p, err := toPhoto(ctx, r.ChoreInstanceEvidencePhoto, r.Medium, sign)
 		if err != nil {
 			return nil, err
 		}
@@ -389,32 +389,80 @@ func list(ctx context.Context, q *sqlc.Queries, instanceID, kid int64, sign Sign
 	}
 	out := make([]InstanceEvidence, 0, len(rows))
 	for _, r := range rows {
-		at, err := db.ParseTimestamp(r.CreatedAt)
+		ev, err := toEvidence(r, photos[r.ID])
 		if err != nil {
 			return nil, err
-		}
-		ev := InstanceEvidence{
-			Attempt: r.Attempt, KidID: r.KidID.Int64, SubmittedBy: r.SubmittedBy.Int64, SubmittedAt: at,
-			Note: r.Note, Photos: photos[r.ID],
-		}
-		if err := json.Unmarshal([]byte(r.Checklist), &ev.Checklist); err != nil {
-			return nil, fmt.Errorf("evidence %d checklist: %w", r.ID, err)
-		}
-		if ev.Checklist == nil { // a stored null
-			ev.Checklist = []int{}
-		}
-		if ev.Photos == nil {
-			ev.Photos = []EvidencePhoto{}
 		}
 		out = append(out, ev)
 	}
 	return out, nil
 }
 
+// ListLatest returns the latest submission's evidence of each of the instances, by instance id, in
+// two queries. Instances with no evidence are absent. It doesn't check access, like List: the
+// review queue is the parents' view.
+func ListLatest(ctx context.Context, q *sqlc.Queries, instanceIDs []int64, sign Signer) (map[int64]InstanceEvidence, error) {
+	out := map[int64]InstanceEvidence{}
+	if len(instanceIDs) == 0 {
+		return out, nil
+	}
+	rows, err := q.ListLatestChoreInstanceEvidence(ctx, instanceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list latest evidence: %w", err)
+	}
+	if len(rows) == 0 {
+		return out, nil
+	}
+	ids := make([]int64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	photoRows, err := q.ListChoreEvidencePhotosByEvidence(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list evidence photos: %w", err)
+	}
+	photos := map[int64][]EvidencePhoto{}
+	for _, r := range photoRows {
+		p, err := toPhoto(ctx, r.ChoreInstanceEvidencePhoto, r.Medium, sign)
+		if err != nil {
+			return nil, err
+		}
+		photos[r.ChoreInstanceEvidencePhoto.EvidenceID] = append(photos[r.ChoreInstanceEvidencePhoto.EvidenceID], p)
+	}
+	for _, r := range rows {
+		ev, err := toEvidence(r, photos[r.ID])
+		if err != nil {
+			return nil, err
+		}
+		out[r.InstanceID] = ev
+	}
+	return out, nil
+}
+
+func toEvidence(r sqlc.ChoreInstanceEvidence, photos []EvidencePhoto) (InstanceEvidence, error) {
+	at, err := db.ParseTimestamp(r.CreatedAt)
+	if err != nil {
+		return InstanceEvidence{}, err
+	}
+	ev := InstanceEvidence{
+		Attempt: r.Attempt, KidID: r.KidID.Int64, SubmittedBy: r.SubmittedBy.Int64, SubmittedAt: at,
+		Note: r.Note, Photos: photos,
+	}
+	if err := json.Unmarshal([]byte(r.Checklist), &ev.Checklist); err != nil {
+		return InstanceEvidence{}, fmt.Errorf("evidence %d checklist: %w", r.ID, err)
+	}
+	if ev.Checklist == nil { // a stored null
+		ev.Checklist = []int{}
+	}
+	if ev.Photos == nil {
+		ev.Photos = []EvidencePhoto{}
+	}
+	return ev, nil
+}
+
 // toPhoto builds a photo's view. A stored capture time that doesn't parse is left out rather
 // than failing the whole read.
-func toPhoto(ctx context.Context, r sqlc.ListChoreInstanceEvidencePhotosRow, sign Signer) (EvidencePhoto, error) {
-	ph, m := r.ChoreInstanceEvidencePhoto, r.Medium
+func toPhoto(ctx context.Context, ph sqlc.ChoreInstanceEvidencePhoto, m sqlc.Medium, sign Signer) (EvidencePhoto, error) {
 	out := EvidencePhoto{MediaID: m.ID, Role: ph.Role, CaptureID: ph.CaptureID}
 	if ph.CapturedAt.Valid {
 		if at, err := db.ParseTimestamp(ph.CapturedAt.String); err == nil {

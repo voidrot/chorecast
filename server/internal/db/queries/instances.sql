@@ -123,3 +123,34 @@ WHERE i.status = 'submitted' AND i.completed_at IS NOT NULL
   AND COALESCE(c.auto_approve_hours, sqlc.narg(household_hours)) > 0
   AND i.completed_at <= strftime('%Y-%m-%dT%H:%M:%fZ', sqlc.arg(now), '-' || COALESCE(c.auto_approve_hours, sqlc.narg(household_hours)) || ' hours')
 ORDER BY i.completed_at, i.id;
+
+-- name: ListReviewQueue :many
+-- Submitted instances, oldest submission first, after the keyset (after_at, after_id) = ('', 0) for
+-- the first page. kid / chore 0 = any; media -1 = any, 1 = the latest submission has photos, 0 = none.
+-- kid_name is the completer's, else the assignee's.
+SELECT sqlc.embed(i), c.name AS chore_name, c.steps AS chore_steps, COALESCE(u.display_name, '') AS kid_name
+FROM chore_instances i
+JOIN chores c ON c.id = i.chore_id
+LEFT JOIN users u ON u.id = COALESCE(i.completed_by, i.kid_id)
+WHERE i.status = 'submitted'
+  AND (CAST(sqlc.arg(kid) AS INTEGER) = 0 OR i.kid_id = CAST(sqlc.arg(kid) AS INTEGER)
+       OR EXISTS (SELECT 1 FROM chore_instance_members m
+                  WHERE m.instance_id = i.id AND m.kid_id = CAST(sqlc.arg(kid) AS INTEGER)))
+  AND (CAST(sqlc.arg(chore) AS INTEGER) = 0 OR i.chore_id = CAST(sqlc.arg(chore) AS INTEGER))
+  AND (CAST(sqlc.arg(media) AS INTEGER) < 0 OR CAST(sqlc.arg(media) AS INTEGER) =
+       EXISTS (SELECT 1 FROM chore_instance_evidence e
+               JOIN chore_instance_evidence_photos p ON p.evidence_id = e.id
+               WHERE e.instance_id = i.id
+                 AND e.attempt = (SELECT MAX(e2.attempt) FROM chore_instance_evidence e2 WHERE e2.instance_id = i.id)))
+  AND (COALESCE(i.completed_at, '') > CAST(sqlc.arg(after_at) AS TEXT)
+       OR (COALESCE(i.completed_at, '') = CAST(sqlc.arg(after_at) AS TEXT) AND i.id > sqlc.arg(after_id)))
+ORDER BY COALESCE(i.completed_at, ''), i.id
+LIMIT sqlc.arg(row_limit);
+
+-- name: ListChoreInstanceMembersByIDs :many
+SELECT instance_id, kid_id FROM chore_instance_members WHERE instance_id IN (sqlc.slice(ids)) ORDER BY instance_id, kid_id;
+
+-- name: ListLatestChoreInstanceRejectionsByIDs :many
+SELECT r.* FROM chore_instance_rejections r
+WHERE r.instance_id IN (sqlc.slice(ids))
+  AND r.id = (SELECT MAX(r2.id) FROM chore_instance_rejections r2 WHERE r2.instance_id = r.instance_id);

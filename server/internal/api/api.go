@@ -121,6 +121,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerPoints(hapi, h)
 	registerStreaks(hapi, h)
 	registerInstances(hapi, h)
+	registerReviewQueue(hapi, h)
 	registerMedia(hapi, h)
 
 	huma.Register(hapi, huma.Operation{

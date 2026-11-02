@@ -8,6 +8,7 @@ package sqlc
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const attachEvidenceMedia = `-- name: AttachEvidenceMedia :execrows
@@ -111,6 +112,77 @@ func (q *Queries) InsertChoreInstanceEvidencePhoto(ctx context.Context, arg Inse
 	return err
 }
 
+const listChoreEvidencePhotosByEvidence = `-- name: ListChoreEvidencePhotosByEvidence :many
+SELECT p.media_id, p.evidence_id, p.position, p.role, p.captured_at, p.capture_id, m.id, m.owner_kind, m.owner_id, m.uploaded_by, m.storage_key, m.thumb_key, m.kind, m.mime, m.bytes, m.width, m.height, m.thumb_width, m.thumb_height, m.sha256, m.dhash, m.status, m.keep, m.created_at, m.expires_at FROM chore_instance_evidence_photos p
+JOIN media m ON m.id = p.media_id
+WHERE p.evidence_id IN (/*SLICE:ids*/?)
+ORDER BY p.evidence_id, p.position
+`
+
+type ListChoreEvidencePhotosByEvidenceRow struct {
+	ChoreInstanceEvidencePhoto ChoreInstanceEvidencePhoto `json:"chore_instance_evidence_photo"`
+	Medium                     Medium                     `json:"medium"`
+}
+
+func (q *Queries) ListChoreEvidencePhotosByEvidence(ctx context.Context, ids []int64) ([]ListChoreEvidencePhotosByEvidenceRow, error) {
+	query := listChoreEvidencePhotosByEvidence
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListChoreEvidencePhotosByEvidenceRow{}
+	for rows.Next() {
+		var i ListChoreEvidencePhotosByEvidenceRow
+		if err := rows.Scan(
+			&i.ChoreInstanceEvidencePhoto.MediaID,
+			&i.ChoreInstanceEvidencePhoto.EvidenceID,
+			&i.ChoreInstanceEvidencePhoto.Position,
+			&i.ChoreInstanceEvidencePhoto.Role,
+			&i.ChoreInstanceEvidencePhoto.CapturedAt,
+			&i.ChoreInstanceEvidencePhoto.CaptureID,
+			&i.Medium.ID,
+			&i.Medium.OwnerKind,
+			&i.Medium.OwnerID,
+			&i.Medium.UploadedBy,
+			&i.Medium.StorageKey,
+			&i.Medium.ThumbKey,
+			&i.Medium.Kind,
+			&i.Medium.Mime,
+			&i.Medium.Bytes,
+			&i.Medium.Width,
+			&i.Medium.Height,
+			&i.Medium.ThumbWidth,
+			&i.Medium.ThumbHeight,
+			&i.Medium.Sha256,
+			&i.Medium.Dhash,
+			&i.Medium.Status,
+			&i.Medium.Keep,
+			&i.Medium.CreatedAt,
+			&i.Medium.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChoreInstanceEvidence = `-- name: ListChoreInstanceEvidence :many
 SELECT id, instance_id, attempt, kid_id, submitted_by, checklist, note, created_at FROM chore_instance_evidence WHERE instance_id = ? ORDER BY attempt
 `
@@ -195,6 +267,55 @@ func (q *Queries) ListChoreInstanceEvidencePhotos(ctx context.Context, instanceI
 			&i.Medium.Keep,
 			&i.Medium.CreatedAt,
 			&i.Medium.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestChoreInstanceEvidence = `-- name: ListLatestChoreInstanceEvidence :many
+SELECT e.id, e.instance_id, e.attempt, e.kid_id, e.submitted_by, e.checklist, e.note, e.created_at FROM chore_instance_evidence e
+WHERE e.instance_id IN (/*SLICE:ids*/?)
+  AND e.attempt = (SELECT MAX(e2.attempt) FROM chore_instance_evidence e2 WHERE e2.instance_id = e.instance_id)
+`
+
+// The latest submission of each instance.
+func (q *Queries) ListLatestChoreInstanceEvidence(ctx context.Context, ids []int64) ([]ChoreInstanceEvidence, error) {
+	query := listLatestChoreInstanceEvidence
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChoreInstanceEvidence{}
+	for rows.Next() {
+		var i ChoreInstanceEvidence
+		if err := rows.Scan(
+			&i.ID,
+			&i.InstanceID,
+			&i.Attempt,
+			&i.KidID,
+			&i.SubmittedBy,
+			&i.Checklist,
+			&i.Note,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

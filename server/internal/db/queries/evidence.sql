@@ -37,3 +37,15 @@ JOIN chore_instance_evidence e ON e.id = p.evidence_id
 JOIN media m ON m.id = p.media_id
 WHERE e.instance_id = ?
 ORDER BY p.evidence_id, p.position;
+
+-- name: ListLatestChoreInstanceEvidence :many
+-- The latest submission of each instance.
+SELECT e.* FROM chore_instance_evidence e
+WHERE e.instance_id IN (sqlc.slice(ids))
+  AND e.attempt = (SELECT MAX(e2.attempt) FROM chore_instance_evidence e2 WHERE e2.instance_id = e.instance_id);
+
+-- name: ListChoreEvidencePhotosByEvidence :many
+SELECT sqlc.embed(p), sqlc.embed(m) FROM chore_instance_evidence_photos p
+JOIN media m ON m.id = p.media_id
+WHERE p.evidence_id IN (sqlc.slice(ids))
+ORDER BY p.evidence_id, p.position;

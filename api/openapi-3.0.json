@@ -45,6 +45,41 @@
         ],
         "type": "object"
       },
+      "ApproveReviewQueueInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "instanceIds": {
+            "description": "Instances to approve; repeats are approved once",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "instanceIds"
+        ],
+        "type": "object"
+      },
+      "ApproveReviewQueueOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewQueueApprovalResult"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "type": "object"
+      },
       "BeginTOTPOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -1944,6 +1979,25 @@
         ],
         "type": "object"
       },
+      "PageReviewQueueItem": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewQueueItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Pass as cursor to fetch the next page. Absent on the last page.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "PairDeviceInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -2313,6 +2367,75 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ReviewQueueApprovalResult": {
+        "additionalProperties": false,
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "code": {
+            "description": "Why it wasn't approved, e.g. instance_not_submitted or instance_not_found",
+            "type": "string"
+          },
+          "instanceId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "instanceId",
+          "approved"
+        ],
+        "type": "object"
+      },
+      "ReviewQueueItem": {
+        "additionalProperties": false,
+        "properties": {
+          "instance": {
+            "$ref": "#/components/schemas/ChoreInstance"
+          },
+          "kidName": {
+            "description": "The kid who completed it (a shared chore's completer), else its assignee",
+            "type": "string"
+          },
+          "steps": {
+            "description": "The chore's checklist steps, with those the latest submission ticked; empty when it has none",
+            "items": {
+              "$ref": "#/components/schemas/ReviewQueueStep"
+            },
+            "type": "array"
+          },
+          "submission": {
+            "$ref": "#/components/schemas/InstanceEvidence",
+            "description": "The latest submission: note, photos (signed thumbnails) and when it was submitted"
+          }
+        },
+        "required": [
+          "instance",
+          "kidName",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "ReviewQueueStep": {
+        "additionalProperties": false,
+        "properties": {
+          "done": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "done"
+        ],
         "type": "object"
       },
       "ScheduleOccurrence": {
@@ -8891,6 +9014,226 @@
         "summary": "Make a parent an owner, or an owner a parent (owners only)",
         "tags": [
           "parents"
+        ]
+      }
+    },
+    "/review-queue": {
+      "get": {
+        "description": "`submitted` instances, oldest submission first (a flat list: the client groups it by `kidName` / `instance.completedBy`). Each item has the chore's checklist steps with those the latest submission ticked, its note and its photos with signed thumbnail links (valid for 10 minutes; `expired` once retention deleted a photo), and the instance's rejection count and latest rejection. Filter by `kidId` (a shared chore matches its members), `choreId`, and `media`: `with` (the latest submission has photos) or `without`. Parents only. Approve one with `POST /instances/{id}/approval`, several with `POST /review-queue/approvals`, and reject with `POST /instances/{id}/rejection`.",
+        "operationId": "listReviewQueue",
+        "parameters": [
+          {
+            "description": "Opaque cursor from a previous page's nextCursor. Omit for the first page.",
+            "explode": false,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "Opaque cursor from a previous page's nextCursor. Omit for the first page.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of items to return.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "description": "Maximum number of items to return.",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this kid's chores",
+            "explode": false,
+            "in": "query",
+            "name": "kidId",
+            "schema": {
+              "description": "Only this kid's chores",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this chore's instances",
+            "explode": false,
+            "in": "query",
+            "name": "choreId",
+            "schema": {
+              "description": "Only this chore's instances",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "with = the latest submission has photos; without = it has none; omit for both",
+            "explode": false,
+            "in": "query",
+            "name": "media",
+            "schema": {
+              "description": "with = the latest submission has photos; without = it has none; omit for both",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageReviewQueueItem"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "chores:review"
+            ]
+          },
+          {
+            "session": [
+              "chores:review"
+            ]
+          }
+        ],
+        "summary": "Chores waiting for review",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/review-queue/approvals": {
+      "post": {
+        "description": "Approves up to 100 instances, each in its own transaction, so one failing doesn't undo the others. The response has a result per distinct id, in request order: `approved`, or an error `code` such as `instance_not_submitted` or `instance_not_found`. Rejecting isn't offered in bulk, because it needs feedback per chore. Parents only.",
+        "operationId": "approveReviewQueue",
+        "parameters": [
+          {
+            "description": "Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveReviewQueueInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApproveReviewQueueOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "chores:review"
+            ]
+          },
+          {
+            "session": [
+              "chores:review"
+            ]
+          }
+        ],
+        "summary": "Approve several submitted chores",
+        "tags": [
+          "review"
         ]
       }
     },

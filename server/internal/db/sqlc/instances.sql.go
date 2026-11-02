@@ -8,6 +8,7 @@ package sqlc
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const addChoreInstanceMember = `-- name: AddChoreInstanceMember :exec
@@ -284,6 +285,43 @@ func (q *Queries) ListChoreInstanceMembersBetween(ctx context.Context, arg ListC
 	return items, nil
 }
 
+const listChoreInstanceMembersByIDs = `-- name: ListChoreInstanceMembersByIDs :many
+SELECT instance_id, kid_id FROM chore_instance_members WHERE instance_id IN (/*SLICE:ids*/?) ORDER BY instance_id, kid_id
+`
+
+func (q *Queries) ListChoreInstanceMembersByIDs(ctx context.Context, ids []int64) ([]ChoreInstanceMember, error) {
+	query := listChoreInstanceMembersByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChoreInstanceMember{}
+	for rows.Next() {
+		var i ChoreInstanceMember
+		if err := rows.Scan(&i.InstanceID, &i.KidID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChoreInstanceMembersFrom = `-- name: ListChoreInstanceMembersFrom :many
 SELECT m.instance_id, m.kid_id FROM chore_instance_members m
 JOIN chore_instances i ON i.id = m.instance_id
@@ -487,6 +525,145 @@ func (q *Queries) ListLatestChoreInstanceRejectionsBetween(ctx context.Context, 
 			&i.ReasonText,
 			&i.RejectedBy,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestChoreInstanceRejectionsByIDs = `-- name: ListLatestChoreInstanceRejectionsByIDs :many
+SELECT r.id, r.instance_id, r.kid_id, r.reason_code, r.reason_text, r.rejected_by, r.created_at FROM chore_instance_rejections r
+WHERE r.instance_id IN (/*SLICE:ids*/?)
+  AND r.id = (SELECT MAX(r2.id) FROM chore_instance_rejections r2 WHERE r2.instance_id = r.instance_id)
+`
+
+func (q *Queries) ListLatestChoreInstanceRejectionsByIDs(ctx context.Context, ids []int64) ([]ChoreInstanceRejection, error) {
+	query := listLatestChoreInstanceRejectionsByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChoreInstanceRejection{}
+	for rows.Next() {
+		var i ChoreInstanceRejection
+		if err := rows.Scan(
+			&i.ID,
+			&i.InstanceID,
+			&i.KidID,
+			&i.ReasonCode,
+			&i.ReasonText,
+			&i.RejectedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReviewQueue = `-- name: ListReviewQueue :many
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.name AS chore_name, c.steps AS chore_steps, COALESCE(u.display_name, '') AS kid_name
+FROM chore_instances i
+JOIN chores c ON c.id = i.chore_id
+LEFT JOIN users u ON u.id = COALESCE(i.completed_by, i.kid_id)
+WHERE i.status = 'submitted'
+  AND (CAST(?1 AS INTEGER) = 0 OR i.kid_id = CAST(?1 AS INTEGER)
+       OR EXISTS (SELECT 1 FROM chore_instance_members m
+                  WHERE m.instance_id = i.id AND m.kid_id = CAST(?1 AS INTEGER)))
+  AND (CAST(?2 AS INTEGER) = 0 OR i.chore_id = CAST(?2 AS INTEGER))
+  AND (CAST(?3 AS INTEGER) < 0 OR CAST(?3 AS INTEGER) =
+       EXISTS (SELECT 1 FROM chore_instance_evidence e
+               JOIN chore_instance_evidence_photos p ON p.evidence_id = e.id
+               WHERE e.instance_id = i.id
+                 AND e.attempt = (SELECT MAX(e2.attempt) FROM chore_instance_evidence e2 WHERE e2.instance_id = i.id)))
+  AND (COALESCE(i.completed_at, '') > CAST(?4 AS TEXT)
+       OR (COALESCE(i.completed_at, '') = CAST(?4 AS TEXT) AND i.id > ?5))
+ORDER BY COALESCE(i.completed_at, ''), i.id
+LIMIT ?6
+`
+
+type ListReviewQueueParams struct {
+	Kid      int64  `json:"kid"`
+	Chore    int64  `json:"chore"`
+	Media    int64  `json:"media"`
+	AfterAt  string `json:"after_at"`
+	AfterID  int64  `json:"after_id"`
+	RowLimit int64  `json:"row_limit"`
+}
+
+type ListReviewQueueRow struct {
+	ChoreInstance ChoreInstance `json:"chore_instance"`
+	ChoreName     string        `json:"chore_name"`
+	ChoreSteps    string        `json:"chore_steps"`
+	KidName       string        `json:"kid_name"`
+}
+
+// Submitted instances, oldest submission first, after the keyset (after_at, after_id) = (”, 0) for
+// the first page. kid / chore 0 = any; media -1 = any, 1 = the latest submission has photos, 0 = none.
+// kid_name is the completer's, else the assignee's.
+func (q *Queries) ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error) {
+	rows, err := q.db.QueryContext(ctx, listReviewQueue,
+		arg.Kid,
+		arg.Chore,
+		arg.Media,
+		arg.AfterAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReviewQueueRow{}
+	for rows.Next() {
+		var i ListReviewQueueRow
+		if err := rows.Scan(
+			&i.ChoreInstance.ID,
+			&i.ChoreInstance.ChoreID,
+			&i.ChoreInstance.KidID,
+			&i.ChoreInstance.OccurrenceDate,
+			&i.ChoreInstance.Slot,
+			&i.ChoreInstance.Seq,
+			&i.ChoreInstance.DueAt,
+			&i.ChoreInstance.Flexible,
+			&i.ChoreInstance.Status,
+			&i.ChoreInstance.AutoAssigned,
+			&i.ChoreInstance.ManuallyReassigned,
+			&i.ChoreInstance.ReassignedFrom,
+			&i.ChoreInstance.RotationState,
+			&i.ChoreInstance.CompletedBy,
+			&i.ChoreInstance.CompletedAt,
+			&i.ChoreInstance.RejectionCount,
+			&i.ChoreInstance.CreatedAt,
+			&i.ChoreInstance.UpdatedAt,
+			&i.ChoreName,
+			&i.ChoreSteps,
+			&i.KidName,
 		); err != nil {
 			return nil, err
 		}
