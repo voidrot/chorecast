@@ -1,6 +1,6 @@
 package dev.voidrot.chorecast.core
 
-import dev.voidrot.chorecast.api.models.Chore
+import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.CompleteChoreInstanceInputBody
 import dev.voidrot.chorecast.api.models.EvidencePhotoInput
 import java.time.Instant
@@ -78,13 +78,14 @@ data class CompletionNeeds(
     }
 }
 
-fun Chore.completionNeeds() = CompletionNeeds(
+/** The instance carries its chore's steps and evidence rules; absent rules ask for nothing. */
+fun ChoreInstance.completionNeeds() = CompletionNeeds(
     steps = steps.orEmpty(),
-    photos = evidence.photos.toInt(),
-    beforeAfter = evidence.beforeAfter == true,
-    checklist = evidence.checklist == true,
-    note = evidence.note == true,
-    video = evidence.video == true,
+    photos = evidence?.photos?.toInt() ?: 0,
+    beforeAfter = evidence?.beforeAfter == true,
+    checklist = evidence?.checklist == true,
+    note = evidence?.note == true,
+    video = evidence?.video == true,
 )
 
 /**

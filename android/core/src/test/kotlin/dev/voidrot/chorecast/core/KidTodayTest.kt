@@ -1,6 +1,5 @@
 package dev.voidrot.chorecast.core
 
-import dev.voidrot.chorecast.api.models.Chore
 import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.ChoreInstanceRejection
 import dev.voidrot.chorecast.api.models.EvidenceRules
@@ -28,6 +27,9 @@ class KidTodayTest {
         rejected: Boolean = false,
         completedAt: OffsetDateTime? = null,
         choreId: Long = id,
+        points: Long? = null,
+        steps: List<String>? = null,
+        evidence: EvidenceRules? = null,
     ) = ChoreInstance(
         choreId = choreId,
         choreName = name,
@@ -38,17 +40,10 @@ class KidTodayTest {
         status = status,
         slot = slot,
         completedAt = completedAt,
-        lastRejection = if (rejected) ChoreInstanceRejection(rejectedAt = due, text = "again") else null,
-    )
-
-    private fun chore(id: Long, points: Long) = Chore(
-        createdAt = due,
-        evidence = EvidenceRules(photos = 0),
-        id = id,
-        name = "Chore $id",
         points = points,
-        requiresApproval = true,
-        updatedAt = due,
+        steps = steps,
+        evidence = evidence,
+        lastRejection = if (rejected) ChoreInstanceRejection(rejectedAt = due, text = "again") else null,
     )
 
     @Test
@@ -60,7 +55,6 @@ class KidTodayTest {
                 instance(3, slot = "07:30", name = "b"),
                 instance(4, slot = "07:30", name = "A"),
             ),
-            emptyMap(),
         )
         assertEquals(listOf(LocalTime.of(7, 30), LocalTime.of(18, 0), null), plan.today.map { it.time })
         // Same slot: by name, ignoring case.
@@ -77,7 +71,6 @@ class KidTodayTest {
                 instance(3, planned = true, date = tomorrow, slot = "09:00"),
                 instance(4, planned = true, date = tomorrow, slot = "08:00"),
             ),
-            emptyMap(),
         )
         assertEquals(listOf(2L), plan.today.flatMap { it.chores }.map { it.instance.id })
         assertEquals(listOf(tomorrow, day.plusDays(2)), plan.planned.map { it.date })
@@ -85,8 +78,8 @@ class KidTodayTest {
     }
 
     @Test
-    fun pointsComeFromTheChoreAndAreNullWhenUnknown() {
-        val plan = buildTodayPlan(listOf(instance(1), instance(2)), mapOf(1L to chore(1, 15)))
+    fun pointsComeFromTheInstanceAndAreNullWhenAbsent() {
+        val plan = buildTodayPlan(listOf(instance(1, points = 15), instance(2)))
         assertEquals(15L, plan.find(1)?.points)
         assertNull(plan.find(2)?.points)
         assertNull(plan.find(99))
@@ -138,11 +131,11 @@ class KidTodayTest {
 
     @Test
     fun onlyTodaysOpenChoresCanBeCompleted() {
-        assertTrue(TodayChore(instance(1), null).canComplete)
-        assertTrue(TodayChore(instance(1, rejected = true), null).canComplete)
-        assertFalse(TodayChore(instance(1, planned = true), null).canComplete)
+        assertTrue(TodayChore(instance(1)).canComplete)
+        assertTrue(TodayChore(instance(1, rejected = true)).canComplete)
+        assertFalse(TodayChore(instance(1, planned = true)).canComplete)
         for (s in listOf(ChoreInstance.Status.SUBMITTED, ChoreInstance.Status.APPROVED, ChoreInstance.Status.MISSED, ChoreInstance.Status.EXCUSED)) {
-            assertFalse(TodayChore(instance(1, status = s), null).canComplete)
+            assertFalse(TodayChore(instance(1, status = s)).canComplete)
         }
     }
 
@@ -166,8 +159,8 @@ class KidTodayTest {
 
     @Test
     fun emptyPlanIsEmpty() {
-        assertTrue(buildTodayPlan(emptyList(), emptyMap()).isEmpty)
-        assertFalse(buildTodayPlan(listOf(instance(1, planned = true)), emptyMap()).isEmpty)
+        assertTrue(buildTodayPlan(emptyList()).isEmpty)
+        assertFalse(buildTodayPlan(listOf(instance(1, planned = true))).isEmpty)
     }
 
     @Test
@@ -182,5 +175,21 @@ class KidTodayTest {
             EvidenceRules(photos = 2, beforeAfter = true, checklist = true, note = true, video = false).requirements(),
         )
         assertEquals(listOf(EvidenceRequirement.Video), EvidenceRules(photos = 0, video = true).requirements())
+    }
+
+    @Test
+    fun completionNeedsComeFromTheInstance() {
+        val needs = instance(
+            1,
+            steps = listOf("a", "b"),
+            evidence = EvidenceRules(photos = 1, beforeAfter = true, checklist = true),
+        ).completionNeeds()
+        assertEquals(listOf("a", "b"), needs.steps)
+        assertEquals(2, needs.photosRequired)
+        assertTrue(needs.checklist)
+        assertFalse(needs.note)
+        // No rules and no steps: nothing to hand in.
+        val none = instance(2).completionNeeds()
+        assertTrue(none.missing(CompletionDraft(2)).isEmpty())
     }
 }
