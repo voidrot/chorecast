@@ -115,7 +115,8 @@ group size (rounded up).
 - Instances are **untouched** when `status = open`, no evidence, no swap, and not manually reassigned.
 - **Chore edited**: delete untouched instances from tomorrow on (today too if the due slot hasn't passed and it's untouched) and regenerate.
   A slot added or moved later today isn't created today for a kid who already has a kept instance of the chore today
-  (done, or already due): the edit takes full effect tomorrow.
+  (done, or already due): the edit takes full effect tomorrow. For rotation, auto and shared chores, any kept
+  instance of the chore today defers new slots to tomorrow, whoever it belongs to.
 - An instance without a slot is due at its kid's own day close (`dayEndOverride`), or week close when flexible. A
   shared instance is due at the household day end.
 - **Away / pause added**: untouched instances in the range are removed (no penalty) and the range is regenerated

@@ -685,9 +685,28 @@ func TestKidDayEndOverrideSetsDueTime(t *testing.T) {
 			t.Errorf("%s (%s): due %v, want %v", key(i), i.ChoreName, i.DueAt, want)
 		}
 	}
-	// After Sam's 19:30 close, today's instance can't be created any more.
+	// After Sam's 19:30 close, today's instance is kept as it is.
+	var closed horizon.ChoreInstance
+	for _, i := range f.list() {
+		if i.KidID == sam && i.ChoreName == "Read" && i.Date == date("2026-11-04") {
+			closed = i
+		}
+	}
+	if closed.ID == 0 {
+		t.Fatal("no instance for Sam's Wednesday")
+	}
 	f.clock.Set(time.Date(2026, 11, 5, 2, 0, 0, 0, time.UTC)) // Wednesday 20:00 local
 	if res := f.generate(); res.Deleted != 0 {
 		t.Errorf("a run after Sam's day closed = %+v; his closed day's instance must stay", res)
+	}
+	var after horizon.ChoreInstance
+	ok := false
+	for _, i := range f.list() {
+		if i.ID == closed.ID {
+			after, ok = i, true
+		}
+	}
+	if !ok || after.ID != closed.ID || !after.DueAt.Equal(closed.DueAt) {
+		t.Errorf("Sam's closed-day instance changed: %+v -> %+v", closed, after)
 	}
 }
