@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/backup"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
@@ -55,6 +57,11 @@ func backupCmd(ctx context.Context, args []string, dataDir string, clk clock.Clo
 	if err != nil {
 		return err
 	}
+	// After the snapshot, so the row is not in the archive. The archive is good either way, so a
+	// failure here is a warning, not a failed command (cron would report a good backup as failed).
+	if err := backup.RecordCreatedFile(ctx, dataDir, res.CreatedAt, audit.CLI, res); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: wrote %s but did not record it in the audit log: %v\n", res.Path, err)
+	}
 	_, err = fmt.Fprintf(out, "Wrote %s (%d bytes): schema %d, %d tables, %d media files (%d bytes). The snapshot took %s.\n",
 		res.Path, res.Size, res.SchemaVersion, len(res.Tables), res.MediaFiles, res.MediaBytes, res.Snapshot)
 	return err
@@ -76,7 +83,7 @@ func blockRestore(dataDir string) (func(), error) {
 }
 
 // restoreCmd runs "chorecast restore" into dataDir. --force may come before or after the file.
-func restoreCmd(ctx context.Context, args []string, dataDir string, out io.Writer) error {
+func restoreCmd(ctx context.Context, args []string, dataDir string, clk clock.Clock, out io.Writer) error {
 	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	force := fs.Bool("force", false, "replace the data dir's existing data")
@@ -87,7 +94,7 @@ func restoreCmd(ctx context.Context, args []string, dataDir string, out io.Write
 	if err := fs.Parse(fs.Args()[1:]); err != nil || fs.NArg() != 0 {
 		return errors.New(restoreUsage)
 	}
-	m, err := backup.Restore(ctx, file, dataDir, backup.RestoreOptions{Force: *force})
+	m, err := backup.Restore(ctx, file, dataDir, backup.RestoreOptions{Force: *force, Clock: clk})
 	if err != nil {
 		return err
 	}

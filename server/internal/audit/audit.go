@@ -8,8 +8,8 @@
 //     and 2FA resets, pairing, revocation, archive, manual reversals): the service calls Record
 //     with the transaction's queries, so the row commits with the change or not at all.
 //
-// TODO(#121): backups and restores (CLI and scheduled, internal/backup) call Record; a restore
-// writes its row into the restored database after the swap.
+// Backups and restores (internal/backup) also call Record: a backup after its snapshot, so the row
+// is not in the archive it describes, and a restore into the restored database after the swap.
 //
 // Details are typed (AuditDetails), so tokens, password hashes, TOTP secrets and PINs have nowhere
 // to go. Rows store no display text beyond the target's name at the time (summary); clients
@@ -63,6 +63,8 @@ const (
 	ActionDeviceRevoked       = "device_revoked"
 	ActionKidArchived         = "kid_archived"
 	ActionKidUnarchived       = "kid_unarchived"
+	ActionBackupCreated       = "backup_created"
+	ActionRestoreCompleted    = "restore_completed"
 )
 
 // Actions lists every action, for validating filters. Keep in step with AuditEntry.Action's enum.
@@ -70,7 +72,8 @@ var Actions = []string{
 	ActionSettingsUpdated, ActionChoreApproved, ActionChoreRejected, ActionChoreUnapproved, ActionChoreExcused,
 	ActionPointsAdjusted, ActionPointsReversed, ActionInviteCreated, ActionInviteRevoked, ActionInviteAccepted,
 	ActionParentRoleChanged, ActionParentRemoved, ActionParentPasswordReset, ActionParentTOTPDisabled,
-	ActionDevicePaired, ActionDeviceRevoked, ActionKidArchived, ActionKidUnarchived,
+	ActionDevicePaired, ActionDeviceRevoked, ActionKidArchived, ActionKidUnarchived, ActionBackupCreated,
+	ActionRestoreCompleted,
 }
 
 // What an entry is about.
@@ -82,6 +85,7 @@ const (
 	TargetParent      = "parent"
 	TargetDevice      = "device"
 	TargetKid         = "kid"
+	TargetBackup      = "backup" // a backup archive; the entry's summary is its file name
 )
 
 // Actor is who did something.
@@ -118,6 +122,11 @@ type AuditDetails struct {
 	ReasonCode string        `json:"reasonCode,omitempty" doc:"chore_rejected: the quick-pick reason"`
 	ReasonText string        `json:"reasonText,omitempty" doc:"chore_rejected: the parent's feedback"`
 	Role       string        `json:"role,omitempty" enum:"parent,owner" doc:"invite_*: the invite's role; parent_role_changed: the new role"`
+	Bytes      int64         `json:"bytes,omitempty" doc:"backup_created: the archive's size"`
+	MediaFiles *int64        `json:"mediaFiles,omitempty" doc:"backup_created: media files archived (absent when a retry found the archive already written)"`
+	AppVersion string        `json:"appVersion,omitempty" doc:"restore_completed: the Chorecast version that took the backup"`
+	SchemaVer  int64         `json:"schemaVersion,omitempty" doc:"restore_completed: the backup's schema version"`
+	Forced     *bool         `json:"forced,omitempty" doc:"restore_completed: whether --force replaced existing data"`
 }
 
 // AuditChange is one changed setting. Values are as the settings API shows them; lists and other
@@ -133,7 +142,7 @@ type Entry struct {
 	Actor      Actor
 	Action     string
 	TargetKind string
-	TargetID   int64 // 0 = none (household settings)
+	TargetID   int64 // 0 = none (household settings, backups)
 	Summary    string
 	Details    AuditDetails
 }
@@ -171,10 +180,10 @@ type AuditEntry struct {
 	ActorKind  string       `json:"actorKind" enum:"parent,system,cli" doc:"parent = a signed-in parent; system = the server (e.g. an auto-approval); cli = an admin command on the server host"`
 	ActorID    int64        `json:"actorId,omitempty" doc:"The parent who acted"`
 	ActorName  string       `json:"actorName,omitempty" doc:"The parent's name now"`
-	Action     string       `json:"action" enum:"settings_updated,chore_approved,chore_rejected,chore_unapproved,chore_excused,points_adjusted,points_reversed,invite_created,invite_revoked,invite_accepted,parent_role_changed,parent_removed,parent_password_reset,parent_totp_disabled,device_paired,device_revoked,kid_archived,kid_unarchived"`
-	TargetKind string       `json:"targetKind" enum:"household,instance,points_entry,invite,parent,device,kid" doc:"What targetId is"`
-	TargetID   int64        `json:"targetId,omitempty" doc:"Absent for household settings"`
-	Summary    string       `json:"summary,omitempty" doc:"The target's name when it happened (chore, kid, parent or device)"`
+	Action     string       `json:"action" enum:"settings_updated,chore_approved,chore_rejected,chore_unapproved,chore_excused,points_adjusted,points_reversed,invite_created,invite_revoked,invite_accepted,parent_role_changed,parent_removed,parent_password_reset,parent_totp_disabled,device_paired,device_revoked,kid_archived,kid_unarchived,backup_created,restore_completed"`
+	TargetKind string       `json:"targetKind" enum:"household,instance,points_entry,invite,parent,device,kid,backup" doc:"What targetId is"`
+	TargetID   int64        `json:"targetId,omitempty" doc:"Absent for household settings and backups"`
+	Summary    string       `json:"summary,omitempty" doc:"The target's name when it happened (chore, kid, parent or device) or the archive file name (backups)"`
 	Details    AuditDetails `json:"details"`
 }
 

@@ -40,7 +40,7 @@ type InsertAuditEntryParams struct {
 	CreatedAt  string        `json:"created_at"`
 }
 
-// One row per event: re-running for the same event writes nothing (audit_log_once); rows without an event never conflict.
+// One row per event: re-running for the same event writes nothing (audit_log_once); rows without an event never conflict. A scheduled backup is recorded once per file name (audit_log_backup_once).
 func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, insertAuditEntry,
 		arg.ActorKind,

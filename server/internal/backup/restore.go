@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
+	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 )
 
@@ -52,6 +54,8 @@ type RestoreOptions struct {
 	// MaxBytes caps what the restore extracts in total. Zero means the free space on the data
 	// dir's disk minus a 256 MiB margin.
 	MaxBytes int64
+	// Clock dates the restore_completed audit row. Required.
+	Clock clock.Clock
 }
 
 // Restore replaces the database and media in dataDir with the archive's.
@@ -70,6 +74,9 @@ type RestoreOptions struct {
 // undone; if undoing fails too, the staging dir and the marker are kept and the error names where
 // the old data is. Backups in dataDir/backups are never touched.
 func Restore(ctx context.Context, archive, dataDir string, opts RestoreOptions) (Manifest, error) {
+	if opts.Clock == nil {
+		return Manifest{}, errors.New("backup: restore needs a clock")
+	}
 	lock, err := db.LockDataDir(dataDir)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("%w: a server or another restore is using %s; stop it first", err, dataDir)
@@ -119,12 +126,19 @@ func Restore(ctx context.Context, archive, dataDir string, opts RestoreOptions) 
 		return Manifest{}, err
 	}
 	// Migrate in staging: a migration failure must not leave a half-upgraded database in place.
+	// The restore's audit row goes in here too, so it moves in with the data, and a failed insert
+	// leaves the data dir untouched.
 	store, err := db.Open(ctx, restored)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("backup: migrate restored database: %w", err)
 	}
-	if err := store.Close(); err != nil {
-		return Manifest{}, err
+	forced := opts.Force
+	recErr := audit.Record(ctx, store.Queries, opts.Clock.Now(), audit.Entry{
+		Actor: audit.CLI, Action: audit.ActionRestoreCompleted, TargetKind: audit.TargetBackup, Summary: filepath.Base(archive),
+		Details: audit.AuditDetails{AppVersion: m.AppVersion, SchemaVer: m.SchemaVersion, Forced: &forced},
+	})
+	if err := errors.Join(recErr, store.Close()); err != nil {
+		return Manifest{}, fmt.Errorf("backup: prepare restored database: %w", err)
 	}
 
 	old := filepath.Join(stage, "old")

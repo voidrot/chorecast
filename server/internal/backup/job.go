@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
+	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/jobs"
 )
@@ -63,13 +67,25 @@ func (s *Scheduler) Run(ctx context.Context, at time.Time, log *slog.Logger) err
 		return nil
 	}
 	dir := filepath.Join(s.dataDir, DirName)
-	res, err := Write(ctx, s.dataDir, filepath.Join(dir, FileName(at)), s.clock, WriteOptions{}) // in the server, which holds the data dir
+	out := filepath.Join(dir, FileName(at))
+	res, err := Write(ctx, s.dataDir, out, s.clock, WriteOptions{}) // in the server, which holds the data dir
 	switch {
 	case errors.Is(err, ErrExists):
 		log.Info("backup already taken", "occurrence", at)
+		// An earlier attempt may have died before recording it; recording again is a no-op if not.
+		info, statErr := os.Stat(out)
+		if statErr != nil {
+			return statErr
+		}
+		if err := RecordCreated(ctx, s.db.Queries, at, audit.System, out, info.Size(), nil); err != nil {
+			return err
+		}
 	case err != nil:
 		return err // the runner logs it and retries
 	default:
+		if err := RecordCreated(ctx, s.db.Queries, res.CreatedAt, audit.System, res.Path, res.Size, &res.MediaFiles); err != nil {
+			return err // the retry finds the archive and records it then
+		}
 		log.Info("backup", "path", res.Path, "bytes", res.Size, "snapshot_ms", res.Snapshot.Milliseconds(),
 			"schema", res.SchemaVersion, "media_files", res.MediaFiles, "media_bytes", res.MediaBytes)
 	}
@@ -99,4 +115,42 @@ func (s *Scheduler) schedules(ctx context.Context) ([]jobs.Recurring, error) {
 		at := closeAt.Add(after)
 		return jobs.Occurrence{At: at, Key: d.String() + "@" + db.Timestamp(at), Payload: jobPayload{At: at}}
 	}}}, nil
+}
+
+// RecordCreated writes the audit row for the archive at path, after its snapshot so the row is
+// not in the archive. Only the file name is recorded, not the path. A scheduled (system) backup
+// is recorded once per file name, so a retried job adds nothing. mediaFiles is nil when unknown.
+func RecordCreated(ctx context.Context, q *sqlc.Queries, at time.Time, actor audit.Actor, path string, size int64, mediaFiles *int64) error {
+	return audit.Record(ctx, q, at, audit.Entry{
+		Actor: actor, Action: audit.ActionBackupCreated, TargetKind: audit.TargetBackup, Summary: filepath.Base(path),
+		Details: audit.AuditDetails{Bytes: size, MediaFiles: mediaFiles},
+	})
+}
+
+// ErrSchemaBehind means the database is not at this binary's schema, so a row cannot be written
+// without migrating it.
+var ErrSchemaBehind = errors.New("backup: the database is not at this binary's schema version")
+
+// RecordCreatedFile writes RecordCreated's row through a read-write connection of its own that
+// does not migrate, so the backup command never changes the schema of a database it only copied.
+// The database is in WAL mode, so this is safe beside a running server. It returns
+// ErrSchemaBehind, writing nothing, when the schema is not this binary's latest.
+func RecordCreatedFile(ctx context.Context, dataDir string, at time.Time, actor audit.Actor, res Result) error {
+	conn, err := openFile(filepath.Join(dataDir, db.FileName), "rw")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	have, err := db.SchemaVersion(ctx, conn)
+	if err != nil {
+		return err
+	}
+	latest, err := db.LatestSchemaVersion()
+	if err != nil {
+		return err
+	}
+	if have != latest {
+		return fmt.Errorf("%w: schema %d, binary %d", ErrSchemaBehind, have, latest)
+	}
+	return RecordCreated(ctx, sqlc.New(conn), at, actor, res.Path, res.Size, &res.MediaFiles)
 }

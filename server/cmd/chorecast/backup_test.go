@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/backup"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
+	"github.com/voidrot/chorecast/server/internal/paging"
 )
 
 func TestBackupAndRestoreCommands(t *testing.T) {
@@ -45,20 +47,20 @@ func TestBackupAndRestoreCommands(t *testing.T) {
 	}
 
 	target := t.TempDir()
-	if err := restoreCmd(t.Context(), nil, target, &out); err == nil {
+	if err := restoreCmd(t.Context(), nil, target, clk, &out); err == nil {
 		t.Error("restore without a file: no usage error")
 	}
-	if err := restoreCmd(t.Context(), []string{custom}, target, &out); err != nil {
+	if err := restoreCmd(t.Context(), []string{custom}, target, clk, &out); err != nil {
 		t.Fatal(err)
 	}
-	if err := restoreCmd(t.Context(), []string{custom}, target, &out); !errors.Is(err, backup.ErrNotEmpty) {
+	if err := restoreCmd(t.Context(), []string{custom}, target, clk, &out); !errors.Is(err, backup.ErrNotEmpty) {
 		t.Fatalf("second restore: %v, want ErrNotEmpty", err)
 	}
 	// --force works before or after the file.
-	if err := restoreCmd(t.Context(), []string{custom, "--force"}, target, &out); err != nil {
+	if err := restoreCmd(t.Context(), []string{custom, "--force"}, target, clk, &out); err != nil {
 		t.Fatal(err)
 	}
-	if err := restoreCmd(t.Context(), []string{"--force", file}, target, &out); err != nil {
+	if err := restoreCmd(t.Context(), []string{"--force", file}, target, clk, &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +69,7 @@ func TestBackupAndRestoreCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = lock.Unlock() }()
-	if err := restoreCmd(t.Context(), []string{"--force", file}, target, &out); !errors.Is(err, db.ErrDataDirLocked) {
+	if err := restoreCmd(t.Context(), []string{"--force", file}, target, clk, &out); !errors.Is(err, db.ErrDataDirLocked) {
 		t.Fatalf("restore while the server runs: %v, want ErrDataDirLocked", err)
 	}
 }
@@ -134,7 +136,7 @@ func TestRestoreMarkerBlocksCommands(t *testing.T) {
 			}
 			return err
 		},
-		"restore": func() error { return restoreCmd(t.Context(), []string{"--force", "x.tar.gz"}, dir, &out) },
+		"restore": func() error { return restoreCmd(t.Context(), []string{"--force", "x.tar.gz"}, dir, clk, &out) },
 		"backup":  func() error { return backupCmd(t.Context(), nil, dir, clk, &out) },
 		"admin":   func() error { return admin(t.Context(), []string{"rotate-media-key"}, &out) },
 	} {
@@ -151,6 +153,7 @@ func TestRestoreMarkerBlocksCommands(t *testing.T) {
 // Admin works beside a running server, but not during a restore.
 func TestAdminAndRestoreExcludeEachOther(t *testing.T) {
 	dir := t.TempDir()
+	clk := clock.NewFake(time.Date(2026, 11, 4, 18, 0, 0, 0, time.UTC))
 	t.Setenv("CHORECAST_DATA_DIR", dir)
 	var out bytes.Buffer
 	server, err := db.LockDataDir(dir)
@@ -176,7 +179,88 @@ func TestAdminAndRestoreExcludeEachOther(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = adminLock.Unlock() }()
-	if err := restoreCmd(t.Context(), []string{"x.tar.gz"}, dir, &out); !errors.Is(err, db.ErrDataDirLocked) {
+	if err := restoreCmd(t.Context(), []string{"x.tar.gz"}, dir, clk, &out); !errors.Is(err, db.ErrDataDirLocked) {
 		t.Errorf("restore during an admin command: %v, want ErrDataDirLocked", err)
 	}
+}
+
+// Each CLI backup adds one backup_created row (actor cli, file name, size, media count) to the live
+// database, not to the archive it describes; a restore adds one restore_completed row to the
+// restored database, after the rows that came with the archive.
+func TestCLIBackupAndRestoreAreAudited(t *testing.T) {
+	src := t.TempDir()
+	store, err := db.Open(t.Context(), src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	clk := clock.NewFake(time.Date(2026, 11, 4, 18, 0, 0, 0, time.UTC))
+	var out bytes.Buffer
+	if err := audit.Record(t.Context(), store.Queries, clk.Now(), audit.Entry{
+		Actor: audit.CLI, Action: audit.ActionSettingsUpdated, TargetKind: audit.TargetHousehold,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(t.TempDir(), "mine.tar.gz")
+	if err := backupCmd(t.Context(), []string{"--out", archive}, src, clk, &out); err != nil {
+		t.Fatal(err)
+	}
+	rows := auditRows(t, store)
+	if len(rows) != 2 || rows[0].ActorKind != audit.ActorCLI || rows[0].Action != audit.ActionBackupCreated ||
+		rows[0].Summary != "mine.tar.gz" {
+		t.Fatalf("after one backup: %+v", rows)
+	}
+	if rows[0].Details.Bytes <= 0 || rows[0].Details.MediaFiles == nil {
+		t.Errorf("details: %+v", rows[0].Details)
+	}
+	// A second backup, same name elsewhere, is a second row.
+	if err := backupCmd(t.Context(), []string{"--out", filepath.Join(t.TempDir(), "mine.tar.gz")}, src, clk, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := auditRows(t, store); len(got) != 3 {
+		t.Fatalf("after two backups: %d rows", len(got))
+	}
+
+	// The archive holds the state before its own row: restoring it brings the settings row but no
+	// backup row, and adds exactly one restore row.
+	target := t.TempDir()
+	if err := restoreCmd(t.Context(), []string{archive}, target, clk, &out); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := db.Open(t.Context(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = restored.Close() })
+	got := auditRows(t, restored)
+	if len(got) != 2 || got[1].Action != audit.ActionSettingsUpdated || got[0].Action != audit.ActionRestoreCompleted ||
+		got[0].ActorKind != audit.ActorCLI || got[0].Summary != "mine.tar.gz" ||
+		got[0].Details.Forced == nil || *got[0].Details.Forced {
+		t.Fatalf("restored database: %+v", got)
+	}
+	if got[0].Details.SchemaVer == 0 {
+		t.Errorf("manifest schema version missing: %+v", got[0].Details)
+	}
+	// Forcing a restore over it records the flag.
+	if err := restoreCmd(t.Context(), []string{"--force", archive}, target, clk, &out); err != nil {
+		t.Fatal(err)
+	}
+	restoredAgain, err := db.Open(t.Context(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = restoredAgain.Close() })
+	got = auditRows(t, restoredAgain)
+	if len(got) != 2 || got[0].Details.Forced == nil || !*got[0].Details.Forced {
+		t.Fatalf("forced restore: %+v", got)
+	}
+}
+
+func auditRows(t *testing.T, store *db.DB) []audit.AuditEntry {
+	t.Helper()
+	page, err := audit.New(store).List(t.Context(), audit.Filter{}, paging.Params{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page.Items
 }
