@@ -68,16 +68,13 @@ class ChoreCompleter(
         return try {
             val resp = instances(url, token).completeChoreInstance(current.instanceId, key, body)
             if (resp.success) {
-                keys.clear()
+                keys.clear(current.instanceId)
                 current.photos.forEach { captures.delete(it.captureId) }
                 SubmitOutcome(current, SubmitOutcome.Result.Completed(resp.body()))
             } else {
                 val problem = resp.problem()
                 val error = completionError(resp.status, problem.code, problem.errors.orEmpty().mapNotNull { it.location })
-                // A photo the server refuses (expired, already used) is uploaded again next time.
-                val stale = (error as? CompleteError.Invalid)?.photoIssues.orEmpty()
-                    .mapNotNull { current.photos.getOrNull(it)?.captureId }.toSet()
-                failed(current.withoutMedia(stale), error)
+                failed(current.afterInvalid(error), error)
             }
         } catch (e: CancellationException) {
             throw e
@@ -85,6 +82,21 @@ class ChoreCompleter(
             failed(current, CompleteError.Offline(e.message ?: e::class.simpleName.orEmpty()))
         } catch (e: Exception) {
             failed(current, CompleteError.Failed(e.message ?: e::class.simpleName.orEmpty()))
+        }
+    }
+
+    /**
+     * A photo whose capture the server refuses is dropped, because sending it again would fail the
+     * same way; dropping it also changes the body, so the next submit gets a new key. A photo whose
+     * upload the server refuses (expired, already used) is uploaded again.
+     */
+    private fun CompletionDraft.afterInvalid(error: CompleteError): CompletionDraft {
+        if (error !is CompleteError.Invalid) return this
+        val ids = { indexes: Set<Int> -> indexes.mapNotNull { photos.getOrNull(it)?.captureId }.toSet() }
+        val retake = ids(error.retake)
+        retake.forEach(captures::delete)
+        return withoutMedia(ids(error.photoIssues - error.retake)).let { d ->
+            d.copy(photos = d.photos.filterNot { it.captureId in retake })
         }
     }
 

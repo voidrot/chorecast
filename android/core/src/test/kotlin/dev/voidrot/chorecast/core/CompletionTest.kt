@@ -95,8 +95,10 @@ class CompletionTest {
         assertNotEquals(first, second)
         assertEquals(second, keys.keyFor(1, b))
         assertNotEquals(second, keys.keyFor(2, b))
+        // Another instance's submit doesn't reset this one's key.
+        assertEquals(second, keys.keyFor(1, b))
         val third = keys.keyFor(2, b)
-        keys.clear()
+        keys.clear(2)
         assertNotEquals(third, keys.keyFor(2, b))
     }
 
@@ -108,7 +110,9 @@ class CompletionTest {
         assertEquals(CompleteError.VideoUnsupported, completionError(422, "video_evidence_unsupported", emptyList()))
         assertEquals(CompleteError.Offline("http_503"), completionError(503, "media_busy", emptyList()))
         val invalid = completionError(422, "validation_failed", listOf("body.photos[1].mediaId", "body.note"))
-        assertEquals(CompleteError.Invalid(listOf("photos[1].mediaId", "note"), setOf(1), "validation_failed"), invalid)
+        assertEquals(CompleteError.Invalid(listOf("photos[1].mediaId", "note"), setOf(1), emptySet(), "validation_failed"), invalid)
+        val skewed = completionError(422, "validation_failed", listOf("body.photos[0].capturedAt", "body.photos[2].captureId"))
+        assertEquals(setOf(0, 2), (skewed as CompleteError.Invalid).retake)
         assertEquals(CompleteError.Failed("forbidden"), completionError(403, "forbidden", emptyList()))
     }
 

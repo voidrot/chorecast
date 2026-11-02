@@ -92,6 +92,7 @@ class TodayViewModel(
     private var loadedAt: Instant? = null
 
     init {
+        captures.clearAll()
         refresh()
     }
 
@@ -159,9 +160,9 @@ class TodayViewModel(
 
     fun cancelComplete() = _state.update { it.copy(completing = false, cameraOpen = false) }
 
-    fun toggleStep(index: Int) = editDraft { it.toggleStep(index) }
+    fun toggleStep(index: Int) = userEdit { it.toggleStep(index) }
 
-    fun setNote(text: String) = editDraft { it.withNote(text) }
+    fun setNote(text: String) = userEdit { it.withNote(text) }
 
     fun openCamera() = _state.update { it.copy(cameraOpen = true) }
 
@@ -172,7 +173,7 @@ class TodayViewModel(
 
     /** The shutter fired and the file is written. [photo] carries the time and id taken at the shutter. */
     fun onCaptured(photo: CapturedPhoto) {
-        editDraft { it.addPhoto(photo) }
+        userEdit { it.addPhoto(photo) }
         _state.update { it.copy(cameraOpen = false) }
     }
 
@@ -183,14 +184,21 @@ class TodayViewModel(
     }
 
     fun removePhoto(captureId: String) {
+        if (_state.value.submitting) return
         captures.delete(captureId)
-        editDraft { it.removePhoto(captureId) }
+        userEdit { it.removePhoto(captureId) }
     }
 
     fun dismissCompleteError() = _state.update { it.copy(completeError = null) }
 
-    private fun editDraft(change: (CompletionDraft) -> CompletionDraft) {
-        val id = _state.value.selected ?: return
+    /** An edit by the kid, to the open chore's draft. Ignored while a submit is running. */
+    private fun userEdit(change: (CompletionDraft) -> CompletionDraft) {
+        val s = _state.value
+        if (s.submitting) return
+        s.selected?.let { editDraft(it, change) }
+    }
+
+    private fun editDraft(id: Long, change: (CompletionDraft) -> CompletionDraft) {
         _state.update { s -> s.copy(drafts = s.drafts + (id to change(s.drafts[id] ?: CompletionDraft(id)))) }
     }
 
@@ -218,15 +226,16 @@ class TodayViewModel(
     private fun failed(id: Long, error: CompleteError) {
         when (error) {
             CompleteError.SignedOut -> _state.update { it.copy(error = TodayError.SignedOut) }
-            // The chore moved on without this submit: show what it is now.
+            // The chore moved on without this submit: its draft and photos are no use, show what it is now.
             CompleteError.Closed, CompleteError.NotOpen -> {
-                _state.update { it.copy(completing = false, completeError = error) }
+                _state.value.drafts[id]?.photos?.forEach { captures.delete(it.captureId) }
+                _state.update { it.copy(drafts = it.drafts - id, completing = false, cameraOpen = false, completeError = error) }
                 refresh()
             }
             // A photo the server will never take: drop it so the kid takes another.
             is CompleteError.BadPhoto -> {
                 captures.delete(error.captureId)
-                editDraft { it.removePhoto(error.captureId) }
+                editDraft(id) { it.removePhoto(error.captureId) }
                 _state.update { it.copy(completeError = error) }
             }
             else -> _state.update { it.copy(completeError = error) }

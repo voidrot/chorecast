@@ -109,19 +109,21 @@ fun CompletionNeeds.request(draft: CompletionDraft): CompleteChoreInstanceInputB
  * Idempotency keys for completion submits. One key per attempt: a retry of the same request
  * (same instance, same body) reuses it so the server replays the first answer instead of
  * completing twice; a changed body (another photo, a new upload id) gets a new key, because the
- * server refuses one key for two different bodies. [clear] after a success, so a later
- * resubmit after a rejection is a new attempt.
+ * server refuses one key for two different bodies. Each instance keeps its own key, so another
+ * chore's submit doesn't reset it. [clear] after a success, so a later resubmit after a
+ * rejection is a new attempt.
  */
 class IdempotencyKeys(private val generate: () -> String = { UUID.randomUUID().toString() }) {
-    private var last: Triple<Long, CompleteChoreInstanceInputBody, String>? = null
+    private val last = mutableMapOf<Long, Pair<CompleteChoreInstanceInputBody, String>>()
 
     fun keyFor(instanceId: Long, body: CompleteChoreInstanceInputBody): String {
-        last?.takeIf { it.first == instanceId && it.second == body }?.let { return it.third }
-        return generate().also { last = Triple(instanceId, body, it) }
+        last[instanceId]?.takeIf { it.first == body }?.let { return it.second }
+        return generate().also { last[instanceId] = body to it }
     }
 
-    fun clear() {
-        last = null
+    /** Forgets the key of [instanceId] once its completion was accepted. */
+    fun clear(instanceId: Long) {
+        last.remove(instanceId)
     }
 }
 
@@ -139,8 +141,17 @@ sealed interface CompleteError {
     /** A photo is refused for good (duplicate of earlier evidence, too large, unsupported, file lost): retake it. */
     data class BadPhoto(val captureId: String, val reason: PhotoProblem) : CompleteError
 
-    /** 422: the server's evidence rules disagree with the draft. [photoIssues] are indexes of photos at fault. */
-    data class Invalid(val fields: List<String>, val photoIssues: Set<Int>, val code: String) : CompleteError
+    /**
+     * 422: the server's evidence rules disagree with the draft. [photoIssues] are indexes of photos
+     * at fault; [retake] are those whose capture itself is refused (capture time or id), which no
+     * upload can fix. The others (the upload expired or was used) are uploaded again.
+     */
+    data class Invalid(
+        val fields: List<String>,
+        val photoIssues: Set<Int>,
+        val retake: Set<Int>,
+        val code: String,
+    ) : CompleteError
 
     /** 422 video_evidence_unsupported. */
     data object VideoUnsupported : CompleteError
@@ -169,7 +180,8 @@ fun completionError(status: Int, code: String, locations: List<String>): Complet
     code == "video_evidence_unsupported" -> CompleteError.VideoUnsupported
     status == 422 -> CompleteError.Invalid(
         fields = locations.map { it.removePrefix("body.") },
-        photoIssues = locations.mapNotNull { PHOTO_LOCATION.find(it)?.groupValues?.get(1)?.toInt() }.toSet(),
+        photoIssues = locations.mapNotNull { photoIndex(it) }.toSet(),
+        retake = locations.filter { it.endsWith(".capturedAt") || it.endsWith(".captureId") }.mapNotNull { photoIndex(it) }.toSet(),
         code = code,
     )
     else -> CompleteError.Failed(code)
@@ -185,5 +197,7 @@ fun uploadError(status: Int, code: String, captureId: String): CompleteError = w
     status == 415 || status == 422 -> CompleteError.BadPhoto(captureId, PhotoProblem.UNSUPPORTED)
     else -> CompleteError.Failed(code)
 }
+
+private fun photoIndex(location: String): Int? = PHOTO_LOCATION.find(location)?.groupValues?.get(1)?.toInt()
 
 private val PHOTO_LOCATION = Regex("""photos\[(\d+)]""")

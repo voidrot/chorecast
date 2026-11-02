@@ -123,6 +123,8 @@
     <string name="complete_error_failed">That didn\'t work. Try again.</string>
     <string name="camera_permission_needed">Chorecast needs the camera to take the photo for this chore. If you turned it off, allow it in the phone\'s settings.</string>
     <string name="camera_permission_grant">Allow the camera</string>
+    <string name="camera_open_settings">Open settings</string>
+    <string name="camera_unavailable">The camera couldn\'t be started. Go back and try again.</string>
     <string name="camera_take_photo">Take photo</string>
     <string name="chore_loading_failed">Couldn\'t load the details.</string>
 

@@ -9,6 +9,7 @@ import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -126,6 +127,42 @@ class CompleteChoreTest {
         assertEquals(setOf(0), err.photoIssues)
         assertEquals(null, out.draft.photos.single().mediaId)
         assertTrue(files.deleted.isEmpty())
+    }
+
+    @Test
+    fun photoWithRefusedCaptureTimeIsDroppedSoTheKeyChanges() = runTest {
+        val keys = mutableListOf<String?>()
+        val engine = MockEngine { req ->
+            if (req.url.encodedPath.endsWith("/media/photos")) {
+                respond(media, HttpStatusCode.Created, json)
+            } else {
+                keys += req.headers["Idempotency-Key"]
+                if (keys.size == 1) {
+                    respond(
+                        """{"code":"validation_failed","errors":[{"location":"body.photos[0].capturedAt","message":"too early"}]}""",
+                        HttpStatusCode.UnprocessableEntity,
+                        problem,
+                    )
+                } else {
+                    respond(instance, HttpStatusCode.OK, json)
+                }
+            }
+        }
+        val files = Files("c1", "c2")
+        val completer = ChoreCompleter(files, engine = engine)
+        val first = completer.submit(url, "tok", needs, draft())
+        val err = (first.result as SubmitOutcome.Result.Failed).error as CompleteError.Invalid
+        assertEquals(setOf(0), err.retake)
+        assertTrue(first.draft.photos.isEmpty())
+        assertEquals(listOf("c1"), files.deleted)
+        // Resending the same draft is blocked until a new photo is taken ...
+        assertTrue(completer.submit(url, "tok", needs, first.draft).result is SubmitOutcome.Result.Failed)
+        assertEquals(1, keys.size)
+        // ... and the new photo makes a new body, so a new key.
+        val retaken = first.draft.addPhoto(CapturedPhoto("c2", Instant.parse("2026-05-04T14:00:00Z")))
+        assertTrue(completer.submit(url, "tok", needs, retaken).result is SubmitOutcome.Result.Completed)
+        assertEquals(2, keys.size)
+        assertNotEquals(keys[0], keys[1])
     }
 
     @Test

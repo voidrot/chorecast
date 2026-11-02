@@ -31,7 +31,8 @@ class AppContainer(context: Context) {
     val deviceClient = DeviceClient(engine)
     val kidChores = KidChores(engine)
     val sso = SsoBridge()
-    val captures = FileCaptureStore(File(context.filesDir, "captures"))
+    // Photos of a completion that was never sent (the process died) are not kept for the next run.
+    val captures = FileCaptureStore(File(context.filesDir, "captures")).also { it.clearAll() }
 
     /** One per kid session: it holds the idempotency key of the submit in progress. */
     fun choreCompleter() = ChoreCompleter(captures, engine = engine)

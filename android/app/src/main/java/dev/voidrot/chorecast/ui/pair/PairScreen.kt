@@ -65,7 +65,11 @@ fun PairScreen(viewModel: PairViewModel, onPaired: () -> Unit, onBack: () -> Uni
             Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
                 if (hasCamera && !state.pairing) {
                     key(state.scanAttempt) {
-                        QrScanner(onScanned = viewModel::onScanned, modifier = Modifier.fillMaxSize())
+                        QrScanner(
+                            onScanned = viewModel::onScanned,
+                            modifier = Modifier.fillMaxSize(),
+                            onUnavailable = { viewModel.showManual(true) },
+                        )
                     }
                 } else if (state.pairing) {
                     CircularProgressIndicator()

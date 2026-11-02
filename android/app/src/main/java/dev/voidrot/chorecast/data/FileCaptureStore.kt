@@ -18,6 +18,11 @@ class FileCaptureStore(private val dir: File) : CaptureStore {
     override fun read(captureId: String): ByteArray? =
         fileFor(captureId).takeIf { it.isFile }?.readBytes()
 
+    /** Removes every capture. Called when the app starts and when a kid session starts: nothing unsent outlives them. */
+    fun clearAll() {
+        dir.listFiles()?.forEach { it.delete() }
+    }
+
     override fun delete(captureId: String) {
         fileFor(captureId).delete()
     }

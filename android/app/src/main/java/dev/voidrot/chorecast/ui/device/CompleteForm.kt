@@ -62,7 +62,7 @@ fun CompleteForm(
                 Text(stringResource(R.string.chore_steps), style = MaterialTheme.typography.titleMedium)
                 needs.steps.forEachIndexed { i, step ->
                     Row(
-                        Modifier.fillMaxWidth().toggleable(value = i in draft.ticked, role = Role.Checkbox, onValueChange = { onToggleStep(i) }),
+                        Modifier.fillMaxWidth().toggleable(value = i in draft.ticked, enabled = !submitting, role = Role.Checkbox, onValueChange = { onToggleStep(i) }),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(checked = i in draft.ticked, onCheckedChange = null)
@@ -73,6 +73,7 @@ fun CompleteForm(
             OutlinedTextField(
                 value = draft.note,
                 onValueChange = onNote,
+                enabled = !submitting,
                 label = { Text(stringResource(if (needs.note) R.string.complete_note_required else R.string.complete_note_optional)) },
                 supportingText = { Text("${draft.note.length}/$MAX_NOTE_LENGTH") },
                 modifier = Modifier.fillMaxWidth(),
