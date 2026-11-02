@@ -72,7 +72,7 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 viewModel = viewModel {
                     DeviceViewModel(currentUrl(), container.deviceClient, container.parentAuth, container.tokenStore, BuildConfig.VERSION_NAME)
                 },
-                todayViewModel = { kid -> TodayViewModel(currentUrl(), container.kidChores, kid.kidId, kid.token) },
+                todayViewModel = { kid -> TodayViewModel(currentUrl(), container.kidChores, container.choreCompleter(), container.captures, kid.kidId, kid.token) },
                 onUnpaired = {
                     container.settings.mode = null
                     nav.reset(WelcomeRoute)

@@ -24,6 +24,7 @@ import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.api.models.Chore
 import dev.voidrot.chorecast.api.models.ChoreInstance
 import dev.voidrot.chorecast.api.models.ChoreInstanceRejection
+import dev.voidrot.chorecast.core.CompleteError
 import dev.voidrot.chorecast.core.EvidenceRequirement
 import dev.voidrot.chorecast.core.ChoreStatusView
 import dev.voidrot.chorecast.core.TodayChore
@@ -33,13 +34,15 @@ import dev.voidrot.chorecast.core.slotTime
 /**
  * One chore: when it's due, what to do (steps), what to hand in (evidence rules) and, after a
  * parent sent it back, why. [details] is null until the chore has been read; the instance's own
- * facts show meanwhile. The complete button is a placeholder until the complete flow (#101) lands.
+ * facts show meanwhile. The complete button starts the flow in [CompleteForm].
  */
 @Composable
 fun ChoreDetailScreen(
     chore: TodayChore,
     details: Chore?,
     detailsFailed: Boolean,
+    completeError: CompleteError?,
+    onComplete: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -71,10 +74,12 @@ fun ChoreDetailScreen(
                 Text(stringResource(R.string.chore_loading_failed), color = MaterialTheme.colorScheme.error)
             }
         }
+        completeError?.let { Text(completeErrorText(it), color = MaterialTheme.colorScheme.error) }
+        // The evidence rules come with the chore, so the complete flow waits for them.
         if (chore.canComplete) {
-            // Placeholder: the complete flow (camera, checklist, note, submit) is #101.
-            Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.chore_complete)) }
-            Text(stringResource(R.string.chore_complete_soon), style = MaterialTheme.typography.bodySmall)
+            Button(onClick = onComplete, enabled = details != null, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.chore_complete))
+            }
         }
     }
 }
