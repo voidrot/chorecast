@@ -135,6 +135,12 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
   A parent elevated with their PIN gets the overview, review queue and per-kid actions on the tablet using the
   2-minute elevation token; touches do not extend it, and when it expires or the device is locked remotely the
   tablet returns to the picker and drops the parent screens' state.
+- Built (#133): the parent app pairs a device from its Devices screen. The parent picks a kid or "shared family
+  tablet" (`GET /kids`, `POST /devices/pairing` with `kid` omitted for shared) and the app shows the code as a QR
+  code (`{"server","code"}`, built by `PairingQr.toPayload` in `:core` and encoded with `com.google.zxing:core`
+  3.5.4, Apache-2.0, no runtime dependencies), the typed code, the server URL and a countdown to the 5-minute
+  expiry. After expiry the QR is hidden and a button creates a new code. The screen keeps the display awake while
+  a code is shown. The countdown uses the phone's clock against the server's `expiresAt`.
 - **Kiosk mode** (shared devices): parent enables it on the device itself after PIN elevation. The app calls
   `startLockTask()` (screen pinning; no device-owner setup needed). Leaving requires parent PIN elevation.
   Optional "keep screen on" schedule (e.g. 06:30–20:30), applied via a window flag while in the foreground.

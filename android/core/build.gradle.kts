@@ -18,6 +18,7 @@ kotlin {
 dependencies {
     api(project(":api-client"))
     api(libs.kotlinx.coroutines.core)
+    implementation(libs.zxing.core)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
