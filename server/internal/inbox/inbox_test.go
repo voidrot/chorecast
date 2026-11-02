@@ -340,10 +340,29 @@ func TestStreakMilestone(t *testing.T) {
 	f.deliver()
 	items := f.wantKinds("Sam", f.sam, inbox.KindStreakMilestone)
 	it := items[0]
-	if it.Data.Days != 7 || it.Data.Points != 15 || it.RefKind != inbox.RefPointsEntry || it.KidID != f.sam {
+	if it.Data.Days != 7 || it.Data.Points == nil || *it.Data.Points != 15 || it.RefKind != inbox.RefPointsEntry || it.KidID != f.sam {
 		t.Errorf("streak notification = %+v", it)
 	}
 	f.wantKinds("Dad", f.dad)
+}
+
+// A bonus of 0 points still says so: the field is present rather than dropped.
+func TestStreakMilestoneWithZeroPoints(t *testing.T) {
+	f := newFixture(t)
+	day := caltime.Date{Year: 2026, Month: 10, Day: 30}
+	err := f.bus.InTx(t.Context(), func(tx *events.Tx) error {
+		_, err := ledger.Post(t.Context(), tx, f.clk, ledger.Posting{KidID: f.sam, Kind: ledger.KindStreakBonus, Amount: 0,
+			Source: streaks.MilestoneSource(day, 3), LocalDate: day})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.deliver()
+	items := f.wantKinds("Sam", f.sam, inbox.KindStreakMilestone)
+	if p := items[0].Data.Points; p == nil || *p != 0 || items[0].Data.Days != 3 {
+		t.Errorf("zero-point milestone = %+v", items[0].Data)
+	}
 }
 
 // Maintenance purges notifications older than the cutoff, read or not.

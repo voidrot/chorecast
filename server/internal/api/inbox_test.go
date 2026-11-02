@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/voidrot/chorecast/server/internal/auth"
 )
 
 type inboxJSON struct {
@@ -108,6 +110,26 @@ func TestInboxIsPerRecipient(t *testing.T) {
 	}
 	wantCode(t, "tablet with nobody picked", e.bearer("GET", "/api/v1/inbox", tablet, nil), 403, "insufficient_scope")
 	wantCode(t, "anonymous", e.do("GET", "/api/v1/inbox", nil), 401, "")
+
+	// A parent elevated on the tablet with their PIN reads their own inbox, not the kid's.
+	wantCode(t, "mom's parent PIN", e.do("PUT", "/api/v1/account/pin", map[string]string{"password": ownerPassword, "pin": "1357"}, e.mom), 204, "")
+	rec = e.bearer("POST", "/api/v1/devices/elevate", tablet, map[string]any{"parentId": e.momID, "pin": "1357"})
+	wantCode(t, "elevate mom", rec, 200, "")
+	momOnTablet := decode[struct{ Token string }](t, rec).Token
+	if got := ids(e.inbox(momOnTablet, "")); !slices.Equal(got, []int64{forMom}) {
+		t.Errorf("mom on the tablet sees %v, want [%d]", got, forMom)
+	}
+
+	// Displays and API keys have no user to own an inbox.
+	tokens := auth.NewStore(e.store.Queries, e.clk)
+	for name, kind := range map[string]auth.TokenKind{"display": auth.TokenDisplay, "api key": auth.TokenAPI} {
+		token, _, err := tokens.Issue(t.Context(), auth.IssueParams{Kind: kind})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantCode(t, name+" lists", e.bearer("GET", "/api/v1/inbox", token, nil), 403, "insufficient_scope")
+		wantCode(t, name+" marks all", e.bearer("POST", "/api/v1/inbox/read-all", token, nil), 403, "insufficient_scope")
+	}
 
 	// Marking reads is just as scoped: it is a 404 to another recipient, and changes nothing.
 	wantCode(t, "sam-2 marks sam's", e.call(e.sam2, "POST", fmt.Sprintf("/api/v1/inbox/%d/read", forSam)), 404, "notification_not_found")

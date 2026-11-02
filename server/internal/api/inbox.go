@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/inbox"
 	"github.com/voidrot/chorecast/server/internal/paging"
@@ -15,11 +16,11 @@ func registerInbox(hapi huma.API, h *handlers) {
 	use := auth.Require(auth.ScopeInboxUse)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "listInbox", Method: http.MethodGet, Path: "/inbox",
-		Summary: "The caller's notifications, newest first",
+		Summary: "The caller's notifications, newest delivered first",
 		Description: "Parents see their own (new submissions to review); a kid, on their own device or picked on a shared " +
 			"tablet, sees theirs (approved, rejected with the reason, missed, excused, streak milestones). Each item has a " +
 			"`kind`, what it refers to (`refKind` and `refId`) and `data` to render the text from; the server stores no " +
-			"display text. `unreadCount` counts all unread, not just this page. Notifications are purged after 90 days.",
+			"display text. Order is by delivery (id), so a late-delivered event can sit above an older-looking one; `createdAt` is when the event happened and `data.choreName` is the chore's name at delivery. `unreadCount` counts all unread, not just this page. Notifications are purged after 90 days.",
 		Tags: []string{"inbox"}, Security: use,
 		Errors: []int{http.StatusForbidden, http.StatusBadRequest},
 	}, h.listInbox)
@@ -49,15 +50,22 @@ type ListInboxInput struct{ paging.Params }
 type InboxOutput struct{ Body inbox.InboxPage }
 
 // inboxRecipient is the caller's user id: the inbox belongs to a parent or a kid, never to a
-// shared tablet or display itself (inbox:use excludes them). A tablet with a kid profile picked
-// is that kid.
-func inboxRecipient(ctx context.Context) int64 {
-	p, _ := auth.PrincipalFrom(ctx)
-	return p.UserID
+// shared tablet or display itself (inbox:use excludes them, and a caller without a user is
+// refused here as well). A tablet with a kid profile picked is that kid.
+func inboxRecipient(ctx context.Context) (int64, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p.UserID == 0 {
+		return 0, apierr.New(http.StatusForbidden, apierr.CodeInsufficientScope, "this credential has no inbox")
+	}
+	return p.UserID, nil
 }
 
 func (h *handlers) listInbox(ctx context.Context, in *ListInboxInput) (*InboxOutput, error) {
-	page, err := h.inbox.List(ctx, inboxRecipient(ctx), in.Params)
+	me, err := inboxRecipient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := h.inbox.List(ctx, me, in.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -69,9 +77,17 @@ type MarkInboxReadInput struct {
 }
 
 func (h *handlers) markInboxRead(ctx context.Context, in *MarkInboxReadInput) (*struct{}, error) {
-	return nil, h.inbox.MarkRead(ctx, inboxRecipient(ctx), in.ID)
+	me, err := inboxRecipient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return nil, h.inbox.MarkRead(ctx, me, in.ID)
 }
 
 func (h *handlers) markAllInboxRead(ctx context.Context, _ *struct{}) (*struct{}, error) {
-	return nil, h.inbox.MarkAllRead(ctx, inboxRecipient(ctx))
+	me, err := inboxRecipient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return nil, h.inbox.MarkAllRead(ctx, me)
 }

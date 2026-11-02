@@ -642,8 +642,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The caller's notifications, newest first
-         * @description Parents see their own (new submissions to review); a kid, on their own device or picked on a shared tablet, sees theirs (approved, rejected with the reason, missed, excused, streak milestones). Each item has a `kind`, what it refers to (`refKind` and `refId`) and `data` to render the text from; the server stores no display text. `unreadCount` counts all unread, not just this page. Notifications are purged after 90 days.
+         * The caller's notifications, newest delivered first
+         * @description Parents see their own (new submissions to review); a kid, on their own device or picked on a shared tablet, sees theirs (approved, rejected with the reason, missed, excused, streak milestones). Each item has a `kind`, what it refers to (`refKind` and `refId`) and `data` to render the text from; the server stores no display text. Order is by delivery (id), so a late-delivered event can sit above an older-looking one; `createdAt` is when the event happened and `data.choreName` is the chore's name at delivery. `unreadCount` counts all unread, not just this page. Notifications are purged after 90 days.
          */
         get: operations["listInbox"];
         put?: never;
@@ -1915,7 +1915,7 @@ export interface components {
         InboxData: {
             /** @description chore_approved: the system approved it after the review timeout */
             auto?: boolean;
-            /** @description The chore, as named when the event happened */
+            /** @description The chore's name when the notification was written (at delivery), not its current name */
             choreName?: string;
             /**
              * Format: int64
@@ -1924,7 +1924,7 @@ export interface components {
             days?: number;
             /**
              * Format: int64
-             * @description streak_milestone: the bonus points
+             * @description streak_milestone: the bonus points; present even when 0, absent for other kinds
              */
             points?: number;
             /** @description chore_rejected: the quick-pick reason (not_done, not_finished, needs_redo or evidence_unclear) */

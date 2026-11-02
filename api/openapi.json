@@ -1340,7 +1340,7 @@
             "type": "boolean"
           },
           "choreName": {
-            "description": "The chore, as named when the event happened",
+            "description": "The chore's name when the notification was written (at delivery), not its current name",
             "type": "string"
           },
           "days": {
@@ -1349,7 +1349,7 @@
             "type": "integer"
           },
           "points": {
-            "description": "streak_milestone: the bonus points",
+            "description": "streak_milestone: the bonus points; present even when 0, absent for other kinds",
             "format": "int64",
             "type": "integer"
           },
@@ -6136,7 +6136,7 @@
     },
     "/inbox": {
       "get": {
-        "description": "Parents see their own (new submissions to review); a kid, on their own device or picked on a shared tablet, sees theirs (approved, rejected with the reason, missed, excused, streak milestones). Each item has a `kind`, what it refers to (`refKind` and `refId`) and `data` to render the text from; the server stores no display text. `unreadCount` counts all unread, not just this page. Notifications are purged after 90 days.",
+        "description": "Parents see their own (new submissions to review); a kid, on their own device or picked on a shared tablet, sees theirs (approved, rejected with the reason, missed, excused, streak milestones). Each item has a `kind`, what it refers to (`refKind` and `refId`) and `data` to render the text from; the server stores no display text. Order is by delivery (id), so a late-delivered event can sit above an older-looking one; `createdAt` is when the event happened and `data.choreName` is the chore's name at delivery. `unreadCount` counts all unread, not just this page. Notifications are purged after 90 days.",
         "operationId": "listInbox",
         "parameters": [
           {
@@ -6228,7 +6228,7 @@
             ]
           }
         ],
-        "summary": "The caller's notifications, newest first",
+        "summary": "The caller's notifications, newest delivered first",
         "tags": [
           "inbox"
         ]

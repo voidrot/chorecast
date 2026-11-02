@@ -59,12 +59,12 @@ const (
 
 // InboxData is what a notification's text is rendered from. Which fields are set depends on the kind.
 type InboxData struct {
-	ChoreName  string `json:"choreName,omitempty" doc:"The chore, as named when the event happened"`
+	ChoreName  string `json:"choreName,omitempty" doc:"The chore's name when the notification was written (at delivery), not its current name"`
 	ReasonCode string `json:"reasonCode,omitempty" doc:"chore_rejected: the quick-pick reason (not_done, not_finished, needs_redo or evidence_unclear)"`
 	ReasonText string `json:"reasonText,omitempty" doc:"chore_rejected: the parent's feedback"`
 	Auto       bool   `json:"auto,omitempty" doc:"chore_approved: the system approved it after the review timeout"`
 	Days       int    `json:"days,omitempty" doc:"streak_milestone: the streak length reached"`
-	Points     int64  `json:"points,omitempty" doc:"streak_milestone: the bonus points"`
+	Points     *int64 `json:"points,omitempty" doc:"streak_milestone: the bonus points; present even when 0, absent for other kinds"`
 }
 
 // InboxItem is one notification.
@@ -79,7 +79,7 @@ type InboxItem struct {
 	ReadAt    *time.Time `json:"readAt,omitempty"`
 }
 
-// InboxPage is a page of notifications, newest first.
+// InboxPage is a page of notifications, newest delivered first (id descending, not event time).
 type InboxPage struct {
 	Items       []InboxItem `json:"items" nullable:"false"`
 	NextCursor  string      `json:"nextCursor,omitempty" doc:"Pass as cursor to fetch the next page. Absent on the last page."`
@@ -181,7 +181,7 @@ func (s *Service) entryPosted(ctx context.Context, env events.Envelope) error {
 	if err != nil {
 		return fmt.Errorf("load points entry %d: %w", ev.EntryID, err)
 	}
-	data := InboxData{Days: streaks.MilestoneDays(entry.SourceID.Int64), Points: ev.Amount}
+	data := InboxData{Days: streaks.MilestoneDays(entry.SourceID.Int64), Points: &ev.Amount}
 	return s.toKid(ctx, env, KindStreakMilestone, ev.KidID, RefPointsEntry, ev.EntryID, data)
 }
 
@@ -243,7 +243,7 @@ func (s *Service) toParents(ctx context.Context, env events.Envelope, kind strin
 	return nil
 }
 
-// List returns one page of recipient's notifications, newest first, with their unread count.
+// List returns one page of recipient's notifications, newest delivered first (id descending), with their unread count.
 func (s *Service) List(ctx context.Context, recipient int64, p paging.Params) (InboxPage, error) {
 	before, first, err := paging.Decode[int64](p.Cursor)
 	if err != nil {

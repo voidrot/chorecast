@@ -118,10 +118,15 @@ the event id), so redelivery is harmless. Auto-approvals don't notify parents; t
 Archived kids and removed parents get nothing. Rows are purged after 90 days by `maintenance.daily` (the spec named
 no period).
 
-API (scope `inbox:use`, held by parents and kids; a shared tablet with a kid profile picked is that kid, a bare tablet,
-display or API key has no inbox): `GET /inbox` (cursor-paged, newest first, with `unreadCount`),
+API (scope `inbox:use`, held by parents and kids; a shared tablet with a kid profile picked is that kid, and a
+parent elevated on a tablet with their PIN reads their own inbox, not the kid's; a bare tablet, display or API key has
+no inbox and gets 403 `insufficient_scope`): `GET /inbox` (cursor-paged, newest delivered first, with `unreadCount`),
 `POST /inbox/{id}/read` and `POST /inbox/read-all` (both 204; another recipient's id is 404). The caller's own user
 id is the recipient, so there is no `kidId` parameter.
+
+The list is ordered by row id (delivery order), not by `createdAt`, which is when the event happened; a late-delivered
+event can therefore sit above one that looks newer. `data.choreName` is the chore's name when the notification was
+written (at delivery), not its current name. `data.points` is present, 0 included, on `streak_milestone` items only.
 
 ## Open questions
 
