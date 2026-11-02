@@ -126,7 +126,7 @@ class KidTodayTest {
         val decoded = ApiClients.json.decodeFromString<ChoreInstance>(json)
         assertEquals(ChoreInstance.Status.UNKNOWN_DEFAULT_OPEN_API, decoded.status)
         assertEquals(ChoreStatusView.UNKNOWN, decoded.statusView())
-        assertFalse(TodayChore(decoded, null).canComplete)
+        assertFalse(TodayChore(decoded).canComplete)
     }
 
     @Test
