@@ -15,6 +15,16 @@
 //		}
 //		return err
 //	})
+//
+// A source's entry and its reversals form a chain C → R1 → R2 …. To undo or re-apply a source's
+// effect, call Tip and Reverse the tip only when inEffect is the state you want to change (true to
+// undo, false to re-apply); never Post again for that source.
+//
+// ErrAlreadyReversed is not a retry signal like ErrAlreadyPosted. A retry in its own transaction
+// can't run into its own earlier reversal (a rolled-back attempt left none, and a committed one
+// shows in Tip), so the error means someone else reversed the entry. Treating it as done can leave
+// the wrong state: a parent reverses C and then R1, and an un-approve job's Reverse(C) gets
+// ErrAlreadyReversed while the credit stands. Re-read Tip instead.
 package ledger
 
 import (
@@ -60,7 +70,8 @@ const (
 )
 
 var (
-	// ErrAlreadyReversed is returned by Reverse for an entry that has a reversal already.
+	// ErrAlreadyReversed is returned by Reverse for an entry that has a reversal already. It
+	// doesn't mean done: someone else reversed the entry, so re-read Tip and decide again.
 	ErrAlreadyReversed = apierr.New(http.StatusConflict, apierr.CodeAlreadyReversed, "this entry has already been reversed")
 	// ErrAlreadyPosted is returned by Post when an entry of the same kind, kid and source exists.
 	// The returned PointsEntry is that existing entry, so at-least-once callers can carry on.
@@ -153,6 +164,9 @@ func Post(ctx context.Context, tx *events.Tx, c clock.Clock, in Posting) (Points
 			if err != nil {
 				return PointsEntry{}, err
 			}
+			if out.ReversedByID, err = reversedBy(ctx, tx.Q, existing.ID); err != nil {
+				return PointsEntry{}, err
+			}
 			return out, ErrAlreadyPosted
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return PointsEntry{}, fmt.Errorf("find entry by source: %w", err)
@@ -190,9 +204,10 @@ func Post(ctx context.Context, tx *events.Tx, c clock.Clock, in Posting) (Points
 }
 
 // Reverse undoes entry entryID inside the caller's transaction: it appends a reversal with the
-// negated amount, the original's source and the kid's current day, and emits EntryPosted.
-// Reversals are never clamped, so reversing a credit can take a balance below zero. A reversal
-// can itself be reversed (e.g. un-excusing a missed chore). Reversing an entry twice returns
+// negated amount and the original's source and local date, and emits EntryPosted. Dating it to
+// the original means un-approving last week's chore corrects last week. Reversals are never
+// clamped, so reversing a credit can take a balance below zero. A reversal can itself be
+// reversed (e.g. un-excusing a missed chore). Reversing an entry twice returns
 // ErrAlreadyReversed.
 func Reverse(ctx context.Context, tx *events.Tx, c clock.Clock, entryID int64, note string, by int64) (PointsEntry, error) {
 	note = strings.TrimSpace(note)
@@ -206,24 +221,50 @@ func Reverse(ctx context.Context, tx *events.Tx, c clock.Clock, entryID int64, n
 	} else if err != nil {
 		return PointsEntry{}, fmt.Errorf("load entry: %w", err)
 	}
-	if _, err := tx.Q.GetPointsReversalOf(ctx, nullInt(entryID)); err == nil {
-		return PointsEntry{}, ErrAlreadyReversed
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return PointsEntry{}, fmt.Errorf("find reversal: %w", err)
-	}
-	kid, err := tx.Q.GetKidByID(ctx, orig.KidID)
-	if err != nil {
-		return PointsEntry{}, fmt.Errorf("load kid: %w", err)
-	}
-	date, err := today(ctx, tx.Q, c, kid)
-	if err != nil {
+	if rev, err := reversedBy(ctx, tx.Q, entryID); err != nil {
 		return PointsEntry{}, err
+	} else if rev != 0 {
+		return PointsEntry{}, ErrAlreadyReversed
 	}
 	return insert(ctx, tx, c, sqlc.InsertPointsEntryParams{
-		KidID: orig.KidID, Kind: KindReversal, Amount: -orig.Amount, LocalDate: date.String(),
+		KidID: orig.KidID, Kind: KindReversal, Amount: -orig.Amount, LocalDate: orig.LocalDate,
 		SourceKind: orig.SourceKind, SourceID: orig.SourceID, ReversesID: nullInt(entryID), Note: note,
 		CreatedBy: nullInt(by),
 	})
+}
+
+// Tip finds the kid's kind entry for src (kind is KindChore, KindChorePenalty or KindStreakBonus,
+// which have at most one entry per source) and follows its reversals C → R1 → R2 … to the newest,
+// unreversed one. found is false when nothing was posted for the source. inEffect reports whether
+// the source's effect stands: true for an even number of reversals (C itself, or R2, …). Reverse
+// the returned entry only when inEffect is the state to change: true to undo, false to re-apply.
+func Tip(ctx context.Context, tx *events.Tx, kidID int64, kind string, src Source) (entry PointsEntry, inEffect bool, found bool, err error) {
+	if !onceKind(kind) {
+		return PointsEntry{}, false, false, fmt.Errorf("ledger.Tip: %q entries aren't once per source", kind)
+	}
+	cur, err := tx.Q.GetPointsEntryBySource(ctx, sqlc.GetPointsEntryBySourceParams{
+		Kind: kind, SourceKind: nullString(src.Kind), SourceID: nullInt(src.ID), KidID: kidID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return PointsEntry{}, false, false, nil
+	} else if err != nil {
+		return PointsEntry{}, false, false, fmt.Errorf("find entry by source: %w", err)
+	}
+	inEffect = true
+	for {
+		next, err := tx.Q.GetPointsReversalOf(ctx, nullInt(cur.ID))
+		if errors.Is(err, sql.ErrNoRows) {
+			break
+		} else if err != nil {
+			return PointsEntry{}, false, false, fmt.Errorf("find reversal: %w", err)
+		}
+		cur, inEffect = next, !inEffect
+	}
+	entry, err = withBalance(ctx, tx.Q, cur)
+	if err != nil {
+		return PointsEntry{}, false, false, err
+	}
+	return entry, inEffect, true, nil
 }
 
 // Balance is the SUM of the kid's entries. q may be a transaction's queries.
@@ -254,6 +295,17 @@ func insert(ctx context.Context, tx *events.Tx, c clock.Clock, p sqlc.InsertPoin
 		return PointsEntry{}, err
 	}
 	return out, nil
+}
+
+// reversedBy is the id of the reversal of entry id, or 0 if it has none.
+func reversedBy(ctx context.Context, q *sqlc.Queries, id int64) (int64, error) {
+	rev, err := q.GetPointsReversalOf(ctx, nullInt(id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	} else if err != nil {
+		return 0, fmt.Errorf("find reversal: %w", err)
+	}
+	return rev.ID, nil
 }
 
 // withBalance converts a row and fills in BalanceAfter.
@@ -377,13 +429,20 @@ func New(d *db.DB, bus *events.Bus, c clock.Clock) *Service {
 	return &Service{db: d, bus: bus, clock: c}
 }
 
-// Balance returns the kid's balance and available points.
+// Balance returns the kid's balance and available points, read in one transaction so a write
+// can't land between the two.
 func (s *Service) Balance(ctx context.Context, kidID int64) (PointsBalance, error) {
-	bal, err := Balance(ctx, s.db.Queries, kidID)
+	tx, err := s.db.SQL.BeginTx(ctx, nil)
 	if err != nil {
 		return PointsBalance{}, err
 	}
-	avail, err := Available(ctx, s.db.Queries, kidID)
+	defer func() { _ = tx.Rollback() }()
+	q := s.db.WithTx(tx)
+	bal, err := Balance(ctx, q, kidID)
+	if err != nil {
+		return PointsBalance{}, err
+	}
+	avail, err := Available(ctx, q, kidID)
 	if err != nil {
 		return PointsBalance{}, err
 	}
