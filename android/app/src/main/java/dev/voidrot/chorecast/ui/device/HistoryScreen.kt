@@ -205,5 +205,5 @@ private fun EvidenceSection(view: EvidenceView) {
 private fun photoLabel(index: Int, role: EvidencePhoto.Role?): String = when (role) {
     EvidencePhoto.Role.BEFORE -> stringResource(R.string.complete_photo_before)
     EvidencePhoto.Role.AFTER -> stringResource(R.string.complete_photo_after)
-    null -> stringResource(R.string.complete_photo_n, index + 1)
+    else -> stringResource(R.string.complete_photo_n, index + 1)
 }

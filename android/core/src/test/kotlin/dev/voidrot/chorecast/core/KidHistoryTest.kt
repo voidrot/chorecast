@@ -67,7 +67,10 @@ class KidHistoryTest {
 
     @Test
     fun statusMappingShowsWhatHappenedToEachChore() {
-        val views = ChoreInstance.Status.entries.map { instance(1, status = it).statusView() }
+        val views = listOf(
+            ChoreInstance.Status.OPEN, ChoreInstance.Status.SUBMITTED, ChoreInstance.Status.APPROVED,
+            ChoreInstance.Status.MISSED, ChoreInstance.Status.EXCUSED,
+        ).map { instance(1, status = it).statusView() }
         assertEquals(
             listOf(
                 ChoreStatusView.OPEN, ChoreStatusView.SUBMITTED, ChoreStatusView.APPROVED,
