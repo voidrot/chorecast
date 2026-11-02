@@ -43,6 +43,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/events"
+	"github.com/voidrot/chorecast/server/internal/evidence"
 	"github.com/voidrot/chorecast/server/internal/horizon"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/ledger"
@@ -124,12 +125,12 @@ type Reassigned struct {
 
 func (Reassigned) EventType() string { return "instance.reassigned" }
 
-// Completion is who completed an instance.
+// Completion is who completed an instance, and the evidence they submitted with it.
 type Completion struct {
 	// KidID is the kid who did it. 0 = the assignee; a shared instance needs one of its members.
-	KidID int64
-	By    int64 // the acting user (the kid, or a parent completing for them)
-	// #27 adds the submitted evidence here; see checkEvidence.
+	KidID    int64
+	By       int64 // the acting user (the kid, or a parent completing for them)
+	Evidence evidence.Submission
 }
 
 // Reason is a parent's feedback on a rejection: a quick-pick Code, Text, or both.
@@ -232,7 +233,7 @@ func Complete(ctx context.Context, tx *events.Tx, clk clock.Clock, id int64, c C
 		return apierr.New(http.StatusUnprocessableEntity, apierr.CodeValidationFailed, "validation failed",
 			&huma.ErrorDetail{Location: "body.kidId", Message: msg, Value: c.KidID})
 	}
-	if err := checkEvidence(ctx, tx, in, c); err != nil {
+	if err := checkEvidence(ctx, tx, clk, in, kid, c); err != nil {
 		return err
 	}
 	to := horizon.StatusSubmitted
@@ -254,14 +255,25 @@ func Complete(ctx context.Context, tx *events.Tx, clk clock.Clock, id int64, c C
 		if err := credit(ctx, tx, clk, in, c.By, ""); err != nil {
 			return err
 		}
+		if err := evidence.Resolve(ctx, tx.Q, in.ID, clk.Now()); err != nil {
+			return err
+		}
 	}
 	return tx.Emit(ctx, Completed{Change: in.change(to, c.By), CompletedBy: kid})
 }
 
-// checkEvidence is where #27 validates the completion's evidence against the chore's evidence
-// rules (and attaches it to the instance), inside the completing transaction. Until then a
-// completion carries no evidence and every completion passes.
-func checkEvidence(context.Context, *events.Tx, instance, Completion) error { return nil }
+// checkEvidence validates the completion's evidence against the chore's evidence rules and
+// attaches it to the instance as a new submission, inside the completing transaction (see
+// evidence.Attach). kid is the completer.
+func checkEvidence(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance, kid int64, c Completion) error {
+	opens, err := dayclose.OpensAt(ctx, tx.Q, in.ChoreInstance)
+	if err != nil {
+		return fmt.Errorf("instance %d opens: %w", in.ID, err)
+	}
+	return evidence.Attach(ctx, tx.Q, clk, in.chore, evidence.Target{
+		InstanceID: in.ID, KidID: kid, By: c.By, OpensAt: opens,
+	}, c.Evidence)
+}
 
 // Approve approves a submitted instance and credits it. by is the parent, or 0 for the system
 // (auto-approve); note goes on a new credit entry, e.g. "Auto-approved".
@@ -274,6 +286,9 @@ func Approve(ctx context.Context, tx *events.Tx, clk clock.Clock, id, by int64, 
 		return err
 	}
 	if err := credit(ctx, tx, clk, in, by, note); err != nil {
+		return err
+	}
+	if err := evidence.Resolve(ctx, tx.Q, in.ID, clk.Now()); err != nil {
 		return err
 	}
 	return tx.Emit(ctx, Approved{in.change(horizon.StatusApproved, by)})
@@ -349,6 +364,9 @@ func Unapprove(ctx context.Context, tx *events.Tx, clk clock.Clock, id, by int64
 	if err := undo(ctx, tx, clk, in, ledger.KindChore, kids, by, cmp.Or(strings.TrimSpace(note), noteUnapproved)); err != nil {
 		return err
 	}
+	if err := evidence.Reopen(ctx, tx.Q, in.ID); err != nil {
+		return err
+	}
 	if err := tx.Emit(ctx, Unapproved{in.change(horizon.StatusOpen, by)}); err != nil {
 		return err
 	}
@@ -366,6 +384,9 @@ func Excuse(ctx context.Context, tx *events.Tx, clk clock.Clock, id, by int64, n
 		return err
 	}
 	if err := undo(ctx, tx, clk, in, ledger.KindChorePenalty, in.kids(), by, cmp.Or(strings.TrimSpace(note), noteExcused)); err != nil {
+		return err
+	}
+	if err := evidence.Resolve(ctx, tx.Q, in.ID, clk.Now()); err != nil {
 		return err
 	}
 	return tx.Emit(ctx, Excused{in.change(horizon.StatusExcused, by)})

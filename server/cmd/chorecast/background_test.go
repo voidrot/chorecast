@@ -12,6 +12,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/kids"
+	"github.com/voidrot/chorecast/server/internal/media"
 	"github.com/voidrot/chorecast/server/internal/schedule"
 )
 
@@ -25,7 +26,7 @@ func TestHorizonTriggers(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 	// Wednesday 4 November 2026, 12:00 in Chicago.
 	clk := clock.NewFake(time.Date(2026, 11, 4, 18, 0, 0, 0, time.UTC))
-	runner, sched, bus := newBackground(store, clk, slog.New(slog.DiscardHandler))
+	runner, sched, bus := newBackground(store, clk, media.NewLocal(t.TempDir(), "", nil), slog.New(slog.DiscardHandler))
 
 	// Before setup the day-end schedule has no calendar; ticking must not fail.
 	if _, err := sched.Tick(t.Context()); err != nil {

@@ -289,7 +289,10 @@ function remove() {
             <NCheckbox v-model:checked="form.beforeAfter" :disabled="form.photos < 2">{{
               t('chores.beforeAfter')
             }}</NCheckbox>
-            <NCheckbox v-model:checked="form.video">{{ t('chores.video') }}</NCheckbox>
+            <!-- Not available yet: the server refuses it. Untickable if a chore still has it. -->
+            <NCheckbox v-model:checked="form.video" :disabled="!form.video">
+              {{ t('chores.video') }} <span class="hint">{{ t('chores.videoLater') }}</span>
+            </NCheckbox>
             <NCheckbox
               v-model:checked="form.checklist"
               :disabled="!form.steps.some((s) => s.trim())"

@@ -140,8 +140,8 @@ walk takes each kept instance's state in turn order (even one whose slot was sin
 rotation's mode or kids clears both, so it restarts from its first kid. A chore with history (an instance that's
 touched or already due) can't be deleted (409 `chore_has_history`); parents disable it. `GET /instances?kidId&from&to` (default
 today to today+7, at most 62 days, `chores:read`) lists instances with `planned` for days after today; kids get only
-their own, including shared ones they're a member of (`CanAccessKid`). Evidence (#27) must extend the "untouched"
-check in `horizon.existing.untouched`.
+their own, including shared ones they're a member of (`CanAccessKid`). An instance with submitted evidence (#27)
+counts as touched (`horizon.existing.untouched`, `ChoreHasHistory`).
 
 ## Disruptions
 

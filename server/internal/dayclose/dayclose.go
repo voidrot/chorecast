@@ -32,6 +32,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/events"
+	"github.com/voidrot/chorecast/server/internal/evidence"
 	"github.com/voidrot/chorecast/server/internal/horizon"
 	"github.com/voidrot/chorecast/server/internal/household"
 	"github.com/voidrot/chorecast/server/internal/jobs"
@@ -215,6 +216,10 @@ func MissInTx(ctx context.Context, tx *events.Tx, clk clock.Clock, instanceID in
 			}
 		}
 	}
+	// Missed resolves it: evidence from a rejected submission starts its retention.
+	if err := evidence.Resolve(ctx, tx.Q, instanceID, clk.Now()); err != nil {
+		return Result{}, err
+	}
 	if err := tx.Emit(ctx, InstanceMissed{
 		InstanceID: instanceID, KidIDs: kids, From: horizon.StatusOpen, To: horizon.StatusMissed,
 	}); err != nil {
@@ -228,11 +233,7 @@ func MissInTx(ctx context.Context, tx *events.Tx, clk clock.Clock, instanceID in
 // that (a slot later than an early day end) is taken by the first close at or after its due time.
 // Pass tx.Q inside a transaction.
 func ClosesAt(ctx context.Context, q *sqlc.Queries, inst sqlc.ChoreInstance) (time.Time, error) {
-	cal, err := household.Calendar(ctx, q)
-	if err != nil {
-		return time.Time{}, err
-	}
-	date, err := caltime.ParseDate(inst.OccurrenceDate)
+	cal, date, end, err := instanceDay(ctx, q, inst)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -240,20 +241,48 @@ func ClosesAt(ctx context.Context, q *sqlc.Queries, inst sqlc.ChoreInstance) (ti
 	if err != nil {
 		return time.Time{}, err
 	}
-	end := cal.DayEnd
-	if inst.KidID.Valid {
-		kid, err := q.GetKidByID(ctx, inst.KidID.Int64)
-		if err != nil {
-			return time.Time{}, fmt.Errorf("load kid %d: %w", inst.KidID.Int64, err)
-		}
-		end = KidDayEnd(cal, kid.DayEndOverride)
-	}
 	flexible := inst.Flexible == 1
 	at := closeInstant(cal, date, flexible, end)
 	if !flexible && due.After(at) { // flexible instances are due at their week close
 		_, at = cal.NextDayClose(due.Add(-time.Nanosecond), end) // the first close at or after due
 	}
 	return at, nil
+}
+
+// OpensAt is when the instance became available: the start of its day (the previous day's close
+// for its kid's effective day end, or the household's for a shared instance), or of its week when
+// flexible. Kids' evidence photos must be captured after it (fresh-evidence rule 2). Offline
+// clock-skew handling (#35) widens or flags this window. Pass tx.Q inside a transaction.
+func OpensAt(ctx context.Context, q *sqlc.Queries, inst sqlc.ChoreInstance) (time.Time, error) {
+	cal, date, end, err := instanceDay(ctx, q, inst)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if inst.Flexible == 1 {
+		date = cal.WeekStartOf(date)
+	}
+	return cal.DayClose(date.AddDays(-1), end), nil
+}
+
+// instanceDay is the calendar, date and day end an instance's day is reckoned in.
+func instanceDay(ctx context.Context, q *sqlc.Queries, inst sqlc.ChoreInstance) (caltime.Household, caltime.Date, caltime.TimeOfDay, error) {
+	cal, err := household.Calendar(ctx, q)
+	if err != nil {
+		return caltime.Household{}, caltime.Date{}, caltime.TimeOfDay{}, err
+	}
+	date, err := caltime.ParseDate(inst.OccurrenceDate)
+	if err != nil {
+		return caltime.Household{}, caltime.Date{}, caltime.TimeOfDay{}, err
+	}
+	end := cal.DayEnd
+	if inst.KidID.Valid {
+		kid, err := q.GetKidByID(ctx, inst.KidID.Int64)
+		if err != nil {
+			return caltime.Household{}, caltime.Date{}, caltime.TimeOfDay{}, fmt.Errorf("load kid %d: %w", inst.KidID.Int64, err)
+		}
+		end = KidDayEnd(cal, kid.DayEndOverride)
+	}
+	return cal, date, end, nil
 }
 
 // closeInstant is when day closes for dayEnd, or its week when flexible.

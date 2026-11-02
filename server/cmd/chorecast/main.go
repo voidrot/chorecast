@@ -24,6 +24,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/db"
 	"github.com/voidrot/chorecast/server/internal/jobs"
+	"github.com/voidrot/chorecast/server/internal/media"
 	"github.com/voidrot/chorecast/server/internal/setup"
 	"github.com/voidrot/chorecast/server/internal/version"
 	"github.com/voidrot/chorecast/server/internal/webui"
@@ -74,7 +75,8 @@ func serve() error {
 	defer func() { _ = store.Close() }()
 
 	clk := clock.Real{}
-	runner, sched, bus := newBackground(store, clk, slog.Default())
+	// Retention only deletes files, so this storage needs no URL signer.
+	runner, sched, bus := newBackground(store, clk, media.NewLocal(cfg.DataDir, "", nil), slog.Default())
 	if err := runner.Recover(ctx); err != nil {
 		return err
 	}

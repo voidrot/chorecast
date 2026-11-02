@@ -30,8 +30,12 @@ func registerMedia(hapi huma.API, h *handlers) {
 		Description: "A multipart form with the image in `file` (JPEG, PNG or WebP, recognized by its content, " +
 			"not its declared type; HEIC isn't supported). The server applies the EXIF orientation, scales the photo " +
 			"to at most 1600 px on its long edge, makes a 320 px thumbnail, and re-encodes both as WebP without any " +
-			"metadata (EXIF, GPS). The photo is pending until it is attached to evidence. A kid's photo that exactly " +
-			"matches earlier kid evidence is rejected with 409 `duplicate_media`. Images over 24 MP or 12,000 px on a " +
+			"metadata (EXIF, GPS). The photo is pending until a completion attaches it as evidence; " +
+			fmt.Sprintf("one not attached within %d hours is deleted. ", int(media.PendingTTL.Hours())) +
+			"A kid's photo that exactly matches earlier kid evidence is rejected with 409 `duplicate_media`, except " +
+			"that a kid repeating their own upload that is still pending (an offline retry) gets that photo back. " +
+			fmt.Sprintf("A kid may hold %d pending photos; more is 429 `rate_limited`. ", media.MaxPendingUploads) +
+			"Images over 24 MP or 12,000 px on a " +
 			"side, or that would need too much memory to decode, get 413; animated images get 415. Photos are processed " +
 			"one at a time; when several uploads are already waiting the answer is 503 `media_busy`, and a caller with " +
 			"two uploads in progress gets 429 `rate_limited`, both with Retry-After.",
@@ -97,13 +101,28 @@ type MediaItemOutput struct {
 }
 
 func (h *handlers) mediaItem(ctx context.Context, m sqlc.Medium) (MediaItem, error) {
-	urls, err := h.media.URLs(ctx, m)
+	urls, err := h.signedURLs(ctx, m)
 	if err != nil {
 		return MediaItem{}, err
 	}
 	created, err := db.ParseTimestamp(m.CreatedAt)
 	if err != nil {
 		return MediaItem{}, err
+	}
+	return MediaItem{
+		ID: m.ID, Kind: m.Kind, Mime: m.Mime, Bytes: m.Bytes, Width: m.Width, Height: m.Height,
+		URL:          urls.URL,
+		Thumbnail:    MediaThumbnail{Width: m.ThumbWidth.Int64, Height: m.ThumbHeight.Int64, URL: urls.ThumbURL},
+		URLExpiresAt: urls.Expires, CreatedAt: created,
+	}, nil
+}
+
+// signedURLs signs links to m and makes them absolute against the request's base URL. Callers
+// must have checked access first. It is an evidence.Signer.
+func (h *handlers) signedURLs(ctx context.Context, m sqlc.Medium) (media.SignedURLs, error) {
+	urls, err := h.media.URLs(ctx, m)
+	if err != nil {
+		return media.SignedURLs{}, err
 	}
 	base := auth.RequestInfoFrom(ctx).BaseURL(h.cfg.PublicURL)
 	abs := func(u string) string {
@@ -112,12 +131,8 @@ func (h *handlers) mediaItem(ctx context.Context, m sqlc.Medium) (MediaItem, err
 		}
 		return u
 	}
-	return MediaItem{
-		ID: m.ID, Kind: m.Kind, Mime: m.Mime, Bytes: m.Bytes, Width: m.Width, Height: m.Height,
-		URL:          abs(urls.URL),
-		Thumbnail:    MediaThumbnail{Width: m.ThumbWidth.Int64, Height: m.ThumbHeight.Int64, URL: abs(urls.ThumbURL)},
-		URLExpiresAt: urls.Expires, CreatedAt: created,
-	}, nil
+	urls.URL, urls.ThumbURL = abs(urls.URL), abs(urls.ThumbURL)
+	return urls, nil
 }
 
 type MediaUploadForm struct {
@@ -138,7 +153,7 @@ func (h *handlers) uploadPhoto(ctx context.Context, in *UploadPhotoInput) (*Medi
 	if f.Size > limit {
 		return nil, media.TooLarge(limit)
 	}
-	m, err := h.media.UploadPhoto(ctx, p, f, limit)
+	m, _, err := h.media.UploadPhoto(ctx, p, f, limit) // a kid's retry gets its earlier upload, also 201
 	if err != nil {
 		return nil, err
 	}

@@ -176,8 +176,12 @@ func TestUploadPhotoDuplicates(t *testing.T) {
 	first := photo(t, 64, 48)
 	m := e.uploaded(e.sam, first)
 
-	wantCode(t, "same kid, same photo", e.upload(e.sam, first, "image/jpeg"), 409, "duplicate_media")
-	wantCode(t, "same photo with other metadata", e.upload(e.sam, mediatest.WithExif(first, 1), "image/jpeg"), 409, "duplicate_media")
+	// The same kid repeating a pending upload (an offline retry) gets it back, with any metadata.
+	for what, data := range map[string][]byte{"same photo": first, "same photo with other metadata": mediatest.WithExif(first, 1)} {
+		if again := e.uploaded(e.sam, data); again.ID != m.ID {
+			t.Errorf("same kid, %s: media %d, want the earlier %d", what, again.ID, m.ID)
+		}
+	}
 	wantCode(t, "another kid, same photo", e.upload(e.sam2, first, "image/jpeg"), 409, "duplicate_media")
 	// Parents' uploads aren't evidence: neither checked nor recorded.
 	e.uploaded(e.mom, first)

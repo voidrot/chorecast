@@ -70,6 +70,26 @@ type ChoreInstance struct {
 	UpdatedAt          string         `json:"updated_at"`
 }
 
+type ChoreInstanceEvidence struct {
+	ID          int64         `json:"id"`
+	InstanceID  int64         `json:"instance_id"`
+	Attempt     int64         `json:"attempt"`
+	KidID       sql.NullInt64 `json:"kid_id"`
+	SubmittedBy sql.NullInt64 `json:"submitted_by"`
+	Checklist   string        `json:"checklist"`
+	Note        string        `json:"note"`
+	CreatedAt   string        `json:"created_at"`
+}
+
+type ChoreInstanceEvidencePhoto struct {
+	MediaID    int64          `json:"media_id"`
+	EvidenceID int64          `json:"evidence_id"`
+	Position   int64          `json:"position"`
+	Role       string         `json:"role"`
+	CapturedAt sql.NullString `json:"captured_at"`
+	CaptureID  string         `json:"capture_id"`
+}
+
 type ChoreInstanceMember struct {
 	InstanceID int64 `json:"instance_id"`
 	KidID      int64 `json:"kid_id"`

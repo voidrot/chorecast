@@ -97,7 +97,7 @@ func (e *queueEnv) blockedUploads(t *testing.T, callers []*auth.Principal, reads
 	for i, p := range callers {
 		data := mediatest.JPEG(t, mediatest.Halves(16, 10+i))
 		wg.Go(func() {
-			_, err := e.svc.UploadPhoto(t.Context(), p, &blockingReader{ch, reads, bytes.NewReader(data)}, 1<<20)
+			_, _, err := e.svc.UploadPhoto(t.Context(), p, &blockingReader{ch, reads, bytes.NewReader(data)}, 1<<20)
 			errs <- err
 		})
 	}
@@ -138,7 +138,7 @@ func TestUploadQueue(t *testing.T) {
 	waitFor(t, "the queue to fill", func() bool { return len(e.svc.queue) == cap(e.svc.queue) })
 	waitFor(t, "the slot holder to read", func() bool { return reads.Load() > 0 })
 
-	_, err := e.svc.UploadPhoto(t.Context(), e.parent(t), bytes.NewReader(nil), 1<<20)
+	_, _, err := e.svc.UploadPhoto(t.Context(), e.parent(t), bytes.NewReader(nil), 1<<20)
 	wantProblem(t, "over the queue", err, http.StatusServiceUnavailable, apierr.CodeMediaBusy)
 	time.Sleep(20 * time.Millisecond) // a waiter reading now would be a bug; give it the chance
 	if n := reads.Load(); n != 1 {
@@ -162,12 +162,12 @@ func TestUploadQueuePerCaller(t *testing.T) {
 	release := e.blockedUploads(t, callers, &reads)
 	waitFor(t, "mom's uploads to queue", func() bool { return len(e.svc.queue) == MaxUploadsPerCaller })
 
-	_, err := e.svc.UploadPhoto(t.Context(), mom, bytes.NewReader(nil), 1<<20)
+	_, _, err := e.svc.UploadPhoto(t.Context(), mom, bytes.NewReader(nil), 1<<20)
 	wantProblem(t, "mom's third upload", err, http.StatusTooManyRequests, apierr.CodeRateLimited)
 	// Someone else still gets a place.
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := e.svc.UploadPhoto(cancelled, e.parent(t), bytes.NewReader(nil), 1<<20); !errors.Is(err, context.Canceled) {
+	if _, _, err := e.svc.UploadPhoto(cancelled, e.parent(t), bytes.NewReader(nil), 1<<20); !errors.Is(err, context.Canceled) {
 		t.Errorf("another parent's upload: err = %v, want it queued (then cancelled)", err)
 	}
 	release()
