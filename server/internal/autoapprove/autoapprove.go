@@ -16,6 +16,7 @@ package autoapprove
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -63,19 +64,28 @@ func (s *Service) Register(runner *jobs.Runner, sched *jobs.Scheduler, log *slog
 	sched.Add(jobs.Every("autoapprove", Kind, Interval))
 }
 
-// Run approves every submitted instance that is past its timeout and returns how many it
+// Run approves every submitted instance that is past its timeout (decided in SQL, so instances
+// that aren't due open no transaction) and returns how many it
 // approved. One instance failing doesn't stop the rest; the errors are joined.
 func (s *Service) Run(ctx context.Context) (int, error) {
-	rows, err := s.db.ListSubmittedInstancesForAutoApprove(ctx)
+	hh, err := s.db.GetHousehold(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil // before first-run setup
+	} else if err != nil {
+		return 0, fmt.Errorf("load household: %w", err)
+	}
+	ids, err := s.db.ListSubmittedInstancesForAutoApprove(ctx, sqlc.ListSubmittedInstancesForAutoApproveParams{
+		HouseholdHours: hh.AutoApproveHours, Now: db.Timestamp(s.clock.Now()),
+	})
 	if err != nil {
-		return 0, fmt.Errorf("list submitted instances: %w", err)
+		return 0, fmt.Errorf("list due instances: %w", err)
 	}
 	var approved int
 	var errs []error
-	for _, r := range rows {
-		ok, err := s.approve(ctx, r.ID)
+	for _, id := range ids {
+		ok, err := s.approve(ctx, id)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("auto-approve instance %d: %w", r.ID, err))
+			errs = append(errs, fmt.Errorf("auto-approve instance %d: %w", id, err))
 		} else if ok {
 			approved++
 		}

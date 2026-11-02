@@ -46,7 +46,7 @@ redo it. For auto-approve (#29): `instances.Approve(ctx, tx, clock, id, 0, "auto
 `created_by` NULL and that note, and `ErrNotSubmitted` means someone already decided, so the job skips it.
 
 Built (#29, `internal/autoapprove`, server only). Step 5 is the job kind `autoapprove.run`, scheduled every 5
-minutes (`jobs.Every`, wired in `background.go`). Each run lists `submitted` instances and approves, one
+minutes (`jobs.Every`, wired in `background.go`). Each run lists the `submitted` instances already past their timeout (decided in SQL) and approves, one
 transaction each, those whose latest submission (`completed_at`; a resubmission after a rejection restarts the
 clock) is older than the effective timeout. The timeout is the chore's `auto_approve_hours` (NULL = household
 default, **0 = never**, N = N hours), else the household's `auto_approve_hours` (NULL = never). Both are read at

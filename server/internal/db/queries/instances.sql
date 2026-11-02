@@ -110,10 +110,12 @@ WHERE i.occurrence_date >= ? AND i.occurrence_date <= ?
   AND r.id = (SELECT MAX(r2.id) FROM chore_instance_rejections r2 WHERE r2.instance_id = r.instance_id);
 
 -- name: ListSubmittedInstancesForAutoApprove :many
--- Submitted instances, oldest submission first, whose chore doesn't say "never" (0). The job
--- applies the household default and the timeout in Go.
-SELECT i.id, i.completed_at, c.auto_approve_hours
+-- Submitted instances past their timeout, oldest submission first: the chore's auto_approve_hours
+-- (0 = never), else the household's (NULL = never). now is a db.Timestamp. The partial index
+-- chore_instances_submitted serves it (asserted by a test).
+SELECT i.id
 FROM chore_instances i JOIN chores c ON c.id = i.chore_id
 WHERE i.status = 'submitted' AND i.completed_at IS NOT NULL
-  AND (c.auto_approve_hours IS NULL OR c.auto_approve_hours > 0)
+  AND COALESCE(c.auto_approve_hours, sqlc.narg(household_hours)) > 0
+  AND i.completed_at <= strftime('%Y-%m-%dT%H:%M:%fZ', sqlc.arg(now), '-' || COALESCE(c.auto_approve_hours, sqlc.narg(household_hours)) || ' hours')
 ORDER BY i.completed_at, i.id;

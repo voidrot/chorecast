@@ -496,34 +496,35 @@ func (q *Queries) ListLatestChoreInstanceRejectionsBetween(ctx context.Context, 
 }
 
 const listSubmittedInstancesForAutoApprove = `-- name: ListSubmittedInstancesForAutoApprove :many
-SELECT i.id, i.completed_at, c.auto_approve_hours
+SELECT i.id
 FROM chore_instances i JOIN chores c ON c.id = i.chore_id
 WHERE i.status = 'submitted' AND i.completed_at IS NOT NULL
-  AND (c.auto_approve_hours IS NULL OR c.auto_approve_hours > 0)
+  AND COALESCE(c.auto_approve_hours, ?1) > 0
+  AND i.completed_at <= strftime('%Y-%m-%dT%H:%M:%fZ', ?2, '-' || COALESCE(c.auto_approve_hours, ?1) || ' hours')
 ORDER BY i.completed_at, i.id
 `
 
-type ListSubmittedInstancesForAutoApproveRow struct {
-	ID               int64          `json:"id"`
-	CompletedAt      sql.NullString `json:"completed_at"`
-	AutoApproveHours sql.NullInt64  `json:"auto_approve_hours"`
+type ListSubmittedInstancesForAutoApproveParams struct {
+	HouseholdHours sql.NullInt64 `json:"household_hours"`
+	Now            interface{}   `json:"now"`
 }
 
-// Submitted instances, oldest submission first, whose chore doesn't say "never" (0). The job
-// applies the household default and the timeout in Go.
-func (q *Queries) ListSubmittedInstancesForAutoApprove(ctx context.Context) ([]ListSubmittedInstancesForAutoApproveRow, error) {
-	rows, err := q.db.QueryContext(ctx, listSubmittedInstancesForAutoApprove)
+// Submitted instances past their timeout, oldest submission first: the chore's auto_approve_hours
+// (0 = never), else the household's (NULL = never). now is a db.Timestamp. The partial index
+// chore_instances_submitted serves it (asserted by a test).
+func (q *Queries) ListSubmittedInstancesForAutoApprove(ctx context.Context, arg ListSubmittedInstancesForAutoApproveParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listSubmittedInstancesForAutoApprove, arg.HouseholdHours, arg.Now)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListSubmittedInstancesForAutoApproveRow{}
+	items := []int64{}
 	for rows.Next() {
-		var i ListSubmittedInstancesForAutoApproveRow
-		if err := rows.Scan(&i.ID, &i.CompletedAt, &i.AutoApproveHours); err != nil {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

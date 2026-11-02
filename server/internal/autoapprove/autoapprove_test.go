@@ -3,6 +3,9 @@ package autoapprove_test
 import (
 	"database/sql"
 	"log/slog"
+	"os"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,6 +132,66 @@ func (f *fixture) run(d time.Duration) int {
 }
 
 func ptr(n int) *int { return &n }
+
+// TestRecheckInTheTransaction: ApproveOne is what Run does for each listed instance. One that a
+// parent approved after the listing, or that was rejected and resubmitted after it, isn't approved.
+func TestRecheckInTheTransaction(t *testing.T) {
+	f := newFixture(t)
+	f.household(1)
+	decided := f.submitted(nil)
+	resubmitted := f.submitted(nil)
+	f.clk.Advance(2 * time.Hour) // both are due and would be listed
+
+	if _, err := f.inst.Approve(t.Context(), decided, f.mom); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := f.job.ApproveOne(t.Context(), decided); err != nil || ok {
+		t.Errorf("approved by a parent: ApproveOne = %v, %v; want a skip", ok, err)
+	}
+
+	if _, err := f.inst.Reject(t.Context(), resubmitted, f.mom, instances.Reason{Code: instances.ReasonNotDone}); err != nil {
+		t.Fatal(err)
+	}
+	f.complete(resubmitted) // submitted again just now
+	if ok, err := f.job.ApproveOne(t.Context(), resubmitted); err != nil || ok || f.status(resubmitted) != horizon.StatusSubmitted {
+		t.Errorf("resubmitted: ApproveOne = %v, %v, status %s; want a skip", ok, err, f.status(resubmitted))
+	}
+	var credits int
+	if err := f.db.SQL.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM points_entries").Scan(&credits); err != nil || credits != 1 {
+		t.Errorf("entries = %d, %v; want only the parent's credit", credits, err)
+	}
+}
+
+// TestListingUsesTheSubmittedIndex: the job's query must keep using the partial index, or its
+// cost grows with every instance ever created. The SQL is read from the generated code.
+func TestListingUsesTheSubmittedIndex(t *testing.T) {
+	f := newFixture(t)
+	src, err := os.ReadFile("../db/sqlc/instances.sql.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile("(?s)const listSubmittedInstancesForAutoApprove = `(.*?)`").FindSubmatch(src)
+	if m == nil {
+		t.Fatal("generated query not found")
+	}
+	rows, err := f.db.SQL.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+string(m[1]), 1, db.Timestamp(saturday))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if got := strings.Join(plan, "\n"); !strings.Contains(got, "chore_instances_submitted") {
+		t.Errorf("plan does not use chore_instances_submitted:\n%s", got)
+	}
+}
 
 func TestHouseholdDefaultTimeout(t *testing.T) {
 	f := newFixture(t)
