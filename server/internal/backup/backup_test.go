@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/backup"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/config"
@@ -26,6 +27,7 @@ import (
 	"github.com/voidrot/chorecast/server/internal/db/sqlc"
 	"github.com/voidrot/chorecast/server/internal/jobs"
 	"github.com/voidrot/chorecast/server/internal/media"
+	"github.com/voidrot/chorecast/server/internal/paging"
 )
 
 var start = time.Date(2026, 11, 4, 18, 0, 0, 0, time.UTC) // Wednesday 12:00 in Chicago
@@ -172,7 +174,7 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	target := filepath.Join(t.TempDir(), "data")
-	m, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{})
+	m, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +187,10 @@ func TestRoundTrip(t *testing.T) {
 			t.Errorf("a successful restore left %s behind", e.Name())
 		}
 	}
-	if got, want := tableCounts(t, target), tableCounts(t, src); !equalCounts(got, want) {
+	// The restore itself is the one row the source did not have.
+	wantCounts := tableCounts(t, src)
+	wantCounts["audit_log"]++
+	if got, want := tableCounts(t, target), wantCounts; !equalCounts(got, want) {
 		t.Errorf("row counts after restore:\n got  %v\n want %v", got, want)
 	}
 	want := mediaHashes(t, src)
@@ -313,6 +318,23 @@ func TestScheduledBackup(t *testing.T) {
 	if after, _ := os.ReadFile(first); !bytes.Equal(before, after) { //nolint:gosec // test file
 		t.Error("a retry rewrote the existing backup")
 	}
+	// One row per backup, however often the job ran, and the retry after a lost row records it.
+	if rows := backupRows(t, store); len(rows) != 1 || rows[0].ActorKind != audit.ActorSystem ||
+		rows[0].Summary != backup.FileName(firstAt) || rows[0].Details.Bytes != int64(len(before)) ||
+		rows[0].Details.MediaFiles == nil || *rows[0].Details.MediaFiles != 3 {
+		t.Fatalf("audit rows after a backup and a retry: %+v", rows)
+	}
+	if _, err := store.SQL.ExecContext(t.Context(), `DELETE FROM audit_log`); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := svc.Run(t.Context(), firstAt, log); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rows := backupRows(t, store); len(rows) != 1 || rows[0].Details.Bytes != int64(len(before)) {
+		t.Fatalf("audit rows after retries that found the archive: %+v", rows)
+	}
 	// Ten more days, one tick each: still only the newest seven.
 	var got []string
 	for i := 1; i <= 10; i++ {
@@ -339,13 +361,13 @@ func TestRestoreRefusesWhileServerHoldsLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Force: true}); !errors.Is(err, db.ErrDataDirLocked) {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start), Force: true}); !errors.Is(err, db.ErrDataDirLocked) {
 		t.Fatalf("restore while locked: %v, want ErrDataDirLocked", err)
 	}
 	if err := lock.Unlock(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); err != nil {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start)}); err != nil {
 		t.Fatalf("restore after unlock: %v", err)
 	}
 }
@@ -364,13 +386,13 @@ func TestRestoreRefusesDataDirWithData(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := mediaHashes(t, src)
-	if _, err := backup.Restore(t.Context(), out, src, backup.RestoreOptions{}); !errors.Is(err, backup.ErrNotEmpty) {
+	if _, err := backup.Restore(t.Context(), out, src, backup.RestoreOptions{Clock: clock.NewFake(start)}); !errors.Is(err, backup.ErrNotEmpty) {
 		t.Fatalf("restore over data: %v, want ErrNotEmpty", err)
 	}
 	if got := mediaHashes(t, src); !equalCounts(got, before) {
 		t.Error("a refused restore changed the media")
 	}
-	if _, err := backup.Restore(t.Context(), out, src, backup.RestoreOptions{Force: true}); err != nil {
+	if _, err := backup.Restore(t.Context(), out, src, backup.RestoreOptions{Clock: clock.NewFake(start), Force: true}); err != nil {
 		t.Fatalf("forced restore: %v", err)
 	}
 	store, err := db.Open(t.Context(), src)
@@ -395,7 +417,7 @@ func TestRestoreRefusesNewerSchema(t *testing.T) {
 	}
 	out := writeBackup(t, src, clk)
 	target := t.TempDir()
-	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrNewerSchema) {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start)}); !errors.Is(err, backup.ErrNewerSchema) {
 		t.Fatalf("restore newer schema: %v, want ErrNewerSchema", err)
 	}
 	assertUntouched(t, target)
@@ -408,7 +430,7 @@ func TestRestoreRefusesNewerSchema(t *testing.T) {
 		}
 		return editManifest(t, body, func(m *backup.Manifest) { m.SchemaVersion = 999 })
 	})
-	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrNewerSchema) {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start)}); !errors.Is(err, backup.ErrNewerSchema) {
 		t.Fatalf("restore with a newer manifest: %v, want ErrNewerSchema", err)
 	}
 }
@@ -439,7 +461,7 @@ func TestRestoreMigratesOlderSchema(t *testing.T) {
 		{hdr: tar.Header{Name: "manifest.json", Typeflag: tar.TypeReg}, body: manifest},
 	})
 	target := t.TempDir()
-	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); err != nil {
+	if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start)}); err != nil {
 		t.Fatal(err)
 	}
 	conn, err = sql.Open("sqlite", "file:"+filepath.Join(target, db.FileName)+"?mode=ro")
@@ -482,7 +504,7 @@ func TestRestoreRefusesUnsafeEntries(t *testing.T) {
 			out := buildArchive(t, entries)
 			parent := t.TempDir()
 			target := filepath.Join(parent, "data")
-			if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrInvalidArchive) {
+			if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start)}); !errors.Is(err, backup.ErrInvalidArchive) {
 				t.Fatalf("restore: %v, want ErrInvalidArchive", err)
 			}
 			for _, p := range []string{filepath.Join(parent, "evil"), "/tmp/evil"} {
@@ -497,7 +519,7 @@ func TestRestoreRefusesUnsafeEntries(t *testing.T) {
 	t.Run("duplicate entry", func(t *testing.T) {
 		out := buildArchive(t, append(good, good[0]))
 		target := t.TempDir()
-		if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrInvalidArchive) {
+		if _, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start)}); !errors.Is(err, backup.ErrInvalidArchive) {
 			t.Fatalf("restore: %v, want ErrInvalidArchive", err)
 		}
 	})
@@ -543,7 +565,7 @@ func TestRestoreRefusesCorruptArchive(t *testing.T) {
 	for name, archive := range cases {
 		t.Run(name, func(t *testing.T) {
 			target := t.TempDir()
-			if _, err := backup.Restore(t.Context(), archive, target, backup.RestoreOptions{}); !errors.Is(err, backup.ErrInvalidArchive) {
+			if _, err := backup.Restore(t.Context(), archive, target, backup.RestoreOptions{Clock: clock.NewFake(start)}); !errors.Is(err, backup.ErrInvalidArchive) {
 				t.Fatalf("restore: %v, want ErrInvalidArchive", err)
 			}
 			assertUntouched(t, target)
@@ -689,4 +711,13 @@ func writeFile(t *testing.T, b []byte) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func backupRows(t *testing.T, store *db.DB) []audit.AuditEntry {
+	t.Helper()
+	page, err := audit.New(store).List(t.Context(), audit.Filter{Action: audit.ActionBackupCreated}, paging.Params{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page.Items
 }

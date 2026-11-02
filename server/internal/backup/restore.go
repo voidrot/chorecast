@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
+	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
 )
 
@@ -52,6 +54,8 @@ type RestoreOptions struct {
 	// MaxBytes caps what the restore extracts in total. Zero means the free space on the data
 	// dir's disk minus a 256 MiB margin.
 	MaxBytes int64
+	// Clock dates the restore_completed audit row.
+	Clock clock.Clock
 }
 
 // Restore replaces the database and media in dataDir with the archive's.
@@ -145,7 +149,24 @@ func Restore(ctx context.Context, archive, dataDir string, opts RestoreOptions) 
 	if err != nil {
 		return Manifest{}, err // undone: dataDir is as it was
 	}
+	// The restored database is in place and the data dir still locked: record the restore in it.
+	if err := recordRestored(ctx, dataDir, archive, m, opts); err != nil {
+		return m, fmt.Errorf("backup: restored, but recording it in the audit log failed: %w", err)
+	}
 	return m, nil
+}
+
+func recordRestored(ctx context.Context, dataDir, archive string, m Manifest, opts RestoreOptions) error {
+	store, err := db.Open(ctx, dataDir)
+	if err != nil {
+		return err
+	}
+	forced := opts.Force
+	recErr := audit.Record(ctx, store.Queries, opts.Clock.Now(), audit.Entry{
+		Actor: audit.CLI, Action: audit.ActionRestoreCompleted, TargetKind: audit.TargetBackup, Summary: filepath.Base(archive),
+		Details: audit.AuditDetails{AppVersion: m.AppVersion, SchemaVer: m.SchemaVersion, Forced: &forced},
+	})
+	return errors.Join(recErr, store.Close())
 }
 
 // dataNames are what a restore replaces in the data dir. The WAL files go with the database: a

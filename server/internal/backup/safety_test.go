@@ -77,7 +77,7 @@ func TestRestoreSwapFailureIsUndone(t *testing.T) {
 		}
 		return os.Rename(from, to)
 	})
-	_, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Force: true})
+	_, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Clock: clock.NewFake(start), Force: true})
 	if !errors.Is(err, syscall.EIO) {
 		t.Fatalf("restore: %v, want the move-in failure", err)
 	}
@@ -107,7 +107,7 @@ func TestRestoreFailedUndoKeepsStage(t *testing.T) {
 		}
 		return os.Rename(from, to)
 	})
-	_, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Force: true})
+	_, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Clock: clock.NewFake(start), Force: true})
 	stages := stagingDirs(t, dir)
 	if len(stages) != 1 {
 		t.Fatalf("restore: %v; staging dirs %v, want the one holding the previous data", err, stages)
@@ -122,7 +122,7 @@ func TestRestoreFailedUndoKeepsStage(t *testing.T) {
 	if err := db.CheckRestoreMarker(dir); !errors.Is(err, db.ErrRestoreInterrupted) || !strings.Contains(err.Error(), old) {
 		t.Errorf("marker check: %v, want ErrRestoreInterrupted naming %s", err, old)
 	}
-	if _, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Force: true}); !errors.Is(err, db.ErrRestoreInterrupted) {
+	if _, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Clock: clock.NewFake(start), Force: true}); !errors.Is(err, db.ErrRestoreInterrupted) {
 		t.Errorf("restore after an interrupted one: %v, want ErrRestoreInterrupted", err)
 	}
 	if _, err := os.Stat(old); err != nil {
@@ -135,7 +135,7 @@ func TestRestoreRefusesWhileMarked(t *testing.T) {
 	if err := db.WriteRestoreMarker(dir, filepath.Join(dir, ".restore-1", "old")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Force: true}); !errors.Is(err, db.ErrRestoreInterrupted) {
+	if _, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Clock: clock.NewFake(start), Force: true}); !errors.Is(err, db.ErrRestoreInterrupted) {
 		t.Fatalf("restore: %v, want ErrRestoreInterrupted", err)
 	}
 	if got := householdName(t, dir); got != "Changed" {
@@ -152,7 +152,7 @@ func TestRestoreRefusesSymlinkedMedia(t *testing.T) {
 	if err := os.Symlink(elsewhere, filepath.Join(dir, "media")); err != nil {
 		t.Fatal(err)
 	}
-	_, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Force: true})
+	_, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Clock: clock.NewFake(start), Force: true})
 	if !errors.Is(err, backup.ErrLinkedData) {
 		t.Fatalf("restore: %v, want ErrLinkedData", err)
 	}
@@ -168,7 +168,7 @@ func TestRestoreBudget(t *testing.T) {
 
 	t.Run("total", func(t *testing.T) {
 		target := t.TempDir()
-		if _, err := backup.Restore(t.Context(), archive, target, backup.RestoreOptions{MaxBytes: 1000}); !errors.Is(err, backup.ErrTooLarge) {
+		if _, err := backup.Restore(t.Context(), archive, target, backup.RestoreOptions{Clock: clock.NewFake(start), MaxBytes: 1000}); !errors.Is(err, backup.ErrTooLarge) {
 			t.Fatalf("restore over budget: %v, want ErrTooLarge", err)
 		}
 		assertUntouched(t, target)
@@ -182,7 +182,7 @@ func TestRestoreBudget(t *testing.T) {
 		}
 		target := t.TempDir()
 		// Within a 1 GiB budget, so only the sparse check (not the budget) can refuse it as invalid.
-		_, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{MaxBytes: 1 << 30})
+		_, err := backup.Restore(t.Context(), out, target, backup.RestoreOptions{Clock: clock.NewFake(start), MaxBytes: 1 << 30})
 		if !errors.Is(err, backup.ErrInvalidArchive) {
 			t.Fatalf("restore sparse: %v, want ErrInvalidArchive", err)
 		}
@@ -193,7 +193,7 @@ func TestRestoreBudget(t *testing.T) {
 		target := t.TempDir()
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		if _, err := backup.Restore(ctx, archive, target, backup.RestoreOptions{}); !errors.Is(err, context.Canceled) {
+		if _, err := backup.Restore(ctx, archive, target, backup.RestoreOptions{Clock: clock.NewFake(start)}); !errors.Is(err, context.Canceled) {
 			t.Fatalf("cancelled restore: %v", err)
 		}
 		assertUntouched(t, target)

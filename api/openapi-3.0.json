@@ -109,6 +109,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "appVersion": {
+            "description": "restore_completed: the Chorecast version that took the backup",
+            "type": "string"
+          },
+          "bytes": {
+            "description": "backup_created: the archive's size",
+            "format": "int64",
+            "type": "integer"
+          },
           "changes": {
             "description": "settings_updated: each setting that changed",
             "items": {
@@ -116,6 +125,10 @@
             },
             "nullable": true,
             "type": "array"
+          },
+          "forced": {
+            "description": "restore_completed: whether --force replaced existing data",
+            "type": "boolean"
           },
           "kidId": {
             "description": "points_*: the kid; device_paired: the kid it belongs to (absent = a shared device)",
@@ -130,6 +143,11 @@
             },
             "nullable": true,
             "type": "array"
+          },
+          "mediaFiles": {
+            "description": "backup_created: media files archived (absent when a retry found the archive already written)",
+            "format": "int64",
+            "type": "integer"
           },
           "note": {
             "description": "points_*: the note",
@@ -155,6 +173,11 @@
               "owner"
             ],
             "type": "string"
+          },
+          "schemaVersion": {
+            "description": "restore_completed: the backup's schema version",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -181,7 +204,9 @@
               "device_paired",
               "device_revoked",
               "kid_archived",
-              "kid_unarchived"
+              "kid_unarchived",
+              "backup_created",
+              "restore_completed"
             ],
             "type": "string"
           },
@@ -233,7 +258,8 @@
               "invite",
               "parent",
               "device",
-              "kid"
+              "kid",
+              "backup"
             ],
             "type": "string"
           }

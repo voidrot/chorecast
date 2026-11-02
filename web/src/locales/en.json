@@ -770,7 +770,9 @@
       "device_paired": "Paired {target}",
       "device_revoked": "Unpaired {target}",
       "kid_archived": "Archived {target}",
-      "kid_unarchived": "Unarchived {target}"
+      "kid_unarchived": "Unarchived {target}",
+      "backup_created": "Took backup {target}",
+      "restore_completed": "Restored the household from {target}"
     },
     "actionNames": {
       "settings_updated": "Settings changed",
@@ -790,7 +792,9 @@
       "device_paired": "Device paired",
       "device_revoked": "Device unpaired",
       "kid_archived": "Kid archived",
-      "kid_unarchived": "Kid unarchived"
+      "kid_unarchived": "Kid unarchived",
+      "backup_created": "Backup taken",
+      "restore_completed": "Restored from a backup"
     },
     "detail": {
       "change": "{field}: {from} → {to}",

@@ -476,6 +476,9 @@ CREATE TABLE audit_log (
 );
 CREATE UNIQUE INDEX audit_log_once ON audit_log (event_id, created_at) WHERE event_id IS NOT NULL;
 CREATE INDEX audit_log_by_age ON audit_log (created_at);
+-- A scheduled backup's file name is its occurrence, so a retried job (#121) records it once. CLI backups
+-- may reuse a name (--out), so they are not keyed.
+CREATE UNIQUE INDEX audit_log_backup_once ON audit_log (summary) WHERE action = 'backup_created' AND actor_kind = 'system';
 
 -- ==== Kid photo avatars (#88) ====
 -- A kid has at most one ready avatar photo: media with owner_kind 'kid_avatar' and owner_id = the kid.

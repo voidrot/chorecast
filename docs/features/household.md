@@ -228,9 +228,16 @@ when run through `chorecast admin`), device pairing (the parent who made the cod
 unarchive, and manual points reversals (their `points.entry_posted` looks like an un-approval's). `GET /audit`
 (`server:manage`, so owners only) pages newest first and filters by `actorKind`, `actorId`, `action` and
 household-local `from`/`to` days. The web admin's Audit log screen (owners only) shows it with those filters and
-Load more. Not recorded yet: backups and restores (#121: `audit.Record` with `audit.CLI`, or `audit.System` for
-scheduled backups, and a restore writes into the restored database after the swap), kiosk toggles, exports, chore
-deletion, reassignment, and parents' own password, 2FA and PIN changes.
+Load more. Not recorded yet: kiosk toggles, exports, chore deletion, reassignment, and parents' own password, 2FA
+and PIN changes.
+
+Built (#121): backups and restores. `backup_created` (target kind `backup`, summary the archive's file name, details
+size and media count) is written by the scheduled job (actor `system`) and by `chorecast backup` (actor `cli`) after
+the snapshot, so the row is not in its own archive. A scheduled backup is recorded once per file name (a unique
+index), so a retried job adds nothing, and a retry that finds the archive but no row records it with the size only.
+The CLI writes through its own connection, which is safe beside a running server (WAL, 5 s busy timeout).
+`restore_completed` (actor `cli`; details the manifest's app and schema versions and whether `--force` was used) is
+written into the restored database after the swap, beside the rows that came with the archive.
 
 ## i18n
 

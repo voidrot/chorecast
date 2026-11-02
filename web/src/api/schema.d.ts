@@ -1518,8 +1518,17 @@ export interface components {
              * @description points_*: the signed points posted
              */
             amount?: number;
+            /** @description restore_completed: the Chorecast version that took the backup */
+            appVersion?: string;
+            /**
+             * Format: int64
+             * @description backup_created: the archive's size
+             */
+            bytes?: number;
             /** @description settings_updated: each setting that changed */
             changes?: components["schemas"]["AuditChange"][] | null;
+            /** @description restore_completed: whether --force replaced existing data */
+            forced?: boolean;
             /**
              * Format: int64
              * @description points_*: the kid; device_paired: the kid it belongs to (absent = a shared device)
@@ -1527,6 +1536,11 @@ export interface components {
             kidId?: number;
             /** @description chore_*: the assignee, or a shared chore's members */
             kidIds?: number[] | null;
+            /**
+             * Format: int64
+             * @description backup_created: media files archived (absent when a retry found the archive already written)
+             */
+            mediaFiles?: number;
             /** @description points_*: the note */
             note?: string;
             /** @description chore_rejected: the quick-pick reason */
@@ -1543,10 +1557,15 @@ export interface components {
              * @enum {string}
              */
             role?: "parent" | "owner";
+            /**
+             * Format: int64
+             * @description restore_completed: the backup's schema version
+             */
+            schemaVersion?: number;
         };
         AuditEntry: {
             /** @enum {string} */
-            action: "settings_updated" | "chore_approved" | "chore_rejected" | "chore_unapproved" | "chore_excused" | "points_adjusted" | "points_reversed" | "invite_created" | "invite_revoked" | "invite_accepted" | "parent_role_changed" | "parent_removed" | "parent_password_reset" | "parent_totp_disabled" | "device_paired" | "device_revoked" | "kid_archived" | "kid_unarchived";
+            action: "settings_updated" | "chore_approved" | "chore_rejected" | "chore_unapproved" | "chore_excused" | "points_adjusted" | "points_reversed" | "invite_created" | "invite_revoked" | "invite_accepted" | "parent_role_changed" | "parent_removed" | "parent_password_reset" | "parent_totp_disabled" | "device_paired" | "device_revoked" | "kid_archived" | "kid_unarchived" | "backup_created" | "restore_completed";
             /**
              * Format: int64
              * @description The parent who acted
@@ -1578,7 +1597,7 @@ export interface components {
              * @description What targetId is
              * @enum {string}
              */
-            targetKind: "household" | "instance" | "points_entry" | "invite" | "parent" | "device" | "kid";
+            targetKind: "household" | "instance" | "points_entry" | "invite" | "parent" | "device" | "kid" | "backup";
         };
         BeginTOTPOutputBody: {
             /** @description otpauth:// URL to show as a QR code */

@@ -57,7 +57,7 @@ func main() {
 		if cmd == "backup" {
 			err = backupCmd(ctx, os.Args[2:], dataDir, clock.Real{}, os.Stdout)
 		} else {
-			err = restoreCmd(ctx, os.Args[2:], dataDir, os.Stdout)
+			err = restoreCmd(ctx, os.Args[2:], dataDir, clock.Real{}, os.Stdout)
 		}
 		stop()
 	case "openapi":

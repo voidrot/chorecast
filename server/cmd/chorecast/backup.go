@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/backup"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
@@ -55,9 +56,24 @@ func backupCmd(ctx context.Context, args []string, dataDir string, clk clock.Clo
 	if err != nil {
 		return err
 	}
+	// After the snapshot, so the row is not in the archive. A normal connection of its own is safe
+	// beside a running server: the database is in WAL mode with a busy timeout, and SQLite allows
+	// writers from several processes.
+	if err := recordBackup(ctx, dataDir, res); err != nil {
+		return fmt.Errorf("wrote %s, but recording it in the audit log failed: %w", res.Path, err)
+	}
 	_, err = fmt.Fprintf(out, "Wrote %s (%d bytes): schema %d, %d tables, %d media files (%d bytes). The snapshot took %s.\n",
 		res.Path, res.Size, res.SchemaVersion, len(res.Tables), res.MediaFiles, res.MediaBytes, res.Snapshot)
 	return err
+}
+
+func recordBackup(ctx context.Context, dataDir string, res backup.Result) error {
+	store, err := db.Open(ctx, dataDir)
+	if err != nil {
+		return err
+	}
+	recErr := backup.RecordCreated(ctx, store.Queries, res.CreatedAt, audit.CLI, res.Path, res.Size, &res.MediaFiles)
+	return errors.Join(recErr, store.Close())
 }
 
 // blockRestore is what the commands that work beside a running server (admin, backup) take
@@ -76,7 +92,7 @@ func blockRestore(dataDir string) (func(), error) {
 }
 
 // restoreCmd runs "chorecast restore" into dataDir. --force may come before or after the file.
-func restoreCmd(ctx context.Context, args []string, dataDir string, out io.Writer) error {
+func restoreCmd(ctx context.Context, args []string, dataDir string, clk clock.Clock, out io.Writer) error {
 	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	force := fs.Bool("force", false, "replace the data dir's existing data")
@@ -87,7 +103,7 @@ func restoreCmd(ctx context.Context, args []string, dataDir string, out io.Write
 	if err := fs.Parse(fs.Args()[1:]); err != nil || fs.NArg() != 0 {
 		return errors.New(restoreUsage)
 	}
-	m, err := backup.Restore(ctx, file, dataDir, backup.RestoreOptions{Force: *force})
+	m, err := backup.Restore(ctx, file, dataDir, backup.RestoreOptions{Force: *force, Clock: clk})
 	if err != nil {
 		return err
 	}

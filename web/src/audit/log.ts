@@ -24,6 +24,8 @@ const actions: Record<AuditAction, true> = {
   device_revoked: true,
   kid_archived: true,
   kid_unarchived: true,
+  backup_created: true,
+  restore_completed: true,
 }
 
 /** Every action, in the order the action filter lists them. */
