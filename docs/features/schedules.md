@@ -114,6 +114,10 @@ group size (rounded up).
   constraint, so generation is idempotent.
 - Instances are **untouched** when `status = open`, no evidence, no swap, and not manually reassigned.
 - **Chore edited**: delete untouched instances from tomorrow on (today too if the due slot hasn't passed and it's untouched) and regenerate.
+  A slot added or moved later today isn't created today for a kid who already has a kept instance of the chore today
+  (done, or already due): the edit takes full effect tomorrow.
+- An instance without a slot is due at its kid's own day close (`dayEndOverride`), or week close when flexible. A
+  shared instance is due at the household day end.
 - **Away / pause added**: untouched instances in the range are removed (no penalty) and the range is regenerated
   (rotation/auto pick someone else; `fixed`/`everyone` simply skip).
 - Rotation cursors and auto loads are computed in generation order, so future instances are a forecast and may shift if things change. The UI should say "planned" for days after today.
@@ -122,15 +126,17 @@ Built (#23, `internal/horizon`): the `chore_instances` table holds one row per i
 `(chore_id, occurrence_date, slot, seq, kid)` (unique; `seq` numbers a flexible week's completions, `kid_id` is NULL
 for a shared instance, whose group is in `chore_instance_members`). `status` is `open`, `submitted`, `approved`,
 `missed` or `excused`; `flexible`, `auto_assigned` and `manually_reassigned` are flags. `horizon.Generator.Generate`
-regenerates the whole household in one transaction, at each household day end (`HouseholdDayCloses`), once at
+regenerates the whole household in one transaction (ids are never reused: `AUTOINCREMENT`), at each household day end (`HouseholdDayCloses`), once at
 startup, and on `household.calendar_changed`, `chore.changed` and `kid.changed`. Instances that are touched
 (not `open`, or manually reassigned) or already due are frozen; the others in the horizon are re-planned and updated
 in place when their identity is unchanged, so a second run changes nothing. Occurrences already due when planned
 (a slot earlier today) get no instance. Flexible chores are expanded from the week start, so this week's
-completions stay in the horizon until week close. The fairness ledger starts with the frozen instances of the
-past week; chores are planned by id and occurrences in order. Each rotation instance stores the state after its
-turn; `chores.rotation_state` is the state after the chore's last instance before the horizon, and editing the
-rotation's mode or kids clears both, so it restarts from its first kid. `GET /instances?kidId&from&to` (default
+completions stay in the horizon until week close. The fairness ledger starts with the frozen instances from a
+week before this week's start; chores are planned by id and occurrences in order. Each rotation instance stores the
+state after its turn; `chores.rotation_state` is the state after the chore's last instance before the horizon, the
+walk takes each kept instance's state in turn order (even one whose slot was since removed), and editing the
+rotation's mode or kids clears both, so it restarts from its first kid. A chore with history (an instance that's
+touched or already due) can't be deleted (409 `chore_has_history`); parents disable it. `GET /instances?kidId&from&to` (default
 today to today+7, at most 62 days, `chores:read`) lists instances with `planned` for days after today; kids get only
 their own, including shared ones they're a member of (`CanAccessKid`). Evidence (#27) must extend the "untouched"
 check in `horizon.existing.untouched`.

@@ -504,10 +504,21 @@ func writeLinks(ctx context.Context, q *sqlc.Queries, id int64, in ChoreInput) e
 	return nil
 }
 
-// Delete removes a chore and all its instances, history included; parents disable a chore
-// to keep its history.
+// Delete removes a chore and its open instances. Once a chore has history (an instance that's
+// touched or already due), parents disable it instead: Delete answers 409 chore_has_history.
 func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.inTx(ctx, func(q *sqlc.Queries, emit func(events.Event) error) error {
+		history, err := q.ChoreHasHistory(ctx, sqlc.ChoreHasHistoryParams{ChoreID: id, DueAt: db.Timestamp(s.clock.Now())})
+		if err != nil {
+			return err
+		}
+		if history {
+			return apierr.New(http.StatusConflict, apierr.CodeChoreHasHistory,
+				"this chore has history (done, missed or past instances); disable it instead")
+		}
+		if err := q.DeleteChoreInstances(ctx, id); err != nil {
+			return err
+		}
 		n, err := q.DeleteChore(ctx, id)
 		if err != nil {
 			return err

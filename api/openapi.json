@@ -4057,6 +4057,7 @@
     },
     "/chores/{id}": {
       "delete": {
+        "description": "Deletes the chore and its upcoming instances. A chore with history (an instance that's done, missed, reassigned or already due) can't be deleted: disable it instead (409 `chore_has_history`).",
         "operationId": "deleteChore",
         "parameters": [
           {
@@ -4082,6 +4083,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {

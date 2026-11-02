@@ -1,12 +1,15 @@
 package horizon_test
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/assign"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/chores"
@@ -234,8 +237,8 @@ func TestEditMidWeekKeepsPassedSlotsAndTouchedInstances(t *testing.T) {
 	if _, ok := after["2026-11-04 18:00 #0 kid 1"]; ok {
 		t.Error("today's untouched 18:00 instance wasn't regenerated")
 	}
-	if _, ok := after["2026-11-04 19:00 #0 kid 1"]; !ok {
-		t.Error("today's new 19:00 slot is missing")
+	if _, ok := after["2026-11-04 19:00 #0 kid 1"]; ok {
+		t.Error("today's new 19:00 slot was created; with a kept instance today the edit starts tomorrow")
 	}
 	if got := after["2026-11-06 07:00 #0 kid 1"]; got.ID != submitted.ID || got.Status != horizon.StatusSubmitted {
 		t.Errorf("submitted instance not preserved: %+v", got)
@@ -250,8 +253,8 @@ func TestEditMidWeekKeepsPassedSlotsAndTouchedInstances(t *testing.T) {
 	if after["2026-11-08 07:00 #0 kid 1"].ID != before["2026-11-08 07:00 #0 kid 1"].ID {
 		t.Error("an unchanged future instance got a new row")
 	}
-	if n := len(after); n != 2*8+1 {
-		t.Errorf("%d instances, want 16 slots + the kept 18:00: %v", n, keys(f.list()))
+	if n := len(after); n != 2*8 {
+		t.Errorf("%d instances, want today's kept 07:00, 7 days x 2 slots and the kept 18:00: %v", n, keys(f.list()))
 	}
 }
 
@@ -483,5 +486,208 @@ func TestAutoPickIsReproducible(t *testing.T) {
 	}
 	if !slices.Equal(keys(f.list()), first) {
 		t.Error("auto-pick changed on re-run")
+	}
+}
+
+// Removing a slot whose turn is kept doesn't hand the next turn to the same kid.
+func TestRotationResumesFromAKeptTurnTheScheduleDropped(t *testing.T) {
+	f := newFixture(t)
+	sam, ada := f.kid("Sam"), f.kid("Ada")
+	c := f.chore(chores.ChoreInput{Name: "Walk the dog", Slots: []string{"07:00", "18:00"}, Schedule: daily("2026-11-01"),
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeRotation, KidIDs: []int64{sam, ada}}})
+	f.clock.Set(time.Date(2026, 11, 4, 6, 0, 0, 0, time.UTC)) // Wednesday 00:00 local
+	f.generate()
+	f.clock.Set(wednesdayNoon) // the 07:00 turn (Sam) is now kept
+	c.Slots = []string{"18:00"}
+	f.update(c)
+	f.generate()
+
+	turns := map[string]int64{}
+	for _, i := range f.list() {
+		turns[i.Date.String()+" "+i.Slot] = i.KidID
+	}
+	if turns["2026-11-04 07:00"] != sam || turns["2026-11-04 18:00"] != ada {
+		t.Errorf("today: 07:00 kid %d, 18:00 kid %d; want Sam then Ada", turns["2026-11-04 07:00"], turns["2026-11-04 18:00"])
+	}
+	if turns["2026-11-05 18:00"] != sam || turns["2026-11-06 18:00"] != ada {
+		t.Errorf("following days: %v", turns)
+	}
+}
+
+// A flexible chore's pick weighs the week before its week start, so it doesn't change as the
+// week goes on.
+func TestFlexibleAutoPickIsStableThroughTheWeek(t *testing.T) {
+	f := newFixture(t)
+	sam, ada := f.kid("Sam"), f.kid("Ada")
+	ten := 10
+	other := f.chore(chores.ChoreInput{Name: "Old chore", EstimatedMinutes: &ten})
+	f.exec(`INSERT INTO chore_instances (chore_id, kid_id, occurrence_date, due_at, status, created_at, updated_at)
+		VALUES (?, ?, '2026-10-27', '2026-10-28T02:00:00.000Z', 'approved', '', '')`, other.ID, sam)
+	f.chore(chores.ChoreInput{Name: "Clean the car", EstimatedMinutes: &ten, Schedule: &schedule.ScheduleRule{
+		Type: schedule.TypeFlexibleWeekly, StartDate: date("2026-10-01"), TimesPerWeek: 1,
+	}, Assignment: &chores.ChoreAssignment{Mode: assign.ModeAuto}})
+
+	pick := func() int64 {
+		t.Helper()
+		for _, i := range f.list() {
+			if i.Date == date("2026-11-01") && i.Flexible {
+				return i.KidID
+			}
+		}
+		t.Fatal("no flexible instance this week")
+		return 0
+	}
+	f.clock.Set(time.Date(2026, 11, 1, 18, 0, 0, 0, time.UTC)) // Sunday noon
+	f.generate()
+	if got := pick(); got != ada {
+		t.Fatalf("Sunday pick = kid %d, want Ada (Sam did 10 minutes on Tuesday)", got)
+	}
+	f.clock.Set(wednesdayNoon)
+	if res := f.generate(); res != (horizon.Result{}) { // next week's instance exists since Sunday
+		t.Errorf("Wednesday run = %+v, want no changes", res)
+	}
+	if got := pick(); got != ada {
+		t.Errorf("Wednesday pick = kid %d, want the same as Sunday (Ada)", got)
+	}
+}
+
+func maxInstanceID(t *testing.T, f *fixture) int64 {
+	t.Helper()
+	var id sql.NullInt64
+	if err := f.db.SQL.QueryRowContext(t.Context(), "SELECT MAX(id) FROM chore_instances").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id.Int64
+}
+
+func TestInstanceIDsAreNeverReused(t *testing.T) {
+	f := newFixture(t)
+	f.kid("Sam")
+	a := f.chore(chores.ChoreInput{Name: "Dishes", Schedule: daily("2026-11-01")})
+	f.generate()
+	high := maxInstanceID(t, f)
+
+	a.Disabled = true // regeneration deletes its open instances
+	f.update(a)
+	f.generate()
+	f.chore(chores.ChoreInput{Name: "Laundry", Schedule: daily("2026-11-01")})
+	f.generate()
+	for _, i := range f.list() {
+		if i.ID <= high {
+			t.Errorf("instance %d reuses the id of a deleted one (max was %d)", i.ID, high)
+		}
+	}
+	high = maxInstanceID(t, f)
+
+	b := f.chore(chores.ChoreInput{Name: "Vacuum", Schedule: daily("2026-11-20")}) // no instances yet
+	f.generate()
+	if err := f.chores.Delete(t.Context(), b.ID); err != nil {
+		t.Fatal(err)
+	}
+	b = f.chore(chores.ChoreInput{Name: "Vacuum", Schedule: daily("2026-11-01")})
+	f.generate()
+	for _, i := range f.list() {
+		if i.ChoreID == b.ID && i.ID <= high {
+			t.Errorf("instance %d reuses an old id after a chore delete (max was %d)", i.ID, high)
+		}
+	}
+}
+
+func TestDeleteChoreKeepsHistory(t *testing.T) {
+	f := newFixture(t)
+	f.kid("Sam")
+	upcoming := f.chore(chores.ChoreInput{Name: "Dishes", Schedule: daily("2026-11-01")})
+	done := f.chore(chores.ChoreInput{Name: "Laundry", Schedule: daily("2026-11-01")})
+	past := f.chore(chores.ChoreInput{Name: "Feed the dog", Slots: []string{"07:00"}, Schedule: daily("2026-11-01")})
+	f.clock.Set(time.Date(2026, 11, 4, 6, 0, 0, 0, time.UTC)) // Wednesday 00:00: 07:00 is still ahead
+	f.generate()
+	f.clock.Set(wednesdayNoon) // ... and now it has passed
+	var approved int64
+	for _, i := range f.list() {
+		if i.ChoreID == done.ID {
+			approved = i.ID
+			break
+		}
+	}
+	f.exec("UPDATE chore_instances SET status = 'approved' WHERE id = ?", approved)
+
+	for name, c := range map[string]chores.Chore{"approved instance": done, "past-due instance": past} {
+		err := f.chores.Delete(t.Context(), c.ID)
+		var ae *apierr.Problem
+		if !errors.As(err, &ae) || ae.Status != 409 || ae.Code != apierr.CodeChoreHasHistory {
+			t.Errorf("%s: delete = %v, want 409 chore_has_history", name, err)
+		}
+	}
+	if err := f.chores.Delete(t.Context(), upcoming.ID); err != nil {
+		t.Fatalf("delete a chore with only upcoming instances: %v", err)
+	}
+	for _, i := range f.list() {
+		if i.ChoreID == upcoming.ID {
+			t.Errorf("deleted chore still has %s", key(i))
+		}
+	}
+	if n := len(f.list()); n != 2*8 {
+		t.Errorf("%d instances left, want the two kept chores' 16", n)
+	}
+}
+
+// Moving today's passed slot later doesn't give the kid a second instance today.
+func TestSlotMovedLaterTodayTakesEffectTomorrow(t *testing.T) {
+	f := newFixture(t)
+	f.kid("Sam")
+	c := f.chore(chores.ChoreInput{Name: "Feed the cat", Slots: []string{"07:00"}, Schedule: daily("2026-11-01")})
+	f.clock.Set(time.Date(2026, 11, 4, 6, 0, 0, 0, time.UTC))
+	f.generate()
+	f.clock.Set(wednesdayNoon)
+	c.Slots = []string{"20:00"}
+	f.update(c)
+	f.generate()
+	got := byKey(f.list())
+	if _, ok := got["2026-11-04 07:00 #0 kid 1"]; !ok {
+		t.Error("today's kept 07:00 is gone")
+	}
+	if _, ok := got["2026-11-04 20:00 #0 kid 1"]; ok {
+		t.Error("the moved slot was added today too")
+	}
+	if _, ok := got["2026-11-05 20:00 #0 kid 1"]; !ok {
+		t.Errorf("the moved slot doesn't start tomorrow: %v", keys(f.list()))
+	}
+}
+
+// Day-close instances follow the kid's own day end; shared ones keep the household's.
+func TestKidDayEndOverrideSetsDueTime(t *testing.T) {
+	f := newFixture(t)
+	sam, ada := f.kid("Sam"), f.kid("Ada")
+	if _, err := f.kids.Update(t.Context(), "sam", kids.KidInput{DisplayName: "Sam", Color: "#2563eb", DayEndOverride: "19:30"}); err != nil {
+		t.Fatal(err)
+	}
+	f.chore(chores.ChoreInput{Name: "Read", Schedule: daily("2026-11-01")})
+	f.chore(chores.ChoreInput{Name: "Tidy up", Schedule: daily("2026-11-01"),
+		Assignment: &chores.ChoreAssignment{Mode: assign.ModeShared, KidIDs: []int64{sam, ada}}})
+	f.chore(chores.ChoreInput{Name: "Piano", Schedule: &schedule.ScheduleRule{
+		Type: schedule.TypeFlexibleWeekly, StartDate: date("2026-10-01"), TimesPerWeek: 1,
+	}, Assignment: &chores.ChoreAssignment{Mode: assign.ModeFixed, KidIDs: []int64{sam}}})
+	f.generate()
+
+	cal, _ := caltime.NewHousehold("America/Chicago", caltime.MustTimeOfDay(21, 0), time.Sunday)
+	early := caltime.MustTimeOfDay(19, 30)
+	for _, i := range f.list() {
+		var want time.Time
+		switch {
+		case i.Flexible:
+			want = cal.WeekClose(i.Date, early)
+		case i.KidID == sam:
+			want = cal.DayClose(i.Date, early)
+		default: // Ada, and shared instances
+			want = cal.DayClose(i.Date, cal.DayEnd)
+		}
+		if !i.DueAt.Equal(want) {
+			t.Errorf("%s (%s): due %v, want %v", key(i), i.ChoreName, i.DueAt, want)
+		}
+	}
+	// After Sam's 19:30 close, today's instance can't be created any more.
+	f.clock.Set(time.Date(2026, 11, 5, 2, 0, 0, 0, time.UTC)) // Wednesday 20:00 local
+	if res := f.generate(); res.Deleted != 0 {
+		t.Errorf("a run after Sam's day closed = %+v; his closed day's instance must stay", res)
 	}
 }

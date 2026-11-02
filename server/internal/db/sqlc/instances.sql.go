@@ -24,6 +24,24 @@ func (q *Queries) AddChoreInstanceMember(ctx context.Context, arg AddChoreInstan
 	return err
 }
 
+const choreHasHistory = `-- name: ChoreHasHistory :one
+SELECT EXISTS (SELECT 1 FROM chore_instances
+    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR due_at <= ?))
+`
+
+type ChoreHasHistoryParams struct {
+	ChoreID int64  `json:"chore_id"`
+	DueAt   string `json:"due_at"`
+}
+
+// Whether the chore has an instance to keep: touched, or already due.
+func (q *Queries) ChoreHasHistory(ctx context.Context, arg ChoreHasHistoryParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, choreHasHistory, arg.ChoreID, arg.DueAt)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const clearChoreInstanceRotationStates = `-- name: ClearChoreInstanceRotationStates :exec
 UPDATE chore_instances SET rotation_state = NULL WHERE chore_id = ?
 `
@@ -49,6 +67,15 @@ DELETE FROM chore_instance_members WHERE instance_id = ?
 
 func (q *Queries) DeleteChoreInstanceMembers(ctx context.Context, instanceID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteChoreInstanceMembers, instanceID)
+	return err
+}
+
+const deleteChoreInstances = `-- name: DeleteChoreInstances :exec
+DELETE FROM chore_instances WHERE chore_id = ?
+`
+
+func (q *Queries) DeleteChoreInstances(ctx context.Context, choreID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteChoreInstances, choreID)
 	return err
 }
 
@@ -95,7 +122,7 @@ func (q *Queries) InsertChoreInstance(ctx context.Context, arg InsertChoreInstan
 const latestChoreRotationStateBefore = `-- name: LatestChoreRotationStateBefore :one
 SELECT rotation_state FROM chore_instances
 WHERE chore_id = ? AND rotation_state IS NOT NULL AND occurrence_date < ?
-ORDER BY occurrence_date DESC, slot DESC, seq DESC
+ORDER BY occurrence_date DESC, due_at DESC, seq DESC
 LIMIT 1
 `
 

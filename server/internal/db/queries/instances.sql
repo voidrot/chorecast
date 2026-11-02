@@ -15,7 +15,7 @@ ORDER BY m.instance_id, m.kid_id;
 -- The rotation state after the chore's last instance dated before the day.
 SELECT rotation_state FROM chore_instances
 WHERE chore_id = ? AND rotation_state IS NOT NULL AND occurrence_date < ?
-ORDER BY occurrence_date DESC, slot DESC, seq DESC
+ORDER BY occurrence_date DESC, due_at DESC, seq DESC
 LIMIT 1;
 
 -- name: InsertChoreInstance :one
@@ -59,3 +59,11 @@ SELECT m.instance_id, m.kid_id FROM chore_instance_members m
 JOIN chore_instances i ON i.id = m.instance_id
 WHERE i.occurrence_date >= ? AND i.occurrence_date <= ?
 ORDER BY m.instance_id, m.kid_id;
+
+-- name: ChoreHasHistory :one
+-- Whether the chore has an instance to keep: touched, or already due.
+SELECT EXISTS (SELECT 1 FROM chore_instances
+    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR due_at <= ?));
+
+-- name: DeleteChoreInstances :exec
+DELETE FROM chore_instances WHERE chore_id = ?;

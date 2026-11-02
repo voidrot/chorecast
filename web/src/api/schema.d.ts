@@ -376,7 +376,10 @@ export interface paths {
          */
         put: operations["updateChore"];
         post?: never;
-        /** Delete a chore */
+        /**
+         * Delete a chore
+         * @description Deletes the chore and its upcoming instances. A chore with history (an instance that's done, missed, reassigned or already due) can't be deleted: disable it instead (409 `chore_has_history`).
+         */
         delete: operations["deleteChore"];
         options?: never;
         head?: never;
@@ -3124,6 +3127,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -11,15 +11,19 @@
 //     Every other instance in the horizon is regenerable: it's replaced by the new plan, updated
 //     in place when its identity (chore, date, slot, seq, kid) is unchanged so ids stay stable.
 //   - An occurrence already due when it's planned (a slot earlier today, say on a new chore) gets
-//     no instance.
-//   - The fairness ledger starts with the frozen instances of the past week and the horizon.
-//     Chores are planned by id, occurrences in date order, one at a time; an occurrence a frozen
-//     instance already covers isn't planned again.
+//     no instance. Nor does a slot added (or moved later) today for a kid who already has a kept
+//     instance of the chore today: an edit takes full effect tomorrow.
+//   - Without a slot, a kid's instance is due at the kid's own day (or week) close; a shared
+//     instance at the household's.
+//   - The fairness ledger starts with the frozen instances from a week before this week's start
+//     (flexible instances are dated at the week start). Chores are planned by id, occurrences in
+//     date order, one at a time; an occurrence a frozen instance already covers isn't planned again.
 //   - Rotation: each instance stores the state after its turn. chores.rotation_state is the state
 //     after the chore's last instance dated before the horizon (before today, or before the week
-//     start for flexible chores), and each run resumes from it, taking the stored state of frozen
-//     instances it passes. Planned instances never feed it, so regenerating the forecast doesn't
-//     advance the rotation.
+//     start for flexible chores), and each run resumes from it. Walking the occurrences, it takes
+//     the stored state of each frozen instance it passes in turn order (date, due time, seq), even
+//     one whose slot the schedule no longer has. Planned instances never feed it, so regenerating
+//     the forecast doesn't advance the rotation.
 package horizon
 
 import (
@@ -28,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,6 +129,24 @@ func (g *Generator) Generate(ctx context.Context) (Result, error) {
 	return res, tx.Commit()
 }
 
+// run is one generation's inputs, shared by every chore's plan.
+type run struct {
+	q       *sqlc.Queries
+	planner *assign.Planner
+	cal     caltime.Household
+	dayEnds map[int64]caltime.TimeOfDay // kids' effective day ends
+	now     time.Time
+	today   caltime.Date
+	end     caltime.Date
+	// frozen instances by occurrence, and per chore in turn order (for rotation states).
+	frozen        map[occKey][]existing
+	frozenByChore map[int64][]existing
+	// today: occurrences that had any instance, and kids (or, for shared, any member) with a frozen one.
+	todayOccs  map[occKey]bool
+	keptToday  map[int64]map[int64]bool // chore -> kid
+	choreToday map[int64]bool           // chore has a frozen instance today
+}
+
 func (g *Generator) generate(ctx context.Context, q *sqlc.Queries) (Result, error) {
 	hh, err := q.GetHousehold(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -138,12 +161,14 @@ func (g *Generator) generate(ctx context.Context, q *sqlc.Queries) (Result, erro
 	}
 	now := g.clock.Now()
 	today := Today(cal, now)
-	end := today.AddDays(Days)
-	// The ledger looks back a week from each date; flexible instances are dated at the week start.
-	since := today.AddDays(-(assign.LoadWindowDays - 1))
+	r := &run{q: q, cal: cal, now: now, today: today, end: today.AddDays(Days),
+		frozen: map[occKey][]existing{}, frozenByChore: map[int64][]existing{},
+		todayOccs: map[occKey]bool{}, keptToday: map[int64]map[int64]bool{}, choreToday: map[int64]bool{}}
+	// The ledger looks back a week from each date, and flexible instances are dated at the week
+	// start, so history starts a week before this week's start.
+	since := cal.WeekStartOf(today).AddDays(-(assign.LoadWindowDays - 1))
 
-	planner, err := newPlanner(ctx, q, int(hh.DefaultChoreMinutes))
-	if err != nil {
+	if r.planner, r.dayEnds, err = newPlanner(ctx, q, cal, int(hh.DefaultChoreMinutes)); err != nil {
 		return Result{}, err
 	}
 	rows, err := q.ListChoreInstancesFrom(ctx, since.String())
@@ -161,17 +186,35 @@ func (g *Generator) generate(ctx context.Context, q *sqlc.Queries) (Result, erro
 
 	nowTS := db.Timestamp(now)
 	regen := map[instKey]existing{}
-	frozen := map[occKey][]existing{}
-	for _, r := range rows {
-		e := existing{ListChoreInstancesFromRow: r, members: members[r.ID]}
+	for _, row := range rows {
+		e := existing{ListChoreInstancesFromRow: row, members: members[row.ID]}
+		isToday := e.OccurrenceDate == today.String()
+		if isToday {
+			r.todayOccs[e.key().occKey] = true
+		}
 		// Only the horizon is regenerated: today on, plus this week's flexible instances.
 		inHorizon := e.Flexible == 1 || e.OccurrenceDate >= today.String()
 		if e.untouched() && e.DueAt > nowTS && inHorizon {
 			regen[e.key()] = e
 			continue
 		}
-		frozen[e.key().occKey] = append(frozen[e.key().occKey], e)
-		planner.Ledger.Entries = append(planner.Ledger.Entries, ledgerEntries(e, planner.DefaultMinutes)...)
+		r.frozen[e.key().occKey] = append(r.frozen[e.key().occKey], e)
+		r.frozenByChore[e.ChoreID] = append(r.frozenByChore[e.ChoreID], e)
+		r.planner.Ledger.Entries = append(r.planner.Ledger.Entries, ledgerEntries(e, r.planner.DefaultMinutes)...)
+		if isToday {
+			r.choreToday[e.ChoreID] = true
+			if r.keptToday[e.ChoreID] == nil {
+				r.keptToday[e.ChoreID] = map[int64]bool{}
+			}
+			for _, k := range append([]int64{e.KidID.Int64}, e.members...) {
+				r.keptToday[e.ChoreID][k] = true
+			}
+		}
+	}
+	for _, es := range r.frozenByChore {
+		slices.SortFunc(es, func(a, b existing) int {
+			return turnOrder(a.OccurrenceDate, a.DueAt, a.Seq, b.OccurrenceDate, b.DueAt, b.Seq)
+		})
 	}
 
 	chores, err := q.ListChores(ctx)
@@ -186,7 +229,7 @@ func (g *Generator) generate(ctx context.Context, q *sqlc.Queries) (Result, erro
 
 	var want []desired
 	for _, c := range chores {
-		ds, err := planChore(ctx, q, planner, cal, c, overrides[c.ID], now, today, end, frozen)
+		ds, err := r.planChore(ctx, c, overrides[c.ID])
 		if err != nil {
 			return Result{}, err
 		}
@@ -195,21 +238,42 @@ func (g *Generator) generate(ctx context.Context, q *sqlc.Queries) (Result, erro
 	return apply(ctx, q, want, regen, nowTS)
 }
 
-// newPlanner loads every kid, archived too: the planner skips archived kids itself.
-func newPlanner(ctx context.Context, q *sqlc.Queries, defaultMinutes int) (*assign.Planner, error) {
+// turnOrder orders a chore's instances as the planner takes turns: by date, due time, then seq.
+func turnOrder(aDate, aDue string, aSeq int64, bDate, bDue string, bSeq int64) int {
+	if c := strings.Compare(aDate, bDate); c != 0 {
+		return c
+	}
+	if c := strings.Compare(aDue, bDue); c != 0 {
+		return c
+	}
+	return int(aSeq - bSeq)
+}
+
+// newPlanner loads every kid, archived too: the planner skips archived kids itself. It also
+// returns each kid's effective day end.
+func newPlanner(ctx context.Context, q *sqlc.Queries, cal caltime.Household, defaultMinutes int) (*assign.Planner, map[int64]caltime.TimeOfDay, error) {
 	users, err := q.ListKids(ctx, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	kids := make([]assign.Kid, 0, len(users))
+	dayEnds := map[int64]caltime.TimeOfDay{}
 	for _, u := range users {
 		k := assign.Kid{ID: u.ID, Archived: u.ArchivedAt.Valid}
 		if u.BirthDate.Valid {
 			k.BirthDate, _ = caltime.ParseDate(u.BirthDate.String) // invalid = unknown, not age-gated
 		}
 		kids = append(kids, k)
+		dayEnds[u.ID] = cal.DayEnd
+		if u.DayEndOverride.Valid {
+			if o, err := caltime.ParseTimeOfDay(u.DayEndOverride.String); err == nil {
+				if end, err := cal.EffectiveDayEnd(&o); err == nil {
+					dayEnds[u.ID] = end
+				}
+			}
+		}
 	}
-	return &assign.Planner{Kids: kids, DefaultMinutes: defaultMinutes, Ledger: &assign.Ledger{}}, nil
+	return &assign.Planner{Kids: kids, DefaultMinutes: defaultMinutes, Ledger: &assign.Ledger{}}, dayEnds, nil
 }
 
 func loadOverrides(ctx context.Context, q *sqlc.Queries) (map[int64]map[int64]bool, error) {
@@ -258,11 +322,22 @@ func b2i(b bool) int64 {
 	return 0
 }
 
+// dueAt is when an assigned occurrence is due. Without a slot, a kid's instance closes with the
+// kid's own day (or week); shared instances use the household day end.
+func (r *run) dueAt(o schedule.ScheduleOccurrence, kid int64) time.Time {
+	end, ok := r.dayEnds[kid]
+	if o.Slot != "" || kid == 0 || !ok {
+		return o.DueAt
+	}
+	if o.Flexible {
+		return r.cal.WeekClose(o.Date, end)
+	}
+	return r.cal.DayClose(o.Date, end)
+}
+
 // planChore plans one chore's occurrences in the horizon. Disabled and unscheduled chores get
 // none, so their regenerable instances are removed.
-func planChore(ctx context.Context, q *sqlc.Queries, p *assign.Planner, cal caltime.Household, c sqlc.Chore,
-	overrides map[int64]bool, now time.Time, today, end caltime.Date, frozen map[occKey][]existing,
-) ([]desired, error) {
+func (r *run) planChore(ctx context.Context, c sqlc.Chore, overrides map[int64]bool) ([]desired, error) {
 	if c.Disabled == 1 || !c.Schedule.Valid {
 		return nil, nil
 	}
@@ -278,79 +353,100 @@ func planChore(ctx context.Context, q *sqlc.Queries, p *assign.Planner, cal calt
 			slots = append(slots, t)
 		}
 	}
-	from := today
+	from := r.today
 	if rule.Type == schedule.TypeFlexibleWeekly {
-		from = cal.WeekStartOf(today) // this week's completions are dated at its first active day
+		from = r.cal.WeekStartOf(r.today) // this week's completions are dated at its first active day
 	}
 
 	ac := assign.Chore{ID: c.ID, MinAge: optInt(c.MinAge), EstimatedMinutes: optInt(c.EstimatedMinutes),
 		Overrides: overrides, Mode: c.AssignMode}
 	_ = json.Unmarshal([]byte(c.AssignKids), &ac.KidIDs)
 	rotation := c.AssignMode == assign.ModeRotation
-
-	var st assign.State
-	if rotation {
-		var err error
-		if st, err = resumeRotation(ctx, q, c, from); err != nil {
-			return nil, err
-		}
-	}
 	// One instance per occurrence (rotation, auto, shared) or one per kid (fixed, everyone).
 	single := rotation || c.AssignMode == assign.ModeAuto || c.AssignMode == assign.ModeShared
 
+	var st assign.State
+	// The chore's frozen instances in the horizon, in turn order: the rotation takes each one's
+	// state as the walk passes it, whether or not the schedule still produces its occurrence.
+	var kept []existing
+	if rotation {
+		var err error
+		if st, err = resumeRotation(ctx, r.q, c, from); err != nil {
+			return nil, err
+		}
+		for _, e := range r.frozenByChore[c.ID] {
+			if e.OccurrenceDate >= from.String() {
+				kept = append(kept, e)
+			}
+		}
+	}
+	passKept := func(date, due string, seq int64) {
+		for len(kept) > 0 && turnOrder(kept[0].OccurrenceDate, kept[0].DueAt, kept[0].Seq, date, due, seq) <= 0 {
+			if s, ok := parseState(kept[0].RotationState); ok {
+				st = s
+			}
+			kept = kept[1:]
+		}
+	}
+
 	var out []desired
 	seqs := map[[2]string]int64{}
-	for _, o := range schedule.Expand(rule, cal, slots, from, end, 0) {
+	for _, o := range schedule.Expand(rule, r.cal, slots, from, r.end, 0) {
 		dk := [2]string{o.Date.String(), o.Slot}
 		ok := occKey{c.ID, dk[0], dk[1], seqs[dk]}
 		seqs[dk]++
-		kept := frozen[ok]
-		if single && len(kept) > 0 {
-			for _, k := range kept { // the kept turn stands; continue from its state
-				if s, valid := parseState(k.RotationState); rotation && valid {
-					st = s
-				}
-			}
+		passKept(ok.date, db.Timestamp(o.DueAt), ok.seq)
+		frozenHere := r.frozen[ok]
+		// A slot added today, or moved later today, for a chore already done or due today: the
+		// edit takes full effect tomorrow.
+		newToday := o.Date == r.today && !r.todayOccs[ok]
+		if single && (len(frozenHere) > 0 || !o.DueAt.After(r.now) || (newToday && r.choreToday[c.ID])) {
 			continue
 		}
-		if !o.DueAt.After(now) {
-			continue // already due (an earlier slot today): too late to create, and nobody's turn
+		if !o.DueAt.After(r.now) {
+			continue // already due (an earlier slot today): too late to create
 		}
-		base := len(p.Ledger.Entries)
-		planned, next := p.Plan(ac, []schedule.ScheduleOccurrence{o}, st)
-		st = next
-		if len(kept) > 0 {
-			// fixed/everyone: kids who already have a kept instance here don't get a second one.
-			// Plan added one ledger entry per instance, in order; drop those of the duplicates.
-			added := p.Ledger.Entries[base:]
-			var keepPlanned []assign.Planned
-			var keepEntries []assign.Entry
-			for i, pl := range planned {
-				if slices.ContainsFunc(kept, func(k existing) bool { return k.KidID.Int64 == pl.KidID }) {
-					continue
-				}
-				keepPlanned = append(keepPlanned, pl)
-				if i < len(added) {
-					keepEntries = append(keepEntries, added[i])
-				}
+		base := len(r.planner.Ledger.Entries)
+		planned, next := r.planner.Plan(ac, []schedule.ScheduleOccurrence{o}, st)
+		added := slices.Clone(r.planner.Ledger.Entries[base:])
+		var keepEntries []assign.Entry
+		var ds []desired
+		for i, pl := range planned {
+			due := r.dueAt(o, pl.KidID)
+			drop := !due.After(r.now) // the kid's own day already closed
+			if !single {
+				// fixed/everyone: no second instance for a kid with a kept one here, and no
+				// slot added today for a kid with a kept instance today.
+				drop = drop || slices.ContainsFunc(frozenHere, func(k existing) bool { return k.KidID.Int64 == pl.KidID }) ||
+					(newToday && r.keptToday[c.ID][pl.KidID])
 			}
-			p.Ledger.Entries = append(p.Ledger.Entries[:base], keepEntries...)
-			planned = keepPlanned
-		}
-		for _, pl := range planned {
-			d := desired{
-				key:   instKey{ok, pl.KidID},
-				dueAt: db.Timestamp(pl.DueAt), flexible: b2i(pl.Flexible), auto: b2i(pl.Auto),
+			if drop {
+				continue
 			}
+			if !single && i < len(added) {
+				keepEntries = append(keepEntries, added[i]) // Plan adds one entry per instance, in order
+			}
+			d := desired{key: instKey{ok, pl.KidID}, dueAt: db.Timestamp(due), flexible: b2i(pl.Flexible), auto: b2i(pl.Auto)}
 			if pl.Group != nil {
 				d.group = slices.Sorted(slices.Values(pl.Group)) // stored and compared by kid id
 			}
 			if rotation {
-				b, _ := json.Marshal(st)
+				b, _ := json.Marshal(next)
 				d.state = sql.NullString{String: string(b), Valid: true}
 			}
-			out = append(out, d)
+			ds = append(ds, d)
 		}
+		if single {
+			keepEntries = nil
+			if len(ds) > 0 {
+				keepEntries = added
+				st = next
+			} // else nobody got it: no turn taken, no load
+		} else {
+			st = next
+		}
+		r.planner.Ledger.Entries = append(r.planner.Ledger.Entries[:base], keepEntries...)
+		out = append(out, ds...)
 	}
 	return out, nil
 }

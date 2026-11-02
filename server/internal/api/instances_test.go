@@ -75,3 +75,26 @@ func TestListChoreInstances(t *testing.T) {
 	}
 	wantCode(t, "signed out", s.do("GET", "/api/v1/instances", nil), 401, "unauthenticated")
 }
+
+func TestDeleteChoreWithHistoryIsRefused(t *testing.T) {
+	s := newAuthServer(t)
+	mom := sessionCookie(t, s.do("POST", "/api/v1/auth/login", login(nil)))
+	create := func(name string) int64 {
+		rec := s.do("POST", "/api/v1/chores", map[string]any{
+			"name": name, "points": 1, "requiresApproval": false, "evidence": map[string]any{"photos": 0},
+			"schedule": map[string]any{"type": "daily", "startDate": "2026-10-31"},
+		}, mom)
+		wantCode(t, "create "+name, rec, 201, "")
+		return decode[struct{ ID int64 }](t, rec).ID
+	}
+	done, upcoming := create("Dishes"), create("Laundry")
+	if _, err := horizon.New(s.store, s.clk).Generate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.SQL.ExecContext(t.Context(),
+		"UPDATE chore_instances SET status = 'approved' WHERE id = (SELECT MIN(id) FROM chore_instances WHERE chore_id = ?)", done); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, "delete a chore with history", s.do("DELETE", fmt.Sprintf("/api/v1/chores/%d", done), nil, mom), 409, "chore_has_history")
+	wantCode(t, "delete a chore without history", s.do("DELETE", fmt.Sprintf("/api/v1/chores/%d", upcoming), nil, mom), 204, "")
+}

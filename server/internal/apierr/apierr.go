@@ -57,6 +57,7 @@ const (
 	CodePointsEntryNotFound = "points_entry_not_found" // (404)
 	CodeAlreadyReversed     = "already_reversed"       // a points entry can be reversed only once (409)
 	CodeAlreadyPosted       = "already_posted"         // a points entry for this kind and source exists (409)
+	CodeChoreHasHistory     = "chore_has_history"      // a chore with history is disabled, not deleted (409)
 )
 
 var defaultCodes = map[int]string{

@@ -33,8 +33,10 @@ func registerChores(hapi huma.API, h *handlers) {
 	}, h.updateChore)
 	huma.Register(hapi, huma.Operation{
 		OperationID: "deleteChore", Method: http.MethodDelete, Path: "/chores/{id}",
-		Summary: "Delete a chore", Tags: []string{"chores"}, Security: manage, DefaultStatus: http.StatusNoContent,
-		Errors: []int{http.StatusNotFound},
+		Summary:     "Delete a chore",
+		Description: "Deletes the chore and its upcoming instances. A chore with history (an instance that's done, missed, reassigned or already due) can't be deleted: disable it instead (409 `chore_has_history`).",
+		Tags:        []string{"chores"}, Security: manage, DefaultStatus: http.StatusNoContent,
+		Errors: []int{http.StatusNotFound, http.StatusConflict},
 	}, h.deleteChore)
 
 	huma.Register(hapi, huma.Operation{
