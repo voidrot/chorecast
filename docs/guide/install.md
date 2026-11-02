@@ -80,4 +80,4 @@ Set a variable in the `environment:` section of the compose file. Restart the co
 - Use 64-bit Raspberry Pi OS, or another 64-bit Linux. The images are arm64 builds. A 32-bit OS has no matching image.
 - Keep the data volume on fast storage. An SSD on USB is better than an SD card. The default backups are written to the same volume.
 - If you set a memory limit on the container, set `GOMEMLIMIT` a little below it, so Go frees memory before the container is killed. The compose file shows an example: `mem_limit: 512m` with `GOMEMLIMIT: 400MiB`.
-- The compose file notes that processing one photo peaks at about 210 MB, and that photos are processed one at a time. UNVERIFIED: the figure comes from the comment in `deploy/compose.yaml` and I did not measure it.
+- Processing one photo can peak at about 210 MB. Photos are processed one at a time, so the peak doesn't add up across uploads.

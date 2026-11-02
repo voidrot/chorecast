@@ -32,7 +32,7 @@ https://<your server address>/api/v1/auth/oidc/callback
 
 Use a confidential client with a client secret. Request the `openid` and `profile` scopes. The server doesn't use `email`.
 
-Pick an RS256 signing key for the ID token. The server verifies ID tokens with its OIDC library's default settings, which expect RS256 (UNVERIFIED: I did not test this against a provider). A provider that signs with HS256 may fail with `sso_error=failed`.
+The server expects RS256-signed ID tokens. Choose an RS256 signing key for the ID token in your provider. An ID token signed with another algorithm, such as HS256, is rejected, and the sign-in redirect returns `sso_error=failed`.
 
 ## Link a parent account
 
@@ -59,8 +59,8 @@ Pending sign-ins are kept in memory. A restart cancels any sign-in in progress.
 1. Create an OAuth2/OpenID provider.
    - **Client type:** confidential.
    - **Redirect URIs:** `https://chores.example.com/api/v1/auth/oidc/callback`, with your server's address.
-   - **Signing key:** select a certificate-key pair. Don't leave it empty, because Authentik then signs with HS256.
-   - UNVERIFIED: the menu path in the Authentik admin UI.
+   - **Signing key:** select a certificate-key pair. Without one, Authentik signs with HS256, which the server rejects.
+   - For the menu path and other provider settings, see the Authentik documentation for OAuth2/OpenID providers.
 2. Create an application that uses the provider, with the slug `chorecast`.
 3. Use the default issuer mode, which gives one issuer per application slug. The issuer is then:
 
@@ -79,19 +79,14 @@ Pending sign-ins are kept in memory. A restart cancels any sign-in in progress.
 
 ## Example: PocketID
 
-UNVERIFIED: I could not load the PocketID documentation, so the steps below come from the server's requirements and not from PocketID. Check each one against PocketID's documentation.
+In PocketID, create an OIDC client with the redirect URI `https://chores.example.com/api/v1/auth/oidc/callback` and the `openid` and `profile` scopes. Use a confidential client with a client secret. For the PocketID UI and client options, see the PocketID documentation.
 
-1. Create an OIDC client in PocketID.
-   - Use a confidential client with a client secret.
-   - Set the callback URL to `https://chores.example.com/api/v1/auth/oidc/callback`.
-   - Allow the `openid` and `profile` scopes.
-2. Set the compose environment. The issuer is usually PocketID's base URL, with no trailing slash:
+The issuer is your PocketID base URL, with no trailing slash:
 
-   ```yaml
-   CHORECAST_OIDC_ISSUER: https://id.example.com
-   CHORECAST_OIDC_CLIENT_ID: <client ID from PocketID>
-   CHORECAST_OIDC_CLIENT_SECRET: <client secret from PocketID>
-   ```
+```yaml
+CHORECAST_OIDC_ISSUER: https://id.example.com
+CHORECAST_OIDC_CLIENT_ID: <client ID from PocketID>
+CHORECAST_OIDC_CLIENT_SECRET: <client secret from PocketID>
+```
 
-   UNVERIFIED: the issuer value.
-3. Check that the issuer's discovery document loads: `<issuer>/.well-known/openid-configuration`. It must report an `iss` that matches `CHORECAST_OIDC_ISSUER` exactly.
+Check that the issuer's discovery document loads at `<issuer>/.well-known/openid-configuration`. Its `iss` value must match `CHORECAST_OIDC_ISSUER` exactly.

@@ -75,7 +75,7 @@ Obtainium can track GitHub releases and install updates from them.
 
 1. Add the Chorecast GitHub repository as a source.
 2. If a release has both APKs, add a filter with **Filter APKs by Regular Expression**. Use `foss` or `play` to pick a flavor. Without a filter, Obtainium asks you to pick an APK on each update.
-3. UNVERIFIED: the exact steps to add a source by URL. The Obtainium site doesn't document them, and I did not check them in the app.
+3. Add the app in Obtainium using the GitHub repository URL. For the source options, see [Obtainium's documentation](https://obtainium.imranr.dev/).
 
 ## Next steps
 

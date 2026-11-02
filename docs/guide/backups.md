@@ -28,7 +28,7 @@ docker compose -f deploy/compose.yaml run --rm chorecast backup --out /data/back
 
 The file is written with owner-only permissions. The command refuses to overwrite an existing file.
 
-To keep a copy off the host, copy it out of the volume. UNVERIFIED: the copy command below. I did not run it, and the volume name depends on the compose project name.
+To keep a copy off the host, copy it out of the volume. Find the volume name with `docker volume ls`. The name starts with the compose project name, so replace `<volume-name>` with the one it shows for your project:
 
 ```sh
 docker volume ls
