@@ -7,8 +7,8 @@ Written 2026-11-02 for the next agent (or person) picking up Phase 1 (#2). Read 
 
 The server side of the chore loop is built. What is left is the clients, plus reminders, backups, the audit
 log and the install docs. Issues are worked one PR each and PRs are squash-merged. This session's arrangement
-was that agents may merge a PR when CI is green and review has passed. Pushing and opening PRs still goes
-through the owner (see "Environment gotchas").
+was that agents may merge a PR when CI is green and review has passed. Coding subagents only commit; the
+orchestrating session pushes and opens the PRs (see "Environment gotchas").
 
 **Merged** (each feature spec in `docs/features/` has a "Built (#N)" paragraph describing the package):
 
