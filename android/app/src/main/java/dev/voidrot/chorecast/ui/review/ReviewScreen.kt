@@ -272,6 +272,7 @@ private fun reasonLabel(reason: RejectChoreInstanceInputBody.Reason): String = s
         RejectChoreInstanceInputBody.Reason.NOT_FINISHED -> R.string.review_reason_not_finished
         RejectChoreInstanceInputBody.Reason.NEEDS_REDO -> R.string.review_reason_needs_redo
         RejectChoreInstanceInputBody.Reason.EVIDENCE_UNCLEAR -> R.string.review_reason_evidence_unclear
+        RejectChoreInstanceInputBody.Reason.UNKNOWN_DEFAULT_OPEN_API -> R.string.chore_reject_unknown
     },
 )
 
