@@ -59,7 +59,7 @@ type UpdateHouseholdInput struct {
 }
 
 func (h *handlers) updateHousehold(ctx context.Context, in *UpdateHouseholdInput) (*HouseholdOutput, error) {
-	s, err := h.household.Update(ctx, in.Body)
+	s, err := h.household.Update(ctx, caller(ctx), in.Body)
 	if err != nil {
 		return nil, err
 	}

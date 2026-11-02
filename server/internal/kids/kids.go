@@ -13,6 +13,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/caltime"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -347,7 +348,7 @@ func (s *Service) SetPIN(ctx context.Context, ref, pin string) error {
 
 // Archive hides a kid and revokes their devices; history is kept. The horizon stops scheduling
 // them (their untouched upcoming instances are regenerated).
-func (s *Service) Archive(ctx context.Context, ref string) (Kid, error) {
+func (s *Service) Archive(ctx context.Context, by audit.Actor, ref string) (Kid, error) {
 	kid, err := Resolve(ctx, s.db.Queries, ref)
 	if err != nil {
 		return Kid{}, err
@@ -359,7 +360,10 @@ func (s *Service) Archive(ctx context.Context, ref string) (Kid, error) {
 			}); err != nil {
 				return 0, err
 			}
-			return kid.ID, q.DeleteTokensForUser(ctx, sql.NullInt64{Int64: kid.ID, Valid: true})
+			if err := q.DeleteTokensForUser(ctx, sql.NullInt64{Int64: kid.ID, Valid: true}); err != nil {
+				return 0, err
+			}
+			return kid.ID, s.record(ctx, q, by, audit.ActionKidArchived, kid)
 		}); err != nil {
 			return Kid{}, err
 		}
@@ -368,17 +372,29 @@ func (s *Service) Archive(ctx context.Context, ref string) (Kid, error) {
 }
 
 // Unarchive restores a kid. Devices must be paired again.
-func (s *Service) Unarchive(ctx context.Context, ref string) (Kid, error) {
+func (s *Service) Unarchive(ctx context.Context, by audit.Actor, ref string) (Kid, error) {
 	kid, err := Resolve(ctx, s.db.Queries, ref)
 	if err != nil {
 		return Kid{}, err
 	}
-	if err := s.inTx(ctx, func(q *sqlc.Queries) (int64, error) {
-		return kid.ID, q.SetKidArchived(ctx, sqlc.SetKidArchivedParams{ID: kid.ID})
-	}); err != nil {
-		return Kid{}, err
+	if kid.ArchivedAt.Valid {
+		if err := s.inTx(ctx, func(q *sqlc.Queries) (int64, error) {
+			if err := q.SetKidArchived(ctx, sqlc.SetKidArchivedParams{ID: kid.ID}); err != nil {
+				return 0, err
+			}
+			return kid.ID, s.record(ctx, q, by, audit.ActionKidUnarchived, kid)
+		}); err != nil {
+			return Kid{}, err
+		}
 	}
 	return s.Get(ctx, kid.Slug.String)
+}
+
+// record audits action on kid in the action's transaction.
+func (s *Service) record(ctx context.Context, q *sqlc.Queries, by audit.Actor, action string, kid sqlc.User) error {
+	return audit.Record(ctx, q, s.clock.Now(), audit.Entry{
+		Actor: by, Action: action, TargetKind: audit.TargetKid, TargetID: kid.ID, Summary: kid.DisplayName,
+	})
 }
 
 // DefaultAvatar picks a built-in avatar for the n-th kid created in one go (first-run setup).

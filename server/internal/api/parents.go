@@ -146,7 +146,7 @@ type ParentOutput struct {
 }
 
 func (h *handlers) setParentRole(ctx context.Context, in *SetParentRoleInput) (*ParentOutput, error) {
-	if err := h.parents.SetOwner(ctx, in.ID, in.Body.Owner); err != nil {
+	if err := h.parents.SetOwner(ctx, caller(ctx), in.ID, in.Body.Owner); err != nil {
 		return nil, err
 	}
 	p, err := h.parents.Get(ctx, in.ID)
@@ -157,7 +157,7 @@ func (h *handlers) setParentRole(ctx context.Context, in *SetParentRoleInput) (*
 }
 
 func (h *handlers) removeParent(ctx context.Context, in *ParentIDInput) (*struct{}, error) {
-	return nil, h.parents.Remove(ctx, in.ID)
+	return nil, h.parents.Remove(ctx, caller(ctx), in.ID)
 }
 
 type TemporaryPasswordOutput struct {
@@ -167,7 +167,7 @@ type TemporaryPasswordOutput struct {
 }
 
 func (h *handlers) resetParentPassword(ctx context.Context, in *ParentIDInput) (*TemporaryPasswordOutput, error) {
-	pw, err := h.parents.ResetPassword(ctx, in.ID)
+	pw, err := h.parents.ResetPassword(ctx, caller(ctx), in.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (h *handlers) resetParentPassword(ctx context.Context, in *ParentIDInput) (
 }
 
 func (h *handlers) disableParentTOTP(ctx context.Context, in *ParentIDInput) (*struct{}, error) {
-	return nil, h.parents.DisableTOTP(ctx, in.ID)
+	return nil, h.parents.DisableTOTP(ctx, caller(ctx), in.ID)
 }
 
 type CreateInviteInput struct {
@@ -226,7 +226,7 @@ type InviteIDInput struct {
 }
 
 func (h *handlers) revokeInvite(ctx context.Context, in *InviteIDInput) (*struct{}, error) {
-	return nil, h.parents.RevokeInvite(ctx, in.ID)
+	return nil, h.parents.RevokeInvite(ctx, caller(ctx), in.ID)
 }
 
 type InviteTokenInput struct {

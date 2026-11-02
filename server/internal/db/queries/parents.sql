@@ -31,8 +31,9 @@ WHERE i.used_at IS NULL AND i.expires_at > ? ORDER BY i.created_at DESC;
 SELECT i.*, u.display_name AS created_by_name FROM invites i LEFT JOIN users u ON u.id = i.created_by
 WHERE i.token_hash = ?;
 
--- name: DeleteInvite :execrows
-DELETE FROM invites WHERE id = ? AND used_at IS NULL;
+-- name: DeleteInvite :one
+-- No row (sql.ErrNoRows) when there is no such pending invite.
+DELETE FROM invites WHERE id = ? AND used_at IS NULL RETURNING role;
 
 -- name: UseInvite :execrows
 UPDATE invites SET used_at = ?, used_by = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?;

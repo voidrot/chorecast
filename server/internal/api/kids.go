@@ -164,7 +164,7 @@ func (h *handlers) setKidPIN(ctx context.Context, in *SetKidPINInput) (*struct{}
 }
 
 func (h *handlers) archiveKid(ctx context.Context, in *KidRefInput) (*KidOutput, error) {
-	k, err := h.kids.Archive(ctx, in.Kid)
+	k, err := h.kids.Archive(ctx, caller(ctx), in.Kid)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func (h *handlers) archiveKid(ctx context.Context, in *KidRefInput) (*KidOutput,
 }
 
 func (h *handlers) unarchiveKid(ctx context.Context, in *KidRefInput) (*KidOutput, error) {
-	k, err := h.kids.Unarchive(ctx, in.Kid)
+	k, err := h.kids.Unarchive(ctx, caller(ctx), in.Kid)
 	if err != nil {
 		return nil, err
 	}

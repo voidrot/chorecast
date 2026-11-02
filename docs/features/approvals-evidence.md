@@ -52,7 +52,7 @@ clock) is older than the effective timeout. The timeout is the chore's `auto_app
 default, **0 = never**, N = N hours), else the household's `auto_approve_hours` (NULL = never). Both are read at
 each run, so a settings change applies on the next tick, and a run after downtime approves everything overdue.
 The approval is `instances.Approve(..., 0, "auto-approved")`: the credit has `created_by` NULL and that note, and
-the usual `instance.approved` event (`by` 0) is the audit hook until the audit log (#37) exists. The job
+the usual `instance.approved` event (`by` 0) puts it in the audit log (#37) with the system as the actor. The job
 re-reads each instance inside its transaction and skips one that was decided, or resubmitted, since the listing,
 so repeated or concurrent runs are no-ops. `blocked()` is the seam for Phase 3 blockers (an AI `not_yet`
 verdict, a near-duplicate flag); it returns false today. A partial index `chore_instances_submitted` on

@@ -72,6 +72,14 @@ async function signOut() {
           <RouterLink :to="{ name: 'settings' }" exact-active-class="font-semibold">{{
             t('nav.settings')
           }}</RouterLink>
+          <RouterLink
+            v-if="session.isOwner"
+            :to="{ name: 'audit' }"
+            exact-active-class="font-semibold"
+            >{{
+              t('nav.audit')
+            }}</RouterLink
+          >
         </nav>
       </div>
       <div class="flex items-center gap-3">

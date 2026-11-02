@@ -233,7 +233,7 @@ type DeviceIDInput struct {
 }
 
 func (h *handlers) revokeDevice(ctx context.Context, in *DeviceIDInput) (*struct{}, error) {
-	return nil, h.devices.Revoke(ctx, in.ID)
+	return nil, h.devices.Revoke(ctx, caller(ctx), in.ID)
 }
 
 type LockRemoteOutput struct {

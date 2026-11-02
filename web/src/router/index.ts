@@ -96,6 +96,11 @@ const router = createRouter({
           component: () => import('@/views/settings/SettingsView.vue'),
         },
         {
+          path: 'audit',
+          name: 'audit',
+          component: () => import('@/views/audit/AuditView.vue'),
+        },
+        {
           path: 'account',
           name: 'account',
           component: () => import('@/views/account/AccountView.vue'),

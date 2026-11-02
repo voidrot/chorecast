@@ -103,6 +103,7 @@ func TestOwnerOnlyCapabilities(t *testing.T) {
 		{"DELETE", "/api/v1/parents/" + itoa(momID)},
 		{"POST", "/api/v1/parents/" + itoa(momID) + "/reset-password"},
 		{"POST", "/api/v1/parents/" + itoa(momID) + "/disable-totp"},
+		{"GET", "/api/v1/audit"},
 	} {
 		wantCode(t, "parent: "+c.method+" "+c.path, s.do(c.method, c.path, map[string]any{"owner": false, "role": "parent"}, dad), 403, "insufficient_scope")
 	}

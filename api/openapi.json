@@ -82,6 +82,178 @@
         ],
         "type": "object"
       },
+      "AuditChange": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "description": "The setting's name in the household settings API, e.g. dayEnd",
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "AuditDetails": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "points_*: the signed points posted",
+            "format": "int64",
+            "type": "integer"
+          },
+          "changes": {
+            "description": "settings_updated: each setting that changed",
+            "items": {
+              "$ref": "#/components/schemas/AuditChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kidId": {
+            "description": "points_*: the kid; device_paired: the kid it belongs to (absent = a shared device)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kidIds": {
+            "description": "chore_*: the assignee, or a shared chore's members",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "note": {
+            "description": "points_*: the note",
+            "type": "string"
+          },
+          "reasonCode": {
+            "description": "chore_rejected: the quick-pick reason",
+            "type": "string"
+          },
+          "reasonText": {
+            "description": "chore_rejected: the parent's feedback",
+            "type": "string"
+          },
+          "reversesId": {
+            "description": "points_reversed: the entry undone",
+            "format": "int64",
+            "type": "integer"
+          },
+          "role": {
+            "description": "invite_*: the invite's role; parent_role_changed: the new role",
+            "enum": [
+              "parent",
+              "owner"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AuditEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "settings_updated",
+              "chore_approved",
+              "chore_rejected",
+              "chore_unapproved",
+              "chore_excused",
+              "points_adjusted",
+              "points_reversed",
+              "invite_created",
+              "invite_revoked",
+              "invite_accepted",
+              "parent_role_changed",
+              "parent_removed",
+              "parent_password_reset",
+              "parent_totp_disabled",
+              "device_paired",
+              "device_revoked",
+              "kid_archived",
+              "kid_unarchived"
+            ],
+            "type": "string"
+          },
+          "actorId": {
+            "description": "The parent who acted",
+            "format": "int64",
+            "type": "integer"
+          },
+          "actorKind": {
+            "description": "parent = a signed-in parent; system = the server (e.g. an auto-approval); cli = an admin command on the server host",
+            "enum": [
+              "parent",
+              "system",
+              "cli"
+            ],
+            "type": "string"
+          },
+          "actorName": {
+            "description": "The parent's name now",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it happened",
+            "format": "date-time",
+            "type": "string"
+          },
+          "details": {
+            "$ref": "#/components/schemas/AuditDetails"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "summary": {
+            "description": "The target's name when it happened (chore, kid, parent or device)",
+            "type": "string"
+          },
+          "targetId": {
+            "description": "Absent for household settings",
+            "format": "int64",
+            "type": "integer"
+          },
+          "targetKind": {
+            "description": "What targetId is",
+            "enum": [
+              "household",
+              "instance",
+              "points_entry",
+              "invite",
+              "parent",
+              "device",
+              "kid"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "actorKind",
+          "action",
+          "targetKind",
+          "details"
+        ],
+        "type": "object"
+      },
       "BeginTOTPOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -2132,6 +2304,25 @@
         ],
         "type": "object"
       },
+      "PageAuditEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Pass as cursor to fetch the next page. Absent on the last page.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "PagePointsEntry": {
         "additionalProperties": false,
         "properties": {
@@ -3977,6 +4168,158 @@
         "summary": "Start two-factor setup",
         "tags": [
           "account"
+        ]
+      }
+    },
+    "/audit": {
+      "get": {
+        "description": "Who changed settings, approved, rejected, un-approved or excused chores, adjusted or reversed points, invited, promoted, demoted, removed or reset parents, paired or revoked devices, and archived or unarchived kids. `actorKind` is `parent` (with `actorId` and `actorName`), `system` (e.g. an auto-approval) or `cli` (`chorecast admin` on the server host). `summary` is the target's name when it happened and `details` holds the action's specifics; the server stores no display text. Filters combine; `from` and `to` are household-local days, both inclusive. Entries are purged after 365 days.",
+        "operationId": "listAuditLog",
+        "parameters": [
+          {
+            "description": "Opaque cursor from a previous page's nextCursor. Omit for the first page.",
+            "explode": false,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "Opaque cursor from a previous page's nextCursor. Omit for the first page.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of items to return.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "description": "Maximum number of items to return.",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this kind of actor: parent, system or cli",
+            "explode": false,
+            "in": "query",
+            "name": "actorKind",
+            "schema": {
+              "description": "Only this kind of actor: parent, system or cli",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this parent's actions",
+            "explode": false,
+            "in": "query",
+            "name": "actorId",
+            "schema": {
+              "description": "Only this parent's actions",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this action, e.g. kid_archived",
+            "explode": false,
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "description": "Only this action, e.g. kid_archived",
+              "type": "string"
+            }
+          },
+          {
+            "description": "First day (YYYY-MM-DD), household time",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "First day (YYYY-MM-DD), household time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Last day (YYYY-MM-DD), household time, inclusive",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Last day (YYYY-MM-DD), household time, inclusive",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageAuditEntry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "server:manage"
+            ]
+          },
+          {
+            "session": [
+              "server:manage"
+            ]
+          }
+        ],
+        "summary": "The household's audit log, newest first (owner only)",
+        "tags": [
+          "audit"
         ]
       }
     },

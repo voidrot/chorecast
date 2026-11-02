@@ -68,16 +68,16 @@ func (q *Queries) DeleteExpiredInvites(ctx context.Context, expiresAt string) (i
 	return result.RowsAffected()
 }
 
-const deleteInvite = `-- name: DeleteInvite :execrows
-DELETE FROM invites WHERE id = ? AND used_at IS NULL
+const deleteInvite = `-- name: DeleteInvite :one
+DELETE FROM invites WHERE id = ? AND used_at IS NULL RETURNING role
 `
 
-func (q *Queries) DeleteInvite(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteInvite, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+// No row (sql.ErrNoRows) when there is no such pending invite.
+func (q *Queries) DeleteInvite(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, deleteInvite, id)
+	var role string
+	err := row.Scan(&role)
+	return role, err
 }
 
 const getInviteByHash = `-- name: GetInviteByHash :one

@@ -19,6 +19,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/clock"
 	"github.com/voidrot/chorecast/server/internal/db"
@@ -161,7 +162,14 @@ func (s *Service) Pair(ctx context.Context, code, name, appVersion string) (Devi
 		token, _, err = auth.NewStore(q, s.clock).Issue(ctx, auth.IssueParams{
 			Kind: auth.TokenDevice, UserID: pc.UserID.Int64, DeviceID: dev.ID, Label: dev.Name,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		// The parent who made the code let the device in.
+		return audit.Record(ctx, q, now, audit.Entry{
+			Actor: audit.UserOrSystem(pc.CreatedBy.Int64), Action: audit.ActionDevicePaired, TargetKind: audit.TargetDevice,
+			TargetID: dev.ID, Summary: dev.Name, Details: audit.AuditDetails{KidID: pc.UserID.Int64},
+		})
 	})
 	if err != nil {
 		if errors.Is(err, errInvalidCode) {
@@ -397,15 +405,19 @@ var errNoDevice = apierr.New(http.StatusNotFound, apierr.CodeNotFound, "no such 
 
 // Revoke unpairs a device: its token and sessions stop working at once, and the app returns to
 // pairing the next time it contacts the server.
-func (s *Service) Revoke(ctx context.Context, id int64) error {
-	n, err := s.db.DeleteDevice(ctx, id)
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return errNoDevice
-	}
-	return nil
+func (s *Service) Revoke(ctx context.Context, by audit.Actor, id int64) error {
+	return s.inTx(ctx, func(q *sqlc.Queries) error {
+		dev, err := q.DeleteDevice(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return errNoDevice
+		} else if err != nil {
+			return err
+		}
+		return audit.Record(ctx, q, s.clock.Now(), audit.Entry{
+			Actor: by, Action: audit.ActionDeviceRevoked, TargetKind: audit.TargetDevice, TargetID: id,
+			Summary: dev.Name, Details: audit.AuditDetails{KidID: dev.UserID.Int64},
+		})
+	})
 }
 
 // LockRemote ends any kid session or parent elevation on a device, sending it back to its

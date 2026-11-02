@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -60,6 +61,24 @@ func TestAdminRecovery(t *testing.T) {
 	}
 	if got, _ := store.GetUser(t.Context(), u.ID); got.TotpEnabled != 0 || got.TotpSecret.Valid {
 		t.Errorf("2FA still on: %+v", got)
+	}
+	// Both are audited once, as the CLI, without the new password.
+	rows, err := store.SQL.QueryContext(t.Context(), `SELECT actor_kind || ' ' || action || ' ' || target_id || ' ' || summary || ' ' || data FROM audit_log ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var audited []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		audited = append(audited, s)
+	}
+	_ = rows.Close()
+	id := strconv.FormatInt(u.ID, 10)
+	if want := []string{"cli parent_password_reset " + id + " Mom {}", "cli parent_totp_disabled " + id + " Mom {}"}; !slices.Equal(audited, want) {
+		t.Errorf("audit log = %q, want %q", audited, want)
 	}
 
 	if err := runAdmin(t.Context(), svc, "reset-password", "nobody", &out); err == nil || !strings.Contains(err.Error(), "no parent") {

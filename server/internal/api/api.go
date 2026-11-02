@@ -12,6 +12,7 @@ import (
 
 	"github.com/voidrot/chorecast/server/internal/account"
 	"github.com/voidrot/chorecast/server/internal/apierr"
+	"github.com/voidrot/chorecast/server/internal/audit"
 	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/chores"
 	"github.com/voidrot/chorecast/server/internal/clock"
@@ -88,11 +89,11 @@ func New(r chi.Router, deps Deps) huma.API {
 
 	h := &handlers{cfg: deps.Config, db: deps.DB, setup: deps.Setup, account: account.New(deps.DB, deps.Clock),
 		sso: sso.New(deps.Config, deps.DB, deps.Clock), parents: parents.New(deps.DB, deps.Clock),
-		kids: kids.NewService(deps.DB, deps.Clock, deps.Bus), household: household.New(deps.DB, deps.Bus),
+		kids: kids.NewService(deps.DB, deps.Clock, deps.Bus), household: household.New(deps.DB, deps.Clock, deps.Bus),
 		devices: devices.New(deps.DB, deps.Clock), chores: chores.New(deps.DB, deps.Clock, deps.Bus),
 		ledger: ledger.New(deps.DB, deps.Bus, deps.Clock), horizon: horizon.New(deps.DB, deps.Clock),
 		streaks: streaks.New(deps.DB, deps.Bus, deps.Clock), instances: instances.New(deps.DB, deps.Bus, deps.Clock),
-		clock: deps.Clock, inbox: inbox.New(deps.DB, deps.Clock)}
+		clock: deps.Clock, inbox: inbox.New(deps.DB, deps.Clock), audit: audit.New(deps.DB)}
 	signer := media.NewSigner(queries, deps.Clock)
 	h.media = media.New(deps.DB, deps.Clock, media.NewLocal(deps.Config.DataDir, Prefix+mediaFilesPath, signer), signer)
 	huma.Register(hapi, huma.Operation{
@@ -124,6 +125,7 @@ func New(r chi.Router, deps Deps) huma.API {
 	registerInstances(hapi, h)
 	registerReviewQueue(hapi, h)
 	registerInbox(hapi, h)
+	registerAudit(hapi, h)
 	registerMedia(hapi, h)
 
 	huma.Register(hapi, huma.Operation{
@@ -159,6 +161,7 @@ type handlers struct {
 	clock     clock.Clock
 	instances *instances.Service
 	inbox     *inbox.Service
+	audit     *audit.Service
 }
 
 type HealthOutput struct {

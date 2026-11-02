@@ -39,8 +39,9 @@ SELECT d.id, d.user_id, d.name, d.app_version, d.created_at,
 FROM devices d LEFT JOIN users k ON k.id = d.user_id
 ORDER BY d.created_at DESC;
 
--- name: DeleteDevice :execrows
-DELETE FROM devices WHERE id = ?;
+-- name: DeleteDevice :one
+-- No row (sql.ErrNoRows) when there is no such device.
+DELETE FROM devices WHERE id = ? RETURNING *;
 
 -- name: DeleteDeviceSessions :execrows
 DELETE FROM tokens WHERE device_id = ? AND kind = 'device_session';
