@@ -29,7 +29,7 @@ func Open(ctx context.Context, dataDir string) (*DB, error) {
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
-	dsn := "file:" + filepath.Join(dataDir, "chorecast.db") +
+	dsn := "file:" + filepath.Join(dataDir, FileName) +
 		"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
 	sqldb, err := sql.Open("sqlite", dsn)
 	if err != nil {
