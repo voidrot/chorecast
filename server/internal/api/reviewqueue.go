@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"slices"
 
@@ -11,9 +10,13 @@ import (
 
 	"github.com/voidrot/chorecast/server/internal/apierr"
 	"github.com/voidrot/chorecast/server/internal/auth"
+	"github.com/voidrot/chorecast/server/internal/horizon"
 	"github.com/voidrot/chorecast/server/internal/paging"
 	"github.com/voidrot/chorecast/server/internal/reviewqueue"
 )
+
+// codeAlreadyApproved is a bulk approval result for an instance that is approved already.
+const codeAlreadyApproved = "already_approved"
 
 func registerReviewQueue(hapi huma.API, h *handlers) {
 	review := auth.Require(auth.ScopeChoresReview)
@@ -24,7 +27,7 @@ func registerReviewQueue(hapi huma.API, h *handlers) {
 			"`instance.completedBy`). Each item has the chore's checklist steps with those the latest submission ticked, " +
 			"its note and its photos with signed thumbnail links (valid for 10 minutes; `expired` once retention deleted " +
 			"a photo), and the instance's rejection count and latest rejection. Filter by `kidId` (a shared chore matches " +
-			"its members), `choreId`, and `media`: `with` (the latest submission has photos) or `without`. Parents only. " +
+			"its members), `choreId`, and `media`: `with` (the latest submission has photos) or `without`. A chore rejected and resubmitted between two page fetches moves to the back and can appear on a later page again. Parents only. " +
 			"Approve one with `POST /instances/{id}/approval`, several with `POST /review-queue/approvals`, and reject " +
 			"with `POST /instances/{id}/rejection`.",
 		Tags: []string{"review"}, Security: review,
@@ -34,8 +37,10 @@ func registerReviewQueue(hapi huma.API, h *handlers) {
 		OperationID: "approveReviewQueue", Method: http.MethodPost, Path: "/review-queue/approvals",
 		Summary: "Approve several submitted chores",
 		Description: "Approves up to 100 instances, each in its own transaction, so one failing doesn't undo the others. " +
-			"The response has a result per distinct id, in request order: `approved`, or an error `code` such as " +
-			"`instance_not_submitted` or `instance_not_found`. Rejecting isn't offered in bulk, because it needs " +
+			"The response has a result per distinct id, in request order: `approved`, or an error `code`: " +
+			"`already_approved` (by an earlier call, so a retry is safe), `instance_not_submitted` (open, missed or excused) " +
+			"or `instance_not_found`. If the server fails partway it answers 500: the earlier approvals stay, and a retry " +
+			"reports them as `already_approved`. Rejecting isn't offered in bulk, because it needs " +
 			"feedback per chore. Parents only.",
 		Tags: []string{"review"}, Security: review, Errors: []int{http.StatusForbidden, http.StatusUnprocessableEntity},
 	}, h.approveReviewQueue)
@@ -98,6 +103,9 @@ func (h *handlers) approveReviewQueue(ctx context.Context, in *ApproveReviewQueu
 	out.Body.Results = []ReviewQueueApprovalResult{}
 	var seen []int64
 	for _, id := range in.Body.InstanceIDs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if slices.Contains(seen, id) {
 			continue
 		}
@@ -108,11 +116,19 @@ func (h *handlers) approveReviewQueue(ctx context.Context, in *ApproveReviewQueu
 		case err == nil:
 			out.Body.Results = append(out.Body.Results, ReviewQueueApprovalResult{InstanceID: id, Approved: true})
 		case errors.As(err, &prob) && prob.Status < http.StatusInternalServerError:
-			out.Body.Results = append(out.Body.Results, ReviewQueueApprovalResult{InstanceID: id, Code: prob.Code, Message: prob.Detail})
+			r := ReviewQueueApprovalResult{InstanceID: id, Code: prob.Code, Message: prob.Detail}
+			if prob.Code == apierr.CodeInstanceNotSubmitted {
+				// Tell a retry of an earlier call (or another parent's tap) from a chore that was never submitted.
+				if cur, gerr := h.instances.Get(ctx, id); gerr == nil && cur.Status == horizon.StatusApproved {
+					r.Code, r.Message = codeAlreadyApproved, "this chore is already approved"
+				}
+			}
+			out.Body.Results = append(out.Body.Results, r)
 		default:
-			// Report it for this id only: the others' approvals are committed already.
-			slog.ErrorContext(ctx, "bulk approve", "instance", id, "err", err)
-			out.Body.Results = append(out.Body.Results, ReviewQueueApprovalResult{InstanceID: id, Code: "internal_error", Message: "could not approve this chore"})
+			// A failure that isn't a refusal is a 500, not a 200 with a failed result, so that the
+			// idempotency middleware doesn't keep it. The approvals already committed stay; a retry
+			// reports them as already_approved.
+			return nil, err
 		}
 	}
 	return out, nil

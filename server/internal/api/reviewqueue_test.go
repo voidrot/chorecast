@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/voidrot/chorecast/server/internal/horizon"
 )
 
 type queueItemJSON struct {
@@ -149,8 +151,7 @@ func TestReviewQueuePaging(t *testing.T) {
 	if !slices.Equal(queueIDs(first.Items), []int64{e.lawn, e.bed, e.desk}) || first.NextCursor == "" {
 		t.Fatalf("first page: %v next %q", queueIDs(first.Items), first.NextCursor)
 	}
-	// A submission made after the first page doesn't disturb the cursor, and an approval of an
-	// earlier one doesn't skip anything.
+	// Approving an item already served doesn't make the cursor skip or repeat anything.
 	wantCode(t, "approve", e.call("POST", fmt.Sprintf("/api/v1/instances/%d/approval", e.lawn), e.mom, nil), 200, "")
 	second := e.queue("?limit=3&cursor="+url.QueryEscape(first.NextCursor), e.mom)
 	if !slices.Equal(queueIDs(second.Items), []int64{e.toys}) || second.NextCursor != "" {
@@ -201,7 +202,7 @@ func TestBulkApprove(t *testing.T) {
 		id       int64
 		approved bool
 		code     string
-	}{{e.bed, true, ""}, {e.lawn, false, "instance_not_submitted"}, {99999, false, "instance_not_found"}, {e.desk, true, ""}}
+	}{{e.bed, true, ""}, {e.lawn, false, "already_approved"}, {99999, false, "instance_not_found"}, {e.desk, true, ""}}
 	if len(got) != len(want) {
 		t.Fatalf("results: %+v", got)
 	}
@@ -243,6 +244,57 @@ func TestReviewQueueIsParentsOnly(t *testing.T) {
 	e := newReviewEnv(t)
 	wantCode(t, "kid lists", e.call("GET", "/api/v1/review-queue", e.sam, nil), 403, "")
 	wantCode(t, "kid bulk approves", e.call("POST", "/api/v1/review-queue/approvals", e.sam,
+		map[string]any{"instanceIds": []int64{e.bed}}), 403, "")
+	e.wantQueue("", e.lawn, e.bed, e.desk, e.toys)
+}
+
+func TestReviewQueueSharedInstanceMatchesEveryMember(t *testing.T) {
+	e := newReviewEnv(t)
+	rec := e.do("POST", "/api/v1/chores", map[string]any{
+		"name": "Tidy", "points": 4, "requiresApproval": true, "evidence": map[string]any{"photos": 0, "note": true},
+		"schedule":   map[string]any{"type": "daily", "startDate": "2026-10-31"},
+		"assignment": map[string]any{"mode": "shared", "kidIds": []int64{e.samID, e.sam2ID}, "sharedPoints": "split_evenly"},
+	}, e.mom)
+	wantCode(t, "create shared", rec, 201, "")
+	if _, err := horizon.New(e.store, e.clk).Generate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var shared int64
+	for _, i := range decode[struct{ Items []instanceJSON }](t, e.do("GET", "/api/v1/instances", nil, e.mom)).Items {
+		if i.KidID == 0 && i.Date == "2026-10-31" {
+			shared = i.ID
+		}
+	}
+	if shared == 0 {
+		t.Fatal("no shared instance")
+	}
+	e.clk.Advance(time.Minute)
+	wantCode(t, "complete", e.complete(shared, e.sam, map[string]any{"note": "Together"}), 200, "")
+	e.wantQueue(fmt.Sprintf("?kidId=%d", e.samID), e.bed, e.desk, shared)
+	e.wantQueue(fmt.Sprintf("?kidId=%d", e.sam2ID), e.lawn, e.toys, shared)
+	if got := e.queue(fmt.Sprintf("?kidId=%d", e.sam2ID), e.mom).Items[2]; got.Instance.CompletedBy != e.samID || got.KidName == "" {
+		t.Errorf("the shared item shows its completer: %+v", got)
+	}
+}
+
+func TestReviewQueueLimitBounds(t *testing.T) {
+	e := newReviewEnv(t)
+	for _, limit := range []string{"0", "101", "-1"} {
+		wantCode(t, "limit "+limit, e.call("GET", "/api/v1/review-queue?limit="+limit, e.mom, nil), 422, "validation_failed")
+	}
+	if n := len(e.queue("?limit=100", e.mom).Items); n != 4 {
+		t.Errorf("limit 100 returned %d", n)
+	}
+	if n := len(e.queue("?limit=1", e.mom).Items); n != 1 {
+		t.Errorf("limit 1 returned %d", n)
+	}
+}
+
+func TestReviewQueueRefusesSharedDevices(t *testing.T) {
+	e := newReviewEnv(t)
+	_, device := pairDevice(t, e.setupServer, pair(t, e.setupServer, e.mom, "").Code)
+	wantCode(t, "shared device lists", e.call("GET", "/api/v1/review-queue", device, nil), 403, "")
+	wantCode(t, "shared device bulk approves", e.call("POST", "/api/v1/review-queue/approvals", device,
 		map[string]any{"instanceIds": []int64{e.bed}}), 403, "")
 	e.wantQueue("", e.lawn, e.bed, e.desk, e.toys)
 }

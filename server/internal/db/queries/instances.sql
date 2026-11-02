@@ -142,9 +142,9 @@ WHERE i.status = 'submitted'
                JOIN chore_instance_evidence_photos p ON p.evidence_id = e.id
                WHERE e.instance_id = i.id
                  AND e.attempt = (SELECT MAX(e2.attempt) FROM chore_instance_evidence e2 WHERE e2.instance_id = i.id)))
-  AND (COALESCE(i.completed_at, '') > CAST(sqlc.arg(after_at) AS TEXT)
-       OR (COALESCE(i.completed_at, '') = CAST(sqlc.arg(after_at) AS TEXT) AND i.id > sqlc.arg(after_id)))
-ORDER BY COALESCE(i.completed_at, ''), i.id
+  AND (i.completed_at > CAST(sqlc.arg(after_at) AS TEXT)
+       OR (i.completed_at = CAST(sqlc.arg(after_at) AS TEXT) AND i.id > sqlc.arg(after_id)))
+ORDER BY i.completed_at, i.id
 LIMIT sqlc.arg(row_limit);
 
 -- name: ListChoreInstanceMembersByIDs :many

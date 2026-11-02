@@ -9097,7 +9097,7 @@
     },
     "/review-queue": {
       "get": {
-        "description": "`submitted` instances, oldest submission first (a flat list: the client groups it by `kidName` / `instance.completedBy`). Each item has the chore's checklist steps with those the latest submission ticked, its note and its photos with signed thumbnail links (valid for 10 minutes; `expired` once retention deleted a photo), and the instance's rejection count and latest rejection. Filter by `kidId` (a shared chore matches its members), `choreId`, and `media`: `with` (the latest submission has photos) or `without`. Parents only. Approve one with `POST /instances/{id}/approval`, several with `POST /review-queue/approvals`, and reject with `POST /instances/{id}/rejection`.",
+        "description": "`submitted` instances, oldest submission first (a flat list: the client groups it by `kidName` / `instance.completedBy`). Each item has the chore's checklist steps with those the latest submission ticked, its note and its photos with signed thumbnail links (valid for 10 minutes; `expired` once retention deleted a photo), and the instance's rejection count and latest rejection. Filter by `kidId` (a shared chore matches its members), `choreId`, and `media`: `with` (the latest submission has photos) or `without`. A chore rejected and resubmitted between two page fetches moves to the back and can appear on a later page again. Parents only. Approve one with `POST /instances/{id}/approval`, several with `POST /review-queue/approvals`, and reject with `POST /instances/{id}/rejection`.",
         "operationId": "listReviewQueue",
         "parameters": [
           {
@@ -9231,7 +9231,7 @@
     },
     "/review-queue/approvals": {
       "post": {
-        "description": "Approves up to 100 instances, each in its own transaction, so one failing doesn't undo the others. The response has a result per distinct id, in request order: `approved`, or an error `code` such as `instance_not_submitted` or `instance_not_found`. Rejecting isn't offered in bulk, because it needs feedback per chore. Parents only.",
+        "description": "Approves up to 100 instances, each in its own transaction, so one failing doesn't undo the others. The response has a result per distinct id, in request order: `approved`, or an error `code`: `already_approved` (by an earlier call, so a retry is safe), `instance_not_submitted` (open, missed or excused) or `instance_not_found`. If the server fails partway it answers 500: the earlier approvals stay, and a retry reports them as `already_approved`. Rejecting isn't offered in bulk, because it needs feedback per chore. Parents only.",
         "operationId": "approveReviewQueue",
         "parameters": [
           {
