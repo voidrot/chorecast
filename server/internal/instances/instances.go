@@ -451,9 +451,10 @@ func shares(in instance) map[int64]int {
 	return assign.SplitPoints(pts, in.chore.SharedPoints, in.CompletedBy.Int64, in.members)
 }
 
-// credit puts each kid's share in effect: a first approval posts it, a re-approval reverses the
-// reversal of the earlier credit (restoring its amount), and a credit in effect stays. The
-// entries are dated to the instance's day, like its missed penalty.
+// credit puts each kid's share in effect: a first approval posts it (nothing for a share of 0), a
+// re-approval reverses the reversal of the earlier credit (restoring its amount, whatever the
+// share is now), and a credit in effect stays. The entries are dated to the instance's day, like
+// its missed penalty.
 func credit(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance, by int64, note string) error {
 	date, err := caltime.ParseDate(in.OccurrenceDate)
 	if err != nil {
@@ -467,13 +468,12 @@ func credit(ctx context.Context, tx *events.Tx, clk clock.Clock, in instance, by
 	slices.Sort(kids) // a stable entry order
 	for _, kid := range kids {
 		pts := split[kid]
-		if pts == 0 {
-			continue
-		}
 		tip, inEffect, found, err := ledger.Tip(ctx, tx, kid, ledger.KindChore, in.source())
 		switch {
 		case err != nil:
 			return err
+		case !found && pts == 0:
+			// nothing to post
 		case !found:
 			_, err = ledger.Post(ctx, tx, clk, ledger.Posting{
 				KidID: kid, Kind: ledger.KindChore, Amount: int64(pts), Source: in.source(), LocalDate: date,

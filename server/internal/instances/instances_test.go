@@ -465,6 +465,38 @@ func TestReapprovalRestoresTheCreditWithoutPostingAgain(t *testing.T) {
 	}
 }
 
+// TestReapprovalRestoresTheCreditWhenThePointsDropToZero: a re-approval restores the first credit
+// even when the chore is now worth 0, and a first approval at 0 posts nothing.
+func TestReapprovalRestoresTheCreditWhenThePointsDropToZero(t *testing.T) {
+	f := newFixture(t)
+	c := f.chore(chores.ChoreInput{Name: "Dishes", Points: 5, RequiresApproval: true})
+	id := f.instance(c.ID, today, f.sam)
+	free := f.instance(c.ID, today, f.ada) // first approved after the drop
+	ctx := t.Context()
+	approve := func(id int64) {
+		t.Helper()
+		if _, err := f.svc.Complete(ctx, id, instances.Completion{By: f.mom}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.svc.Approve(ctx, id, f.mom); err != nil {
+			t.Fatal(err)
+		}
+	}
+	approve(id)
+	if _, err := f.svc.Unapprove(ctx, id, f.mom, ""); err != nil {
+		t.Fatal(err)
+	}
+	f.exec("UPDATE chores SET points = 0 WHERE id = ?", c.ID)
+	approve(id)
+	if got := f.get(id); got.Status != horizon.StatusApproved || f.balance(f.sam) != 5 {
+		t.Errorf("re-approved at 0 points: %s, balance %d, want approved with the first 5 restored", got.Status, f.balance(f.sam))
+	}
+	approve(free)
+	if e := f.entries(free); len(e) != 0 || f.balance(f.ada) != 0 {
+		t.Errorf("a first approval at 0 points wrote %v (balance %d)", e, f.balance(f.ada))
+	}
+}
+
 func TestRejectKeepsHistory(t *testing.T) {
 	f := newFixture(t)
 	c := f.chore(chores.ChoreInput{Name: "Dishes", Points: 5, RequiresApproval: true})
@@ -925,13 +957,13 @@ func (m *modelInstance) credit() map[int64]int64 {
 		shares = assign.SplitPoints(int(m.chore.Points), m.chore.SharedPoints, m.completer, m.members)
 	}
 	for k, pts := range shares {
-		if pts == 0 {
-			continue
-		}
 		if _, ok := m.credited[k]; !ok {
+			if pts == 0 {
+				continue // a first credit of 0 isn't posted
+			}
 			m.credited[k] = int64(pts)
 		}
-		out[k] = m.credited[k]
+		out[k] = m.credited[k] // a re-approval restores the first amount, whatever the share now
 	}
 	return out
 }
