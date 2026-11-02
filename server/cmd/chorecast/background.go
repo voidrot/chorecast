@@ -21,22 +21,25 @@ import (
 	"github.com/voidrot/chorecast/server/internal/idempotency"
 	"github.com/voidrot/chorecast/server/internal/jobs"
 	"github.com/voidrot/chorecast/server/internal/kids"
+	"github.com/voidrot/chorecast/server/internal/media"
 	"github.com/voidrot/chorecast/server/internal/parents"
 	"github.com/voidrot/chorecast/server/internal/streaks"
 )
 
 const (
-	schedulerInterval = 5 * time.Second
-	kindMaintenance   = "maintenance.daily"
-	kindHorizon       = "horizon.generate" // also enqueued once at startup (serve)
-	keepDoneJobs      = 7 * 24 * time.Hour
-	keepFailedJobs    = 30 * 24 * time.Hour
+	schedulerInterval  = 5 * time.Second
+	kindMaintenance    = "maintenance.daily"
+	kindMediaRetention = "media.retention"
+	kindHorizon        = "horizon.generate" // also enqueued once at startup (serve)
+	keepDoneJobs       = 7 * 24 * time.Hour
+	keepFailedJobs     = 30 * 24 * time.Hour
 )
 
 // newBackground builds the job runner, scheduler and event bus with every job kind, recurring
 // schedule and event subscriber. Feature work adds its kinds, providers and subscribers here
-// (day close, week close, horizon, notifications, ...).
-func newBackground(store *db.DB, clk clock.Clock, log *slog.Logger) (*jobs.Runner, *jobs.Scheduler, *events.Bus) {
+// (day close, week close, horizon, notifications, ...). files is the media storage retention
+// deletes from.
+func newBackground(store *db.DB, clk clock.Clock, files media.Storage, log *slog.Logger) (*jobs.Runner, *jobs.Scheduler, *events.Bus) {
 	runner := jobs.NewRunner(store.Queries, clk, log)
 	sched := jobs.NewScheduler(store.Queries, runner, clk, log)
 	bus := events.NewBus(store, runner, clk, log)
@@ -76,6 +79,18 @@ func newBackground(store *db.DB, clk clock.Clock, log *slog.Logger) (*jobs.Runne
 		return nil
 	}, jobs.KindOptions{MaxAttempts: 3})
 	sched.Add(jobs.Every("maintenance", kindMaintenance, 24*time.Hour))
+
+	// Media retention: resolved instances' evidence after media_retention_days, and pending
+	// uploads never attached. Re-running is harmless (media.Expire).
+	runner.Register(kindMediaRetention, func(ctx context.Context, _ jobs.Job) error {
+		n, err := media.Expire(ctx, store, clk, files)
+		if err != nil {
+			return err
+		}
+		log.Info("media retention", "expired", n)
+		return nil
+	}, jobs.KindOptions{MaxAttempts: 3})
+	sched.Add(jobs.Every("media_retention", kindMediaRetention, 24*time.Hour))
 
 	// The rolling horizon: regenerated at each household day end, at startup, and whenever the
 	// calendar, a chore or a kid changes. Every run regenerates everything, so one handler serves

@@ -10,10 +10,28 @@ import (
 	"database/sql"
 )
 
+const countPendingUploads = `-- name: CountPendingUploads :one
+SELECT COUNT(*) FROM media
+WHERE uploaded_by = ?1 AND owner_kind = 'pending' AND status = 'ready' AND expires_at > ?2
+`
+
+type CountPendingUploadsParams struct {
+	UploadedBy sql.NullInt64  `json:"uploaded_by"`
+	Now        sql.NullString `json:"now"`
+}
+
+// A user's pending uploads that can still be attached (the pending upload cap).
+func (q *Queries) CountPendingUploads(ctx context.Context, arg CountPendingUploadsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPendingUploads, arg.UploadedBy, arg.Now)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createMedia = `-- name: CreateMedia :one
 INSERT INTO media (uploaded_by, storage_key, thumb_key, kind, mime, bytes, width, height,
-                   thumb_width, thumb_height, sha256, dhash, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   thumb_width, thumb_height, sha256, dhash, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, owner_kind, owner_id, uploaded_by, storage_key, thumb_key, kind, mime, bytes, width, height, thumb_width, thumb_height, sha256, dhash, status, keep, created_at, expires_at
 `
 
@@ -31,6 +49,7 @@ type CreateMediaParams struct {
 	Sha256      []byte         `json:"sha256"`
 	Dhash       int64          `json:"dhash"`
 	CreatedAt   string         `json:"created_at"`
+	ExpiresAt   sql.NullString `json:"expires_at"`
 }
 
 func (q *Queries) CreateMedia(ctx context.Context, arg CreateMediaParams) (Medium, error) {
@@ -48,6 +67,7 @@ func (q *Queries) CreateMedia(ctx context.Context, arg CreateMediaParams) (Mediu
 		arg.Sha256,
 		arg.Dhash,
 		arg.CreatedAt,
+		arg.ExpiresAt,
 	)
 	var i Medium
 	err := row.Scan(
@@ -72,6 +92,16 @@ func (q *Queries) CreateMedia(ctx context.Context, arg CreateMediaParams) (Mediu
 		&i.ExpiresAt,
 	)
 	return i, err
+}
+
+const deleteMediaHashOf = `-- name: DeleteMediaHashOf :exec
+DELETE FROM media_hashes WHERE media_id = ?
+`
+
+// Abandoned pending media was never evidence, so its hash mustn't block a later upload.
+func (q *Queries) DeleteMediaHashOf(ctx context.Context, mediaID sql.NullInt64) error {
+	_, err := q.db.ExecContext(ctx, deleteMediaHashOf, mediaID)
+	return err
 }
 
 const getMedia = `-- name: GetMedia :one
@@ -137,6 +167,23 @@ func (q *Queries) GetMediaByKey(ctx context.Context, key string) (Medium, error)
 	return i, err
 }
 
+const getMediaHash = `-- name: GetMediaHash :one
+SELECT sha256, dhash, kid_id, media_id, created_at FROM media_hashes WHERE sha256 = ?
+`
+
+func (q *Queries) GetMediaHash(ctx context.Context, sha256 []byte) (MediaHash, error) {
+	row := q.db.QueryRowContext(ctx, getMediaHash, sha256)
+	var i MediaHash
+	err := row.Scan(
+		&i.Sha256,
+		&i.Dhash,
+		&i.KidID,
+		&i.MediaID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getServerKey = `-- name: GetServerKey :one
 SELECT key FROM server_keys WHERE name = ?
 `
@@ -164,15 +211,85 @@ func (q *Queries) InsertServerKey(ctx context.Context, arg InsertServerKeyParams
 	return err
 }
 
-const mediaHashExists = `-- name: MediaHashExists :one
-SELECT EXISTS (SELECT 1 FROM media_hashes WHERE sha256 = ?)
+const listExpiredMedia = `-- name: ListExpiredMedia :many
+SELECT id, owner_kind, owner_id, uploaded_by, storage_key, thumb_key, kind, mime, bytes, width, height, thumb_width, thumb_height, sha256, dhash, status, keep, created_at, expires_at FROM media
+WHERE status = 'ready'
+  AND ((keep = 0 AND expires_at < ?1)
+       OR (owner_kind = 'evidence' AND NOT EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.id = media.owner_id)))
+ORDER BY id
+LIMIT ?2
 `
 
-func (q *Queries) MediaHashExists(ctx context.Context, sha256 []byte) (bool, error) {
-	row := q.db.QueryRowContext(ctx, mediaHashExists, sha256)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+type ListExpiredMediaParams struct {
+	Now     sql.NullString `json:"now"`
+	MaxRows int64          `json:"max_rows"`
+}
+
+// Media whose files retention deletes: expired and not kept, or evidence whose record is gone
+// (its instance was deleted along with its kid).
+func (q *Queries) ListExpiredMedia(ctx context.Context, arg ListExpiredMediaParams) ([]Medium, error) {
+	rows, err := q.db.QueryContext(ctx, listExpiredMedia, arg.Now, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Medium{}
+	for rows.Next() {
+		var i Medium
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerKind,
+			&i.OwnerID,
+			&i.UploadedBy,
+			&i.StorageKey,
+			&i.ThumbKey,
+			&i.Kind,
+			&i.Mime,
+			&i.Bytes,
+			&i.Width,
+			&i.Height,
+			&i.ThumbWidth,
+			&i.ThumbHeight,
+			&i.Sha256,
+			&i.Dhash,
+			&i.Status,
+			&i.Keep,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markMediaExpired = `-- name: MarkMediaExpired :execrows
+UPDATE media SET status = 'expired'
+WHERE media.id = ?1 AND media.status = 'ready'
+  AND ((keep = 0 AND expires_at < ?2)
+       OR (owner_kind = 'evidence' AND NOT EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.id = media.owner_id)))
+`
+
+type MarkMediaExpiredParams struct {
+	ID  int64          `json:"id"`
+	Now sql.NullString `json:"now"`
+}
+
+// After its files are deleted. Repeats ListExpiredMedia's condition, so media that stopped
+// expiring meanwhile (its instance reopened) stays ready.
+func (q *Queries) MarkMediaExpired(ctx context.Context, arg MarkMediaExpiredParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markMediaExpired, arg.ID, arg.Now)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const recordMediaHash = `-- name: RecordMediaHash :one

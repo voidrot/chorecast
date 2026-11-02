@@ -1,6 +1,9 @@
 -- name: ListChoreInstancesFrom :many
--- Every instance dated on or after the day, with the chore's estimate for the fairness ledger.
-SELECT i.*, c.estimated_minutes FROM chore_instances i
+-- Every instance dated on or after the day, with the chore's estimate for the fairness ledger and
+-- whether evidence was submitted for it.
+SELECT i.*, c.estimated_minutes,
+    EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.instance_id = i.id) AS has_evidence
+FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= ?
 ORDER BY i.chore_id, i.occurrence_date, i.slot, i.seq, i.kid_id;
@@ -63,7 +66,8 @@ ORDER BY m.instance_id, m.kid_id;
 -- name: ChoreHasHistory :one
 -- Whether the chore has an instance to keep: touched, or already due.
 SELECT EXISTS (SELECT 1 FROM chore_instances
-    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR completed_at IS NOT NULL OR due_at <= ?));
+    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR completed_at IS NOT NULL OR due_at <= ?
+        OR EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.instance_id = chore_instances.id)));
 
 -- name: DeleteChoreInstances :exec
 DELETE FROM chore_instances WHERE chore_id = ?;

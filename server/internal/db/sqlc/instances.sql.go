@@ -26,7 +26,8 @@ func (q *Queries) AddChoreInstanceMember(ctx context.Context, arg AddChoreInstan
 
 const choreHasHistory = `-- name: ChoreHasHistory :one
 SELECT EXISTS (SELECT 1 FROM chore_instances
-    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR completed_at IS NOT NULL OR due_at <= ?))
+    WHERE chore_id = ? AND (status != 'open' OR manually_reassigned = 1 OR completed_at IS NOT NULL OR due_at <= ?
+        OR EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.instance_id = chore_instances.id)))
 `
 
 type ChoreHasHistoryParams struct {
@@ -379,7 +380,9 @@ func (q *Queries) ListChoreInstancesBetween(ctx context.Context, arg ListChoreIn
 }
 
 const listChoreInstancesFrom = `-- name: ListChoreInstancesFrom :many
-SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.estimated_minutes FROM chore_instances i
+SELECT i.id, i.chore_id, i.kid_id, i.occurrence_date, i.slot, i.seq, i.due_at, i.flexible, i.status, i.auto_assigned, i.manually_reassigned, i.reassigned_from, i.rotation_state, i.completed_by, i.completed_at, i.rejection_count, i.created_at, i.updated_at, c.estimated_minutes,
+    EXISTS (SELECT 1 FROM chore_instance_evidence e WHERE e.instance_id = i.id) AS has_evidence
+FROM chore_instances i
 JOIN chores c ON c.id = i.chore_id
 WHERE i.occurrence_date >= ?
 ORDER BY i.chore_id, i.occurrence_date, i.slot, i.seq, i.kid_id
@@ -405,9 +408,11 @@ type ListChoreInstancesFromRow struct {
 	CreatedAt          string         `json:"created_at"`
 	UpdatedAt          string         `json:"updated_at"`
 	EstimatedMinutes   sql.NullInt64  `json:"estimated_minutes"`
+	HasEvidence        bool           `json:"has_evidence"`
 }
 
-// Every instance dated on or after the day, with the chore's estimate for the fairness ledger.
+// Every instance dated on or after the day, with the chore's estimate for the fairness ledger and
+// whether evidence was submitted for it.
 func (q *Queries) ListChoreInstancesFrom(ctx context.Context, occurrenceDate string) ([]ListChoreInstancesFromRow, error) {
 	rows, err := q.db.QueryContext(ctx, listChoreInstancesFrom, occurrenceDate)
 	if err != nil {
@@ -437,6 +442,7 @@ func (q *Queries) ListChoreInstancesFrom(ctx context.Context, occurrenceDate str
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.EstimatedMinutes,
+			&i.HasEvidence,
 		); err != nil {
 			return nil, err
 		}
