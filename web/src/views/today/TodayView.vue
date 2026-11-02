@@ -11,7 +11,8 @@ import { useReviewQueueStore } from '@/stores/reviewQueue'
 import {
   type Action,
   BUCKETS,
-  civilToday,
+  completers,
+  householdToday,
   type Instance,
   isStale,
   planByKid,
@@ -19,7 +20,7 @@ import {
   reassignTargets,
 } from '@/today/plan'
 import RejectModal from '@/views/review/RejectModal.vue'
-import ReassignModal from './ReassignModal.vue'
+import KidPickModal from './KidPickModal.vue'
 import TodayCard from './TodayCard.vue'
 
 const { t, te } = useI18n()
@@ -30,7 +31,7 @@ type KidRow = { id: number; displayName: string; color: string; avatar?: string 
 
 const kids = ref<KidRow[]>([])
 const instances = ref<Instance[]>([])
-const today = ref(civilToday(householdTimeZone.value))
+const today = ref('')
 const loading = ref(false)
 const loadError = ref<string>()
 const busyIds = ref<Set<number>>(new Set())
@@ -41,6 +42,9 @@ const kidById = computed(() => new Map(kids.value.map((k) => [k.id, k])))
 
 function errorText(e: ApiError): string {
   if (te(`today.errors.${e.code}`)) return t(`today.errors.${e.code}`)
+  // A refused completion (missing photos, say) explains itself in the field errors.
+  const reasons = e.fieldErrors?.map((f) => f.message).filter(Boolean) ?? []
+  if (e.code === 'validation_failed' && reasons.length) return reasons.join(' ')
   return e.detail || e.code
 }
 
@@ -58,7 +62,7 @@ async function load() {
     const household = await api.GET('/household')
     if (!household.data) throw ApiError.fromProblem(household.response.status, household.error)
     householdTimeZone.value = household.data.timezone
-    const day = civilToday(household.data.timezone)
+    const day = householdToday(household.data.timezone, household.data.dayEnd)
     const { from, to } = rangeFor(day)
     const [k, i] = await Promise.all([
       api.GET('/kids'),
@@ -116,8 +120,10 @@ async function run(
 
 const path = (inst: Instance) => ({ params: { path: { instance: inst.id } } })
 
-async function simple(inst: Instance, action: 'approve' | 'reverse' | 'excuse') {
+async function simple(inst: Instance, action: 'approve' | 'reverse' | 'excuse' | 'complete') {
   const call = {
+    complete: () =>
+      api.POST('/instances/{instance}/completion', { ...path(inst), body: { kidId: inst.kidId } }),
     approve: () => api.POST('/instances/{instance}/approval', path(inst)),
     reverse: () => api.POST('/instances/{instance}/approval/reversal', path(inst)),
     excuse: () => api.POST('/instances/{instance}/excusal', path(inst)),
@@ -128,6 +134,7 @@ async function simple(inst: Instance, action: 'approve' | 'reverse' | 'excuse') 
 
 const rejecting = ref<Instance>()
 const reassigning = ref<Instance>()
+const completing = ref<Instance>()
 const modalBusy = ref(false)
 const modalError = ref<string>()
 
@@ -135,6 +142,10 @@ function onAct(inst: Instance, action: Action) {
   if (action === 'reject') {
     modalError.value = undefined
     rejecting.value = inst
+  } else if (action === 'complete' && inst.kidId === undefined) {
+    // A shared chore needs the member who did it.
+    modalError.value = undefined
+    completing.value = inst
   } else if (action === 'reassign') {
     modalError.value = undefined
     reassigning.value = inst
@@ -183,6 +194,25 @@ function submitReassign(kidId: number) {
     },
   )
 }
+
+function submitComplete(kidId: number) {
+  const inst = completing.value
+  if (!inst) return
+  void submitModal(
+    inst,
+    () => api.POST('/instances/{instance}/completion', { ...path(inst), body: { kidId } }),
+    'today.done.complete',
+    () => {
+      completing.value = undefined
+    },
+  )
+}
+
+const completeOptions = computed(() =>
+  completing.value
+    ? completers(kids.value, completing.value).map((k) => ({ value: k.id, label: k.displayName }))
+    : [],
+)
 
 const targetOptions = computed(() =>
   reassigning.value
@@ -251,14 +281,27 @@ onMounted(load)
       @close="rejecting = undefined"
       @submit="submitReject"
     />
-    <ReassignModal
+    <KidPickModal
       :show="reassigning !== undefined"
-      :chore="reassigning?.choreName ?? ''"
+      :title="t('today.reassignTitle', { chore: reassigning?.choreName ?? '' })"
+      :label="t('today.reassignTo')"
+      :submit-label="t('today.actions.reassign')"
       :kids="targetOptions"
       :busy="modalBusy"
       :error="modalError"
       @close="reassigning = undefined"
       @submit="submitReassign"
+    />
+    <KidPickModal
+      :show="completing !== undefined"
+      :title="t('today.completeTitle', { chore: completing?.choreName ?? '' })"
+      :label="t('today.completeFor')"
+      :submit-label="t('today.actions.complete')"
+      :kids="completeOptions"
+      :busy="modalBusy"
+      :error="modalError"
+      @close="completing = undefined"
+      @submit="submitComplete"
     />
   </div>
 </template>

@@ -107,6 +107,15 @@ async function toggleEvidence() {
             t('today.actions.reassign')
           }}</NButton
         >
+        <NButton
+          v-else-if="a === 'complete' && instance.kidId === undefined"
+          size="small"
+          :disabled="busy"
+          @click="emit('act', 'complete')"
+          >{{
+            t('today.actions.complete')
+          }}</NButton
+        >
         <NPopconfirm
           v-else
           :positive-text="t(`today.actions.${a}`)"

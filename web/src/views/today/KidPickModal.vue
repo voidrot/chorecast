@@ -5,7 +5,9 @@ import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   show: boolean
-  chore: string
+  title: string
+  label: string
+  submitLabel: string
   kids: { value: number; label: string }[]
   busy: boolean
   error?: string
@@ -36,21 +38,21 @@ function submit() {
   <NModal
     :show="show"
     preset="card"
-    :title="t('today.reassignTitle', { chore })"
+    :title="title"
     class="max-w-md"
     @update:show="(v: boolean) => !v && emit('close')"
   >
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <div class="flex flex-col gap-1">
-        <span class="text-sm font-medium" aria-hidden="true">{{ t('today.reassignTo') }}</span>
-        <NSelect v-model:value="kid" :options="kids" :aria-label="t('today.reassignTo')" />
+        <span class="text-sm font-medium" aria-hidden="true">{{ label }}</span>
+        <NSelect v-model:value="kid" :options="kids" :aria-label="label" />
       </div>
       <NAlert v-if="missing" type="warning">{{ t('today.chooseKid') }}</NAlert>
       <NAlert v-if="error" type="error">{{ error }}</NAlert>
       <div class="flex justify-end gap-2">
         <NButton @click="emit('close')">{{ t('today.cancel') }}</NButton>
         <NButton type="primary" attr-type="submit" :loading="busy" :disabled="!canSubmit">{{
-          t('today.actions.reassign')
+          submitLabel
         }}</NButton>
       </div>
     </form>

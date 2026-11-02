@@ -13,19 +13,42 @@ export type Bucket = 'attention' | 'today' | 'upcoming' | 'earlier'
 
 export const BUCKETS: readonly Bucket[] = ['attention', 'today', 'upcoming', 'earlier']
 
-/** Today's civil date (YYYY-MM-DD) in the given IANA time zone. */
-export function civilToday(timeZone: string, now: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now)
-}
-
 export function addDays(isoDate: string, days: number): string {
   const [y, m, d] = isoDate.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
+}
+
+/** Minutes since midnight for an HH:MM day end; "00:00" (and "24:00") is the end of the day. */
+function dayEndMinutes(dayEnd: string): number {
+  const [h, m] = dayEnd.split(':').map(Number)
+  const minutes = h * 60 + m
+  return minutes === 0 ? 24 * 60 : minutes
+}
+
+/**
+ * The household's current day, as the server counts it: the day whose close is still ahead. With
+ * an early day end (say 21:00) the evening after the close already belongs to the next date, and
+ * at the exact close the next day starts. Wall-clock arithmetic follows DST by itself. Shortcut:
+ * on the repeated hour of a fall-back night, a day end inside it is read from the second pass
+ * too, where the server would already have closed the day.
+ */
+export function householdToday(timeZone: string, dayEnd: string, now: Date = new Date()): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(now)
+      .map((p) => [p.type, p.value]),
+  )
+  const date = `${parts.year}-${parts.month}-${parts.day}`
+  const wall = Number(parts.hour) * 60 + Number(parts.minute)
+  return wall >= dayEndMinutes(dayEnd) ? addDays(date, 1) : date
 }
 
 export function rangeFor(today: string): { from: string; to: string } {
@@ -34,12 +57,15 @@ export function rangeFor(today: string): { from: string; to: string } {
 
 /**
  * Where an instance sits on the screen: what needs a parent (missed, or waiting for approval)
- * comes first, then today's other chores, forecasts, and finished days.
+ * comes first, then today's other chores, forecasts, and finished days. Forecasts follow the
+ * server's `planned` flag. An open chore that has not closed is still to do, however old its date
+ * (a flexible chore carries the week's first day), so it never lands in "Earlier".
  */
 export function bucketOf(i: Instance, today: string): Bucket {
   if (i.status === 'missed' || i.status === 'submitted') return 'attention'
-  if (i.planned || i.date > today) return 'upcoming'
-  return i.date === today ? 'today' : 'earlier'
+  if (i.planned) return 'upcoming'
+  if (i.status === 'open' || i.date === today) return 'today'
+  return i.date > today ? 'upcoming' : 'earlier'
 }
 
 export interface KidPlan {
@@ -80,7 +106,7 @@ export function planByKid(
   return [...plans.values(), shared].filter((p) => BUCKETS.some((b) => p.buckets[b].length > 0))
 }
 
-export type Action = 'approve' | 'reject' | 'reverse' | 'excuse' | 'reassign'
+export type Action = 'approve' | 'reject' | 'reverse' | 'excuse' | 'reassign' | 'complete'
 
 /** The parent actions the server accepts for an instance in its current state. */
 export function actionsFor(i: Instance): Action[] {
@@ -91,9 +117,12 @@ export function actionsFor(i: Instance): Action[] {
       return ['reverse']
     case 'missed':
       return ['excuse']
-    case 'open':
-      // A shared instance has no assignee to move.
-      return i.kidId === undefined ? [] : ['reassign']
+    case 'open': {
+      // A forecast can't be completed yet, and a shared instance has no assignee to move.
+      const out: Action[] = i.planned ? [] : ['complete']
+      if (i.kidId !== undefined) out.push('reassign')
+      return out
+    }
     default:
       return []
   }
@@ -114,13 +143,16 @@ const STALE_CODES = new Set([
   'instance_closed',
   'instance_shared',
   'instance_taken',
-  'already_approved',
-  'already_rejected',
-  'already_excused',
 ])
 
 export function isStale(code: string | undefined): boolean {
   return code !== undefined && STALE_CODES.has(code)
+}
+
+/** Who a parent can mark a shared chore done for: its group members. */
+export function completers<K extends Pick<Kid, 'id'>>(kids: readonly K[], i: Instance): K[] {
+  const members = new Set(i.groupKidIds ?? [])
+  return kids.filter((k) => members.has(k.id))
 }
 
 /** Kids a chore can move to: everyone but its current assignee. */
