@@ -1878,6 +1878,14 @@
           "avatar": {
             "type": "string"
           },
+          "avatarPhotoExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "avatarPhotoUrl": {
+            "format": "uri",
+            "type": "string"
+          },
           "color": {
             "type": "string"
           },

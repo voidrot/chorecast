@@ -451,14 +451,54 @@ func (q *Queries) RecordMediaHash(ctx context.Context, arg RecordMediaHashParams
 	return sha256, err
 }
 
-const releaseKidAvatar = `-- name: ReleaseKidAvatar :exec
+const releaseKidAvatar = `-- name: ReleaseKidAvatar :many
 UPDATE media SET status = 'deleting' WHERE owner_kind = 'kid_avatar' AND owner_id = ? AND status = 'ready'
+RETURNING id, owner_kind, owner_id, uploaded_by, storage_key, thumb_key, kind, mime, bytes, width, height, thumb_width, thumb_height, sha256, dhash, status, keep, created_at, expires_at
 `
 
-// Hands the kid's avatar photo to the retention job's second step, which deletes its files.
-func (q *Queries) ReleaseKidAvatar(ctx context.Context, ownerID sql.NullInt64) error {
-	_, err := q.db.ExecContext(ctx, releaseKidAvatar, ownerID)
-	return err
+// Claims the kid's avatar photo for deletion (status deleting); the caller deletes the files, or
+// the retention job's second step does if that fails.
+func (q *Queries) ReleaseKidAvatar(ctx context.Context, ownerID sql.NullInt64) ([]Medium, error) {
+	rows, err := q.db.QueryContext(ctx, releaseKidAvatar, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Medium{}
+	for rows.Next() {
+		var i Medium
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerKind,
+			&i.OwnerID,
+			&i.UploadedBy,
+			&i.StorageKey,
+			&i.ThumbKey,
+			&i.Kind,
+			&i.Mime,
+			&i.Bytes,
+			&i.Width,
+			&i.Height,
+			&i.ThumbWidth,
+			&i.ThumbHeight,
+			&i.Sha256,
+			&i.Dhash,
+			&i.Status,
+			&i.Keep,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const replaceServerKey = `-- name: ReplaceServerKey :exec

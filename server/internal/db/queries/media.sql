@@ -81,6 +81,8 @@ SELECT * FROM media WHERE owner_kind = 'kid_avatar' AND owner_id = ? AND status 
 -- Makes a just-created pending upload the kid's avatar: no owner expiry, so retention never takes it.
 UPDATE media SET owner_kind = 'kid_avatar', owner_id = ?, expires_at = NULL WHERE id = ? AND owner_kind = 'pending';
 
--- name: ReleaseKidAvatar :exec
--- Hands the kid's avatar photo to the retention job's second step, which deletes its files.
-UPDATE media SET status = 'deleting' WHERE owner_kind = 'kid_avatar' AND owner_id = ? AND status = 'ready';
+-- name: ReleaseKidAvatar :many
+-- Claims the kid's avatar photo for deletion (status deleting); the caller deletes the files, or
+-- the retention job's second step does if that fails.
+UPDATE media SET status = 'deleting' WHERE owner_kind = 'kid_avatar' AND owner_id = ? AND status = 'ready'
+RETURNING *;

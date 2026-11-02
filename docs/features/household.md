@@ -100,7 +100,7 @@ users (role = child): display_name, avatar (built-in id or media id), color, bir
   runs the normal photo pipeline (limits, EXIF stripping) and stores the result as media with `owner_kind =
   'kid_avatar'`, `owner_id` = the kid, and no `expires_at`, so retention never takes it. The kid-evidence rules
   (hashing, duplicates, the pending cap) don't apply. A new photo or `DELETE /kids/{kid}/avatar/photo` marks the old
-  media `deleting`, and the retention job deletes its files. Kid responses gain optional `avatarPhotoUrl` (a signed
+  media `deleting` and deletes its files right after the commit; if that fails the row stays `deleting` and the retention job retries. Kid responses and the device picker gain optional `avatarPhotoUrl` (a signed
   link to the 320 px thumbnail) and `avatarPhotoExpiresAt` (links last 10 minutes, so refetch the kid); the bundled
   `avatar` id stays set, so removing the photo falls back to it. Archiving keeps the photo. Deleting a kid doesn't
   exist yet (Phase 4); it must release the photo with `media.Service.ReleaseKidAvatar`. The admin's kid editor has the

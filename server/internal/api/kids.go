@@ -222,16 +222,25 @@ func (h *handlers) kidOutput(ctx context.Context, k kids.Kid) (*KidOutput, error
 // withAvatarPhoto sets the kid's signed photo link (the 320 px thumbnail, plenty for an avatar)
 // when they have a photo avatar. Callers have checked the principal may read the kid profile.
 func (h *handlers) withAvatarPhoto(ctx context.Context, k kids.Kid) (kids.Kid, error) {
-	m, err := h.media.KidAvatar(ctx, k.ID)
-	if err != nil || m == nil {
-		return k, err
-	}
-	urls, err := h.signedURLs(ctx, *m)
+	link, exp, err := h.avatarPhotoLink(ctx, k.ID)
 	if err != nil {
 		return k, err
 	}
-	k.AvatarPhotoURL, k.AvatarPhotoExpiresAt = urls.ThumbURL, &urls.Expires
+	k.AvatarPhotoURL, k.AvatarPhotoExpiresAt = link, exp
 	return k, nil
+}
+
+// avatarPhotoLink signs a link to kid's photo avatar thumbnail; the link is empty when there is none.
+func (h *handlers) avatarPhotoLink(ctx context.Context, kid int64) (string, *time.Time, error) {
+	m, err := h.media.KidAvatar(ctx, kid)
+	if err != nil || m == nil {
+		return "", nil, err
+	}
+	urls, err := h.signedURLs(ctx, *m)
+	if err != nil {
+		return "", nil, err
+	}
+	return urls.ThumbURL, &urls.Expires, nil
 }
 
 // manageKid resolves a kid the caller may change the avatar of.

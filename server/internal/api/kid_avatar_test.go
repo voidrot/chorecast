@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/voidrot/chorecast/server/internal/auth"
 	"github.com/voidrot/chorecast/server/internal/config"
 	"github.com/voidrot/chorecast/server/internal/media"
 	"github.com/voidrot/chorecast/server/internal/media/mediatest"
@@ -79,25 +80,35 @@ func TestKidAvatarPhoto(t *testing.T) {
 	}
 	oldFile := filepath.Join(e.dataDir, "media", key[0:2], key[2:4], key)
 
-	// Replacing releases the old photo for the retention job.
+	// Replacing releases the old photo and deletes its files at once.
 	wantCode(t, "replace avatar", e.setAvatar(e.mom, "sam", photo(t, 640, 480)), 200, "")
-	if st, _, _ := e.mediaRow(id); st != "deleting" {
-		t.Errorf("replaced media status = %s, want deleting", st)
+	if st, _, _ := e.mediaRow(id); st != "expired" {
+		t.Errorf("replaced media status = %s, want expired", st)
 	}
 	wantCode(t, "old link after replace", e.fetch(first.AvatarPhotoURL), 410, "media_expired")
-	if _, err := os.Stat(oldFile); err != nil {
-		t.Fatalf("old file before retention: %v", err)
+	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
+		t.Fatalf("old file after replace: %v, want gone", err)
 	}
 
-	// Years later retention deletes the old photo's files and leaves the current photo alone.
+	// The shared-tablet picker shows the photo too.
+	_, device := pairDevice(t, e.setupServer, pair(t, e.setupServer, e.mom, "").Code)
+	picker := decode[struct{ Kids []avatarKid }](t, e.getKid(device, "/api/v1/devices/picker"))
+	var inPicker bool
+	for _, k := range picker.Kids {
+		if k.Slug == "sam" {
+			inPicker = k.AvatarPhotoURL != ""
+		}
+	}
+	if !inPicker {
+		t.Errorf("picker kids = %+v, want sam with a photo link", picker.Kids)
+	}
+
+	// Years later retention finds nothing to delete and leaves the current photo alone.
 	e.clk.Advance(5 * 365 * 24 * time.Hour)
 	e.mom = sessionCookie(t, e.do("POST", "/api/v1/auth/login", login(nil))) // the old session lapsed
 	res, err := media.Expire(t.Context(), e.store, e.clk, media.NewLocal(e.dataDir, "", nil), slog.New(slog.DiscardHandler))
-	if err != nil || res.Expired != 1 {
-		t.Fatalf("Expire = %+v, %v; want only the released photo", res, err)
-	}
-	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
-		t.Errorf("old file after retention: %v, want gone", err)
+	if err != nil || res.Expired != 0 || res.Failed != 0 {
+		t.Fatalf("Expire = %+v, %v; want nothing", res, err)
 	}
 	var curID int64
 	if err := e.store.SQL.QueryRowContext(t.Context(),
@@ -129,8 +140,10 @@ func TestKidAvatarPhoto(t *testing.T) {
 		t.Errorf("after remove: %+v", k)
 	}
 	wantCode(t, "remove again", e.removeAvatar(e.mom, "sam"), 200, "")
-	if st, _, _ := e.mediaRow(curID); st != "deleting" {
-		t.Errorf("removed media status = %s, want deleting", st)
+	if st, _, key := e.mediaRow(curID); st != "expired" {
+		t.Errorf("removed media status = %s, want expired", st)
+	} else if _, err := os.Stat(filepath.Join(e.dataDir, "media", key[0:2], key[2:4], key)); !os.IsNotExist(err) {
+		t.Errorf("removed file: %v, want gone", err)
 	}
 }
 
@@ -142,6 +155,15 @@ func TestKidAvatarPhotoRules(t *testing.T) {
 	wantCode(t, "kid sets other", e.setAvatar(e.sam, "sam-2", img), http.StatusForbidden, "insufficient_scope")
 	wantCode(t, "kid removes", e.removeAvatar(e.sam, "sam"), http.StatusForbidden, "insufficient_scope")
 	wantCode(t, "anonymous", e.setAvatar(nil, "sam", img), http.StatusUnauthorized, "unauthenticated")
+	_, device := pairDevice(t, e.setupServer, pair(t, e.setupServer, e.mom, "").Code) // a shared tablet
+	wantCode(t, "shared device sets", e.setAvatar(device, "sam", img), http.StatusForbidden, "insufficient_scope")
+	wantCode(t, "shared device removes", e.removeAvatar(device, "sam"), http.StatusForbidden, "insufficient_scope")
+	display, _, err := auth.NewStore(e.store.Queries, e.clk).Issue(t.Context(), auth.IssueParams{Kind: auth.TokenDisplay})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, "display sets", e.setAvatar(display, "sam", img), http.StatusForbidden, "insufficient_scope")
+	wantCode(t, "display removes", e.removeAvatar(display, "sam"), http.StatusForbidden, "insufficient_scope")
 	// Bad input is rejected like any upload.
 	wantCode(t, "not an image", e.setAvatar(e.mom, "sam", []byte("hello")), 415, "unsupported_media_type")
 	wantCode(t, "unknown kid", e.setAvatar(e.mom, "nobody", img), 404, "kid_not_found")
@@ -155,5 +177,27 @@ func TestKidAvatarPhotoRules(t *testing.T) {
 	wantCode(t, "sam-2, same picture", e.setAvatar(e.mom, "sam-2", img), 200, "")
 	if err := e.store.SQL.QueryRowContext(t.Context(), `SELECT count(*) FROM media_hashes`).Scan(&n); err != nil || n != 0 {
 		t.Errorf("media_hashes rows = %d, %v; parent avatars aren't recorded", n, err)
+	}
+}
+
+// A kid has at most one ready avatar photo, whatever the code does.
+func TestKidAvatarOneReadyPhotoPerKid(t *testing.T) {
+	e := newMediaEnv(t, config.Config{})
+	wantCode(t, "set", e.setAvatar(e.mom, "sam", photo(t, 64, 48)), 200, "")
+	var id int64
+	if err := e.store.SQL.QueryRowContext(t.Context(), `SELECT id FROM media WHERE owner_kind = 'kid_avatar'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	dup := `INSERT INTO media (owner_kind, owner_id, storage_key, kind, mime, bytes, width, height, sha256, dhash, created_at)
+		SELECT owner_kind, owner_id, 'dup-key', kind, mime, bytes, width, height, sha256, dhash, created_at FROM media WHERE id = ?`
+	if _, err := e.store.SQL.ExecContext(t.Context(), dup, id); err == nil {
+		t.Fatal("a second ready avatar row for the same kid was accepted")
+	}
+	// Once the first is released, a new ready one is fine.
+	if _, err := e.store.SQL.ExecContext(t.Context(), `UPDATE media SET status = 'deleting' WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.SQL.ExecContext(t.Context(), dup, id); err != nil {
+		t.Fatalf("a new avatar row after release: %v", err)
 	}
 }

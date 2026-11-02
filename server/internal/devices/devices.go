@@ -194,7 +194,11 @@ type KidProfile struct {
 	DisplayName string `json:"displayName"`
 	Color       string `json:"color"`
 	Avatar      string `json:"avatar,omitempty"`
-	PINRequired bool   `json:"pinRequired" doc:"Ask for the kid's PIN (only when one is set)"`
+	// AvatarPhotoURL is a signed link to the kid's photo avatar (shown instead of the bundled
+	// avatar), valid until AvatarPhotoExpiresAt; absent when there is no photo.
+	AvatarPhotoURL       string     `json:"avatarPhotoUrl,omitempty" format:"uri"`
+	AvatarPhotoExpiresAt *time.Time `json:"avatarPhotoExpiresAt,omitempty"`
+	PINRequired          bool       `json:"pinRequired" doc:"Ask for the kid's PIN (only when one is set)"`
 }
 
 // ParentProfile is a parent who can elevate on a device (they have a parent PIN).

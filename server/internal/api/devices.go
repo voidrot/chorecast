@@ -168,6 +168,13 @@ func (h *handlers) devicePicker(ctx context.Context, in *PickerInput) (*PickerOu
 	if err != nil {
 		return nil, err
 	}
+	for i := range picker.Kids {
+		link, exp, err := h.avatarPhotoLink(ctx, picker.Kids[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		picker.Kids[i].AvatarPhotoURL, picker.Kids[i].AvatarPhotoExpiresAt = link, exp
+	}
 	return &PickerOutput{Body: picker}, nil
 }
 
