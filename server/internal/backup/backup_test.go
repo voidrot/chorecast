@@ -511,15 +511,16 @@ func TestRestoreRefusesCorruptArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	flipped := bytes.Clone(raw)
-	flipped[len(flipped)/2] ^= 0xff
+	badCRC := bytes.Clone(raw)
+	badCRC[len(badCRC)-8] ^= 0xff // the gzip trailer's CRC-32 of the content
 	cases := map[string]string{
-		"truncated":   writeFile(t, raw[:len(raw)/2]),
-		"flipped":     writeFile(t, flipped),
-		"not gzip":    writeFile(t, []byte("hello")),
-		"empty":       writeFile(t, nil),
-		"no manifest": rewrite(t, out, func(name string, body []byte) []byte { return skipIf(name == "manifest.json", body) }),
-		"no database": rewrite(t, out, func(name string, body []byte) []byte { return skipIf(name == db.FileName, body) }),
+		"truncated":    writeFile(t, raw[:len(raw)/2]),
+		"flipped":      writeFile(t, flipMeaningfulByte(t, raw)),
+		"bad checksum": writeFile(t, badCRC),
+		"not gzip":     writeFile(t, []byte("hello")),
+		"empty":        writeFile(t, nil),
+		"no manifest":  rewrite(t, out, func(name string, body []byte) []byte { return skipIf(name == "manifest.json", body) }),
+		"no database":  rewrite(t, out, func(name string, body []byte) []byte { return skipIf(name == db.FileName, body) }),
 		"row counts": rewrite(t, out, func(name string, body []byte) []byte {
 			if name != "manifest.json" {
 				return body
@@ -548,6 +549,33 @@ func TestRestoreRefusesCorruptArchive(t *testing.T) {
 			assertUntouched(t, target)
 		})
 	}
+}
+
+// flipMeaningfulByte flips a byte from the middle of the gzip stream onward that changes what it
+// decodes to (or breaks decoding). Deflate has bits that don't matter, such as alignment padding,
+// so a fixed position can flip into a stream that still decodes to the same bytes.
+func flipMeaningfulByte(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	gunzip := func(b []byte) ([]byte, error) {
+		zr, err := gzip.NewReader(bytes.NewReader(b))
+		if err != nil {
+			return nil, err
+		}
+		return io.ReadAll(zr)
+	}
+	want, err := gunzip(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := len(raw) / 2; i < len(raw)-8; i++ {
+		b := bytes.Clone(raw)
+		b[i] ^= 0xff
+		if got, err := gunzip(b); err != nil || !bytes.Equal(got, want) {
+			return b
+		}
+	}
+	t.Fatal("no byte flip changes the archive")
+	return nil
 }
 
 // assertUntouched checks a refused restore left no data (or staging dirs) in dir.

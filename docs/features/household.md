@@ -190,8 +190,9 @@ you created**: an archive replaces every account, secret and photo.
   the marker and the staging dir. A restore refused before this step leaves the data dir untouched. If a move
   fails, the moves are undone and the data dir is as it was. If undoing fails too, or the process dies mid-swap,
   the marker and the staging dir stay: `serve`, `restore`, `backup` and `admin` then refuse to start and print
-  where the previous data is. Move it back (or keep the restored data), then delete the marker. The next restore
-  removes leftover `.restore-*` dirs once no marker exists. The `backups` dir is never touched.
+  where the previous data is. Move it back (or keep the restored data), then delete the marker. A crash just
+  after the marker is removed can leave a `.restore-*` dir holding the previous data; delete it by hand. The
+  `backups` dir is never touched.
 
 ## Audit log
 

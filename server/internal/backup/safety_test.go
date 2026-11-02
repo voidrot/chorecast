@@ -66,11 +66,13 @@ func stagingDirs(t *testing.T, dir string) []string {
 }
 
 // A failed move-in is undone: the previous data is back, and no marker or staging dir is left.
+// The media dir moves in last, so the restored database is already in place when it fails and
+// the undo has to move it back out.
 func TestRestoreSwapFailureIsUndone(t *testing.T) {
 	dir, archive := changedDataDir(t)
 	media := mediaHashes(t, dir)
 	backup.SetRename(t, func(from, to string) error {
-		if to == filepath.Join(dir, db.FileName) && strings.Contains(from, string(filepath.Separator)+"new"+string(filepath.Separator)) {
+		if to == filepath.Join(dir, "media") && strings.Contains(from, string(filepath.Separator)+"new"+string(filepath.Separator)) {
 			return &os.LinkError{Op: "rename", Old: from, New: to, Err: syscall.EIO}
 		}
 		return os.Rename(from, to)
@@ -138,24 +140,6 @@ func TestRestoreRefusesWhileMarked(t *testing.T) {
 	}
 	if got := householdName(t, dir); got != "Changed" {
 		t.Errorf("household %q: a refused restore changed the data", got)
-	}
-}
-
-// Stale staging dirs (a crash after a completed swap) are cleaned up by the next restore.
-func TestRestoreRemovesStaleStages(t *testing.T) {
-	dir, archive := changedDataDir(t)
-	stale := filepath.Join(dir, ".restore-123", "old")
-	if err := os.MkdirAll(stale, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := backup.Restore(t.Context(), archive, dir, backup.RestoreOptions{Force: true}); err != nil {
-		t.Fatal(err)
-	}
-	if s := stagingDirs(t, dir); len(s) != 0 {
-		t.Errorf("staging dirs left: %v", s)
-	}
-	if got := householdName(t, dir); got != "Test" {
-		t.Errorf("household %q after restore, want the backup's", got)
 	}
 }
 

@@ -81,7 +81,6 @@ func Restore(ctx context.Context, archive, dataDir string, opts RestoreOptions) 
 	if err := db.CheckRestoreMarker(dataDir); err != nil {
 		return Manifest{}, err
 	}
-	removeStaleStages(dataDir) // with no marker, they are leftovers of a crash after the swap
 	if err := checkLayout(dataDir); err != nil {
 		return Manifest{}, err
 	}
@@ -191,20 +190,6 @@ func checkLayout(dataDir string) error {
 		}
 	}
 	return nil
-}
-
-// removeStaleStages deletes staging dirs a crashed restore left behind. Only called with the
-// locks held and no marker, so none belongs to a running or interrupted swap.
-func removeStaleStages(dataDir string) {
-	entries, err := os.ReadDir(dataDir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), stagePrefix) {
-			_ = os.RemoveAll(filepath.Join(dataDir, e.Name()))
-		}
-	}
 }
 
 // restoreBudget is how many bytes a restore may extract: max if set, otherwise the free space on
