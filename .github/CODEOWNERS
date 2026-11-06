@@ -1,0 +1,31 @@
+
+# Chorecast Code Owners
+#
+# Project Maintainer:  @voidrot
+# Security Maintainer: @voidrot
+#
+# See GOVERNANCE.md for role definitions and responsibilities.
+# See SECURITY.md for private vulnerability reporting.
+
+# Default ownership for the entire repository.
+* @voidrot
+
+# Application components.
+/server/       @voidrot
+/web/          @voidrot
+/android/      @voidrot
+/api/          @voidrot
+
+# Infrastructure, CI/CD, and release management.
+/deploy/       @voidrot
+/.github/      @voidrot
+/mise.toml     @voidrot
+/renovate.json @voidrot
+
+# Security and governance policies.
+/SECURITY.md        @voidrot
+/PRIVACY.md         @voidrot
+/GOVERNANCE.md      @voidrot
+/CONTRIBUTING.md    @voidrot
+/CODE_OF_CONDUCT.md @voidrot
+/.github/CODEOWNERS @voidrot
