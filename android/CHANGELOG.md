@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.2.0](https://github.com/voidrot/chorecast/compare/android-v0.1.0...android-v0.2.0) (2026-11-06)
+
+
+### Features
+
+* **android:** add an in-app inbox for kids and parents ([#136](https://github.com/voidrot/chorecast/issues/136)) ([429c210](https://github.com/voidrot/chorecast/commit/429c210030c3c2838b1db352843b59db25b6129f))
+* **android:** add parent mode, a PIN pad and avatars to the shared tablet ([#137](https://github.com/voidrot/chorecast/issues/137)) ([1e7ec78](https://github.com/voidrot/chorecast/commit/1e7ec78708b5ea97190f4f995f1b495ab2ab913c)), closes [#33](https://github.com/voidrot/chorecast/issues/33)
+* **android:** complete a chore with CameraX photo evidence ([#115](https://github.com/voidrot/chorecast/issues/115)) ([864525a](https://github.com/voidrot/chorecast/commit/864525a2d45cce0f6d4f5cff48f1d4a5f387a9f4)), closes [#101](https://github.com/voidrot/chorecast/issues/101)
+* **android:** free uploaded photos when a kid removes them or drops a draft ([#141](https://github.com/voidrot/chorecast/issues/141)) ([fe1dad1](https://github.com/voidrot/chorecast/commit/fe1dad135c603bb410b1160730dee3a366cf65b6)), closes [#118](https://github.com/voidrot/chorecast/issues/118)
+* **android:** let parents adjust points, excuse, reassign and reverse approvals ([#132](https://github.com/voidrot/chorecast/issues/132)) ([07fe517](https://github.com/voidrot/chorecast/commit/07fe5176988d27aa5cf204e1073e590673732016)), closes [#104](https://github.com/voidrot/chorecast/issues/104)
+* **android:** let parents pair a device by showing a QR code ([#140](https://github.com/voidrot/chorecast/issues/140)) ([a41522f](https://github.com/voidrot/chorecast/commit/a41522f87648abba8c938069589b1b65134bca63)), closes [#133](https://github.com/voidrot/chorecast/issues/133)
+* **android:** show a kid's chores for today with points and streak ([#107](https://github.com/voidrot/chorecast/issues/107)) ([6923732](https://github.com/voidrot/chorecast/commit/6923732279fc12df6f3a5f19240361c506ddd5e5)), closes [#100](https://github.com/voidrot/chorecast/issues/100)
+* **android:** show a kid's past chores with their evidence ([#126](https://github.com/voidrot/chorecast/issues/126)) ([36a1a28](https://github.com/voidrot/chorecast/commit/36a1a28e185c224a4fa0ec08689d6acf29a1f1a0)), closes [#102](https://github.com/voidrot/chorecast/issues/102)
+* **android:** show each kid's day and review chores from the parent home ([#120](https://github.com/voidrot/chorecast/issues/120)) ([763e9d9](https://github.com/voidrot/chorecast/commit/763e9d90d568854dbdb4f727d91bc782226eb556)), closes [#103](https://github.com/voidrot/chorecast/issues/103)
+* **android:** sync in the background and remind kids before chores are due ([#139](https://github.com/voidrot/chorecast/issues/139)) ([23e9f99](https://github.com/voidrot/chorecast/commit/23e9f997094102091fd696296436b0b9a9f256c3))
+
+
+### Bug Fixes
+
+* **android:** decode unknown enum values instead of throwing ([#127](https://github.com/voidrot/chorecast/issues/127)) ([4b29a63](https://github.com/voidrot/chorecast/commit/4b29a63e6b6105b632fb72e9dfef1121dffbcd19)), closes [#119](https://github.com/voidrot/chorecast/issues/119)
+* **android:** decode URI fields in API responses so photo uploads can be ([864525a](https://github.com/voidrot/chorecast/commit/864525a2d45cce0f6d4f5cff48f1d4a5f387a9f4))
+
 ## 0.1.0 (2026-11-01)
 
 
