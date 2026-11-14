@@ -3,6 +3,7 @@ package dev.voidrot.chorecast.ui
 import android.os.Build
 import android.os.SystemClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,6 +38,7 @@ import dev.voidrot.chorecast.ui.kid.KidViewModel
 import dev.voidrot.chorecast.ui.review.ReviewScreen
 import dev.voidrot.chorecast.ui.review.ReviewViewModel
 import dev.voidrot.chorecast.ui.settings.SettingsScreen
+import dev.voidrot.chorecast.ui.settings.SignOutViewModel
 import dev.voidrot.chorecast.ui.login.LoginScreen
 import dev.voidrot.chorecast.ui.login.LoginViewModel
 import dev.voidrot.chorecast.ui.startup.StartupScreen
@@ -142,8 +144,6 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 serverUrl = route.serverUrl,
                 recoveryCodesLeft = route.recoveryCodesLeft,
                 onSignedOut = { nav.reset(LoginRoute(route.serverUrl)) },
-                onChangeServer = { nav.navigate(ConnectRoute) },
-                onDevices = { nav.navigate(DevicesRoute(route.serverUrl)) },
                 onReview = { nav.navigate(ReviewRoute(route.serverUrl)) },
                 onInbox = { nav.navigate(InboxRoute(route.serverUrl)) },
                 onSettings = { nav.navigate(SettingsRoute) },
@@ -152,7 +152,18 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
         }
         composable<SettingsRoute> {
             val appearance by container.appearance.state.collectAsStateWithLifecycle()
-            SettingsScreen(appearance, container.appearance::setTheme, container.appearance::setDynamicColor, onBack = { nav.popBackStack() })
+            val signOut = viewModel { SignOutViewModel(currentUrl(), container.parentAuth, container.tokenStore) }
+            val signedOut by signOut.signedOut.collectAsStateWithLifecycle()
+            LaunchedEffect(signedOut) { if (signedOut) nav.reset(LoginRoute(currentUrl().value)) }
+            SettingsScreen(
+                appearance,
+                container.appearance::setTheme,
+                container.appearance::setDynamicColor,
+                onDevices = { nav.navigate(DevicesRoute(currentUrl().value)) },
+                onChangeServer = { nav.navigate(ConnectRoute) },
+                onSignOut = signOut::signOut,
+                onBack = { nav.popBackStack() },
+            )
         }
         composable<KidRoute> { entry ->
             val route = entry.toRoute<KidRoute>()
