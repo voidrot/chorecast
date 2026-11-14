@@ -20,7 +20,7 @@ Run from `web/`, or from the repo root with the `mise run` task in parentheses. 
 
 - `src/main.ts` creates the app (Pinia, router, i18n) and wires `apiEvents` to the session store and router. `src/App.vue` provides Naive's config, message and dialog providers.
 - `src/views/`: one `*View.vue` per route, grouped by area (`chores/`, `kids/`, `devices/`, `parents/`, `settings/`, `account/`). Cards and editors sit beside their view. Public views are `LoginView`, `SetupView`, `InviteView` and `NotFoundView`. `src/layouts/AppLayout.vue` is the shell for signed-in routes.
-- Logic lives in plain `.ts` modules beside its area, not in components: `chores/form.ts`, `chores/schedule.ts`, `kids/form.ts`, `devices/pairing.ts`, `setup/wizard.ts`, `auth/login.ts`, `router/guard.ts`, `format.ts`. Specs test those modules directly.
+- Logic lives in plain `.ts` modules beside its area, not in components: `chores/form.ts`, `chores/schedule.ts`, `chores/starter.ts`, `kids/form.ts`, `devices/pairing.ts`, `setup/wizard.ts`, `auth/login.ts`, `router/guard.ts`, `format.ts`. Specs test those modules directly.
 
 ## API layer
 

@@ -4,28 +4,12 @@ import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { ApiError } from '@/api/errors'
-import { type ScheduleRule, summarizeRule, WEEKDAYS, type Weekday } from '@/chores/schedule'
+import { useScheduleText } from '@/chores/useScheduleText'
 import { useAsync } from '@/composables/useAsync'
-import { formatDate } from '@/format'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
-const weekdayName = (w: Weekday) =>
-  new Intl.DateTimeFormat(locale.value, { weekday: 'short', timeZone: 'UTC' }).format(
-    new Date(Date.UTC(2026, 10, 1 + WEEKDAYS.indexOf(w))), // 2026-11-01 is a Sunday
-  )
-
-function scheduleText(rule: ScheduleRule | undefined): string {
-  const s = summarizeRule(rule, {
-    weekdayName,
-    formatDate: (d) => formatDate(d, undefined, locale.value),
-    lastDay: t('schedule.lastDay').toLocaleLowerCase(locale.value),
-  })
-  const params = { ...s.params }
-  if (typeof params.nth === 'number')
-    params.nth = t(`schedule.nth.${params.nth}`).toLocaleLowerCase(locale.value)
-  return t(s.key, params, Number(params.n ?? 1))
-}
+const scheduleText = useScheduleText()
 const chores = useAsync(async () => {
   const { data, error, response } = await api.GET('/chores')
   if (!data) throw ApiError.fromProblem(response.status, error)
@@ -39,6 +23,9 @@ onMounted(() => chores.run())
     <div class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-2xl font-semibold">{{ t('chores.title') }}</h1>
       <div class="flex gap-2">
+        <RouterLink :to="{ name: 'chore-starter' }"
+          ><NButton secondary>{{ t('chores.starter') }}</NButton></RouterLink
+        >
         <RouterLink :to="{ name: 'chore-catalog' }"
           ><NButton secondary>{{ t('chores.catalog') }}</NButton></RouterLink
         >
@@ -51,6 +38,9 @@ onMounted(() => chores.run())
     <NSpin v-else-if="chores.loading.value && !chores.data.value" />
     <p v-else-if="!chores.data.value?.length" class="text-gray-600 dark:text-neutral-400">
       {{ t('chores.empty') }}
+      <RouterLink :to="{ name: 'chore-starter' }" class="underline">{{
+        t('chores.emptyStarter')
+      }}</RouterLink>
     </p>
     <div v-else class="grid gap-3 sm:grid-cols-2">
       <RouterLink

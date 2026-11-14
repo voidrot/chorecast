@@ -46,6 +46,11 @@ const router = createRouter({
           component: () => import('@/views/chores/CatalogView.vue'),
         },
         {
+          path: 'chores/starter',
+          name: 'chore-starter',
+          component: () => import('@/views/chores/StarterView.vue'),
+        },
+        {
           path: 'chores/:id(\\d+)',
           name: 'chore-edit',
           component: () => import('@/views/chores/ChoreEditView.vue'),
