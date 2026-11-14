@@ -37,4 +37,8 @@ jobs:
           # through the GitHub API, which signs them, so Renovate's commits show as Verified.
           RENOVATE_GIT_AUTHOR: "Renovate Bot <22723438+voidrot@users.noreply.github.com>"
           RENOVATE_PLATFORM_COMMIT: enabled
+          # Without this Renovate runs pnpm with --ignore-pnpmfile, so its lockfiles lack the
+          # pnpmfileChecksum that web/.pnpmfile.cjs requires and `pnpm install --frozen-lockfile` fails.
+          # ignoreScripts stays at its default (true), so dependency install scripts still do not run.
+          RENOVATE_ALLOW_SCRIPTS: "true"
           LOG_LEVEL: ${{ inputs.log-level || 'info' }}
