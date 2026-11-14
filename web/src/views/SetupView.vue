@@ -138,6 +138,11 @@ async function toLogin() {
   await router.replace({ name: 'login' })
 }
 
+async function openStarter() {
+  await session.load()
+  await router.replace({ name: 'chore-starter' })
+}
+
 async function openAdmin() {
   await session.load()
   await router.replace({ name: 'home' })
@@ -171,7 +176,8 @@ async function openAdmin() {
         <p class="text-sm text-gray-500 dark:text-neutral-400">
           {{ t('setup.done.pairingLater') }}
         </p>
-        <NButton type="primary" block @click="openAdmin">{{ t('setup.done.open') }}</NButton>
+        <NButton type="primary" block @click="openStarter">{{ t('setup.done.starter') }}</NButton>
+        <NButton secondary block @click="openAdmin">{{ t('setup.done.open') }}</NButton>
       </div>
 
       <div v-else class="flex flex-col gap-6">

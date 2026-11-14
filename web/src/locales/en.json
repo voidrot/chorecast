@@ -178,7 +178,8 @@
       "devicesBody": "Install the Chorecast Android app on each kid's phone or a shared family tablet.",
       "download": "Download the Android app",
       "pairingLater": "Pairing a device with a QR code arrives with the Devices page. You'll find it in the admin.",
-      "open": "Open the admin"
+      "open": "Open the admin",
+      "starter": "Choose starter chores"
     }
   },
   "notFound": {
@@ -437,10 +438,26 @@
     "revokeConfirm": "{name} is signed out right away and goes back to the pairing screen. To give it to someone else, pair it again.",
     "listHint": "Lock sends a shared tablet back to its profile picker. Devices can't be renamed or moved to another kid: unpair and pair again instead."
   },
+  "starter": {
+    "title": "Starter chores",
+    "intro": "Pick the chores that fit your family. You can edit or delete any of them later.",
+    "ages": "Ages {n}+",
+    "minutes": "{n} min",
+    "exists": "Already added",
+    "selectedCount": "{n} of {m}",
+    "creates": "Also adds: {names}",
+    "paused": "Add them paused (turn each on when you're ready)",
+    "add": "Add {n} chore | Add {n} chores",
+    "added": "Added {n} chore | Added {n} chores",
+    "none": "Everything in the starter pack is already added.",
+    "submitFailed": "Could not add the starter chores. Try again."
+  },
   "chores": {
     "title": "Chores",
     "add": "Add a chore",
     "catalog": "Locations & equipment",
+    "starter": "Starter chores",
+    "emptyStarter": "Or start from the starter pack.",
     "backToChores": "Back to chores",
     "empty": "No chores yet. Add one to get started.",
     "dueAt": "Due {times}",

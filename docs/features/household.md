@@ -29,13 +29,23 @@ Status: accepted (planning session, 2026-10-30). Auth mechanics live in [../arch
    1. **Household**: name, timezone (browser-detected default), day end (default 00:00), week start (Monday).
    2. **First owner**: display name, username, password (+ optional TOTP). SSO isn't offered in the wizard; the owner links it from the account page after setup.
    3. **Kids** (skippable): nickname, birth date, avatar/color, PIN on/off.
-   4. **Starter content** (skippable): example chores, behavior presets, rewards. All editable and deletable.
+   4. **Starter content** (skippable): after the household is created, the finished screen offers the starter
+   pack (`/chores/starter`, also on the Chores page). Behavior presets and rewards join in Phase 2.
    5. **Connect devices**: shows a pairing QR and a link to the Android app (GitHub Releases / Play).
-3. Completing the wizard creates everything in one transaction and invalidates the token.
+3. Completing the wizard creates the household, owner and kids in one transaction and invalidates the token.
 
 Built so far (#12): household, owner (password), kids (name, birth date, color, PIN on/off), and an app download
 link. The remaining parts arrive with their features: TOTP enrolment in the owner step (#13),
-kid avatars (#16), the pairing QR (#18), and starter chores (#20; behavior presets and rewards in Phase 2).
+kid avatars (#16) and the pairing QR (#18).
+
+Built: the starter pack. `GET /api/v1/chores/starter-pack` returns
+suggested chores, locations and equipment, each marked `exists` when one with the same name (any case, ignoring
+surrounding spaces) is already there. `POST /api/v1/chores/starter-pack/apply` takes chore keys and an optional
+`disabled` flag, and creates those chores plus the locations and equipment they use in one transaction with one
+`chore.changed` event. Names that exist are reused (locations, equipment) or skipped (chores, including disabled
+ones), so repeating a call creates nothing, and an unknown key is a 422 that writes nothing. Both need
+`chores:manage`. The pack is `server/internal/chores/starter/en.json`. The admin screen is `/chores/starter`; it
+ticks the recommended chores, lists the locations and equipment it will add, and can add the chores paused.
 
 Built: the starter pack API (server only; the admin screen follows). `GET /api/v1/chores/starter-pack` returns
 suggested chores, locations and equipment, each marked `exists` when one with the same name (any case, ignoring
