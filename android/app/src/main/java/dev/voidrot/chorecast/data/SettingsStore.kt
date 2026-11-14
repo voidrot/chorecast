@@ -2,14 +2,17 @@ package dev.voidrot.chorecast.data
 
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import dev.voidrot.chorecast.core.Appearance
+import dev.voidrot.chorecast.core.AppearanceStore
 import dev.voidrot.chorecast.core.Result
 import dev.voidrot.chorecast.core.ServerUrl
+import dev.voidrot.chorecast.core.ThemeMode
 
 /** How this install is used: a parent's phone, or a paired kid/shared device. */
 enum class AppMode { PARENT, DEVICE }
 
 /** Non-secret app settings. */
-class SettingsStore(private val prefs: SharedPreferences) {
+class SettingsStore(private val prefs: SharedPreferences) : AppearanceStore {
     /** Null until the user picks; installs from before pairing existed count as PARENT once a server is set. */
     var mode: AppMode?
         get() = prefs.getString(KEY_MODE, null)?.let { runCatching { AppMode.valueOf(it) }.getOrNull() }
@@ -25,7 +28,19 @@ class SettingsStore(private val prefs: SharedPreferences) {
         get() = prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false)
         set(value) = prefs.edit { putBoolean(KEY_ASKED_NOTIFICATIONS, value) }
 
+    override fun load() = Appearance(
+        ThemeMode.fromStored(prefs.getString(KEY_THEME_MODE, null)),
+        prefs.getBoolean(KEY_DYNAMIC_COLOR, true),
+    )
+
+    override fun save(appearance: Appearance) = prefs.edit {
+        putString(KEY_THEME_MODE, appearance.theme.name)
+        putBoolean(KEY_DYNAMIC_COLOR, appearance.dynamicColor)
+    }
+
     private companion object {
+        const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_DYNAMIC_COLOR = "dynamic_color"
         const val KEY_ASKED_NOTIFICATIONS = "asked_notifications"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_MODE = "mode"

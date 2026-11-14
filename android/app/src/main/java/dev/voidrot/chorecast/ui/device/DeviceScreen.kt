@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.core.ActiveSession
+import dev.voidrot.chorecast.core.AppearanceSettings
 import dev.voidrot.chorecast.core.AvatarPhotos
 import dev.voidrot.chorecast.core.PinError
 import dev.voidrot.chorecast.ui.inbox.InboxScreen
@@ -52,11 +53,13 @@ fun DeviceScreen(
     todayViewModel: (KidAccess) -> TodayViewModel,
     parentModels: ParentModels,
     avatarPhotos: AvatarPhotos,
+    appearanceSettings: AppearanceSettings,
     inboxViewModel: (KidAccess) -> InboxViewModel,
     onUnpaired: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val appearance by appearanceSettings.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.unpaired) { if (state.unpaired) onUnpaired() }
 
     Box(
@@ -96,6 +99,9 @@ fun DeviceScreen(
                 page = state.parentPage,
                 store = state.parentStore!!,
                 models = parentModels,
+                appearance = appearance,
+                onTheme = appearanceSettings::setTheme,
+                onDynamicColor = appearanceSettings::setDynamicColor,
                 onPage = viewModel::openParentPage,
                 onLock = viewModel::lock,
                 // The server refused the elevated token (expired or locked remotely): back to the picker.

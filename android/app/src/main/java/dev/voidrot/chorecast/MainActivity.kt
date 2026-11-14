@@ -2,21 +2,31 @@ package dev.voidrot.chorecast
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.voidrot.chorecast.core.SsoCallback
 import dev.voidrot.chorecast.data.AppMode
 import dev.voidrot.chorecast.reminders.ReminderNotifier
 import dev.voidrot.chorecast.ui.ChorecastNavHost
 import dev.voidrot.chorecast.ui.theme.ChorecastTheme
+
+// androidx's own default navigation bar scrims.
+private val LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
+private val DARK_SCRIM = Color.argb(0x80, 0x1b, 0x1b, 0x1b)
 
 class MainActivity : ComponentActivity() {
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -27,7 +37,17 @@ class MainActivity : ComponentActivity() {
         val container = (application as ChorecastApp).container
         if (savedInstanceState == null) handleRedirect(intent)
         setContent {
-            ChorecastTheme {
+            val appearance by container.appearance.state.collectAsStateWithLifecycle()
+            val dark = appearance.darkTheme(isSystemInDarkTheme())
+            // Bar icons follow the chosen theme, which can differ from the system's.
+            DisposableEffect(dark) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
+                    navigationBarStyle = SystemBarStyle.auto(LIGHT_SCRIM, DARK_SCRIM) { dark },
+                )
+                onDispose {}
+            }
+            ChorecastTheme(darkTheme = dark, dynamicColor = appearance.dynamicColor) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
                     ChorecastNavHost(container, Modifier.padding(padding))
                 }

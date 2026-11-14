@@ -3,7 +3,9 @@ package dev.voidrot.chorecast.ui
 import android.os.Build
 import android.os.SystemClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -34,6 +36,7 @@ import dev.voidrot.chorecast.ui.kid.KidScreen
 import dev.voidrot.chorecast.ui.kid.KidViewModel
 import dev.voidrot.chorecast.ui.review.ReviewScreen
 import dev.voidrot.chorecast.ui.review.ReviewViewModel
+import dev.voidrot.chorecast.ui.settings.SettingsScreen
 import dev.voidrot.chorecast.ui.login.LoginScreen
 import dev.voidrot.chorecast.ui.login.LoginViewModel
 import dev.voidrot.chorecast.ui.startup.StartupScreen
@@ -95,6 +98,7 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                     kid = { store, kidId -> KidViewModel(currentUrl(), kidId, store.review, container.householdInfo, store.tokens) },
                 ),
                 avatarPhotos = container.avatarPhotos,
+                appearanceSettings = container.appearance,
                 inboxViewModel = { kid -> InboxViewModel(currentUrl(), container.inboxClient, token = { kid.token }) },
                 onUnpaired = {
                     container.settings.mode = null
@@ -142,8 +146,13 @@ fun ChorecastNavHost(container: AppContainer, modifier: Modifier = Modifier) {
                 onDevices = { nav.navigate(DevicesRoute(route.serverUrl)) },
                 onReview = { nav.navigate(ReviewRoute(route.serverUrl)) },
                 onInbox = { nav.navigate(InboxRoute(route.serverUrl)) },
+                onSettings = { nav.navigate(SettingsRoute) },
                 onKid = { nav.navigate(KidRoute(route.serverUrl, it)) },
             )
+        }
+        composable<SettingsRoute> {
+            val appearance by container.appearance.state.collectAsStateWithLifecycle()
+            SettingsScreen(appearance, container.appearance::setTheme, container.appearance::setDynamicColor, onBack = { nav.popBackStack() })
         }
         composable<KidRoute> { entry ->
             val route = entry.toRoute<KidRoute>()

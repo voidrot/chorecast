@@ -353,4 +353,14 @@
         <item quantity="one">You reached a streak of %d day!</item>
         <item quantity="other">You reached a streak of %d days!</item>
     </plurals>
+    <string name="settings_title">Settings</string>
+    <string name="settings_appearance">Appearance on this device</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">System default</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_dynamic_color">Use wallpaper colors</string>
+    <string name="settings_dynamic_color_summary">Match the app\'s colors to your wallpaper</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %1$s</string>
 </resources>
