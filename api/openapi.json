@@ -3380,6 +3380,269 @@
         ],
         "type": "object"
       },
+      "StarterApplyInput": {
+        "additionalProperties": false,
+        "properties": {
+          "chores": {
+            "description": "Starter chore keys",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ],
+            "uniqueItems": true
+          },
+          "disabled": {
+            "description": "Add the chores paused (not scheduled)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "chores"
+        ],
+        "type": "object"
+      },
+      "StarterApplyResult": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "$ref": "#/components/schemas/StarterCreated"
+          },
+          "skipped": {
+            "description": "Chore keys skipped because a chore with that name exists",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "created",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "StarterCatalogItem": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "exists": {
+            "description": "One with this name (any case) is already in the catalog; it is reused",
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "exists"
+        ],
+        "type": "object"
+      },
+      "StarterCategory": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StarterChore": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment": {
+            "enum": [
+              "everyone",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "category": {
+            "description": "Category key",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "equipment": {
+            "description": "Equipment keys",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "estimatedMinutes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceRules"
+          },
+          "exists": {
+            "description": "A chore with this name (any case) exists; applying skips it",
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "location": {
+            "description": "Location key",
+            "type": "string"
+          },
+          "minAge": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "points": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "recommended": {
+            "description": "Ticked by default",
+            "type": "boolean"
+          },
+          "requiresApproval": {
+            "type": "boolean"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/ScheduleRule",
+            "description": "startDate is set to today when applied"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "category",
+          "name",
+          "points",
+          "schedule",
+          "assignment",
+          "requiresApproval",
+          "evidence",
+          "recommended",
+          "exists"
+        ],
+        "type": "object"
+      },
+      "StarterCreated": {
+        "additionalProperties": false,
+        "properties": {
+          "chores": {
+            "items": {
+              "$ref": "#/components/schemas/StarterCreatedItem"
+            },
+            "type": "array"
+          },
+          "equipment": {
+            "items": {
+              "$ref": "#/components/schemas/StarterCreatedItem"
+            },
+            "type": "array"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/StarterCreatedItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "locations",
+          "equipment",
+          "chores"
+        ],
+        "type": "object"
+      },
+      "StarterCreatedItem": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StarterPack": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/StarterCategory"
+            },
+            "type": "array"
+          },
+          "chores": {
+            "items": {
+              "$ref": "#/components/schemas/StarterChore"
+            },
+            "type": "array"
+          },
+          "equipment": {
+            "items": {
+              "$ref": "#/components/schemas/StarterCatalogItem"
+            },
+            "type": "array"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/StarterCatalogItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "categories",
+          "locations",
+          "equipment",
+          "chores"
+        ],
+        "type": "object"
+      },
       "StreakMilestone": {
         "additionalProperties": false,
         "properties": {
@@ -5194,6 +5457,146 @@
           }
         ],
         "summary": "Preview a schedule rule",
+        "tags": [
+          "chores"
+        ]
+      }
+    },
+    "/chores/starter-pack": {
+      "get": {
+        "description": "Suggested chores, locations and equipment for a new household, each marked when one with the same name (any case) exists.",
+        "operationId": "getStarterPack",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StarterPack"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "chores:manage"
+            ]
+          },
+          {
+            "session": [
+              "chores:manage"
+            ]
+          }
+        ],
+        "summary": "The starter pack",
+        "tags": [
+          "chores"
+        ]
+      }
+    },
+    "/chores/starter-pack/apply": {
+      "post": {
+        "description": "Creates the selected chores and the locations and equipment they use, in one transaction. Chores whose name exists are skipped; locations and equipment with the same name are reused. Repeating the call creates nothing new.",
+        "operationId": "applyStarterPack",
+        "parameters": [
+          {
+            "description": "Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h).",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StarterApplyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StarterApplyResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": [
+              "chores:manage"
+            ]
+          },
+          {
+            "session": [
+              "chores:manage"
+            ]
+          }
+        ],
+        "summary": "Add chores from the starter pack",
         "tags": [
           "chores"
         ]
