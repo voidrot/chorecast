@@ -384,6 +384,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chores/starter-pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The starter pack
+         * @description Suggested chores, locations and equipment for a new household, each marked when one with the same name (any case) exists.
+         */
+        get: operations["getStarterPack"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chores/starter-pack/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add chores from the starter pack
+         * @description Creates the selected chores and the locations and equipment they use, in one transaction. Chores whose name exists are skipped; locations and equipment with the same name are reused. Repeating the call creates nothing new.
+         */
+        post: operations["applyStarterPack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chores/{id}": {
         parameters: {
             query?: never;
@@ -2777,6 +2817,73 @@ export interface components {
             /** @description True until first-run setup completes */
             required: boolean;
         };
+        StarterApplyInput: {
+            /** @description Starter chore keys */
+            chores: string[] | null;
+            /** @description Add the chores paused (not scheduled) */
+            disabled?: boolean;
+        };
+        StarterApplyResult: {
+            created: components["schemas"]["StarterCreated"];
+            /** @description Chore keys skipped because a chore with that name exists */
+            skipped: string[];
+        };
+        StarterCatalogItem: {
+            description?: string;
+            /** @description One with this name (any case) is already in the catalog; it is reused */
+            exists: boolean;
+            key: string;
+            name: string;
+        };
+        StarterCategory: {
+            key: string;
+            name: string;
+        };
+        StarterChore: {
+            /** @enum {string} */
+            assignment: "everyone" | "auto";
+            /** @description Category key */
+            category: string;
+            description?: string;
+            /** @description Equipment keys */
+            equipment?: string[] | null;
+            /** Format: int64 */
+            estimatedMinutes?: number;
+            evidence: components["schemas"]["EvidenceRules"];
+            /** @description A chore with this name (any case) exists; applying skips it */
+            exists: boolean;
+            key: string;
+            /** @description Location key */
+            location?: string;
+            /** Format: int64 */
+            minAge?: number;
+            name: string;
+            /** Format: int64 */
+            points: number;
+            /** @description Ticked by default */
+            recommended: boolean;
+            requiresApproval: boolean;
+            /** @description startDate is set to today when applied */
+            schedule: components["schemas"]["ScheduleRule"];
+            steps?: string[] | null;
+        };
+        StarterCreated: {
+            chores: components["schemas"]["StarterCreatedItem"][];
+            equipment: components["schemas"]["StarterCreatedItem"][];
+            locations: components["schemas"]["StarterCreatedItem"][];
+        };
+        StarterCreatedItem: {
+            /** Format: int64 */
+            id: number;
+            key: string;
+            name: string;
+        };
+        StarterPack: {
+            categories: components["schemas"]["StarterCategory"][];
+            chores: components["schemas"]["StarterChore"][];
+            equipment: components["schemas"]["StarterCatalogItem"][];
+            locations: components["schemas"]["StarterCatalogItem"][];
+        };
         StreakMilestone: {
             /**
              * Format: int64
@@ -3884,6 +3991,98 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SchedulePreview"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getStarterPack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StarterPack"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    applyStarterPack: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Retries with the same key and body replay the first response instead of repeating the action (24 h). */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StarterApplyInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StarterApplyResult"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Unprocessable Entity */

@@ -37,6 +37,14 @@ Built so far (#12): household, owner (password), kids (name, birth date, color, 
 link. The remaining parts arrive with their features: TOTP enrolment in the owner step (#13),
 kid avatars (#16), the pairing QR (#18), and starter chores (#20; behavior presets and rewards in Phase 2).
 
+Built: the starter pack API (server only; the admin screen follows). `GET /api/v1/chores/starter-pack` returns
+suggested chores, locations and equipment, each marked `exists` when one with the same name (any case, ignoring
+surrounding spaces) is already there. `POST /api/v1/chores/starter-pack/apply` takes chore keys and an optional
+`disabled` flag, and creates those chores plus the locations and equipment they use in one transaction with one
+`chore.changed` event. Names that exist are reused (locations, equipment) or skipped (chores, including disabled
+ones), so repeating a call creates nothing, and an unknown key is a 422 that writes nothing. Both need
+`chores:manage`. The pack is `server/internal/chores/starter/en.json`.
+
 ## Roles & permissions
 
 | Capability | Owner | Parent | Kid |

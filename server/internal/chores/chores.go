@@ -87,7 +87,8 @@ type Chore struct {
 }
 
 // ChoreChanged is emitted when a chore is created, edited (including disabled) or deleted, so
-// the horizon generator can regenerate its untouched instances.
+// the horizon generator can regenerate its untouched instances. ChoreID is 0 when several chores
+// changed at once (the starter pack).
 type ChoreChanged struct {
 	ChoreID int64 `json:"choreId"`
 }
@@ -292,8 +293,9 @@ func (s *Service) GetForKid(ctx context.Context, id, kidID int64) (Chore, error)
 	return c, nil
 }
 
-// normalize trims and checks what the schema can't, returning the cleaned input.
-func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, error) {
+// normalize trims and checks what the schema can't, returning the cleaned input. It reads through q,
+// so inside a transaction it must be given the transaction's querier (the pool has one connection).
+func normalize(ctx context.Context, q *sqlc.Queries, in ChoreInput) (ChoreInput, error) {
 	if in.Evidence.Video {
 		return in, errVideoUnsupported
 	}
@@ -353,7 +355,7 @@ func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, err
 	}
 	for i, id := range in.Assignment.KidIDs {
 		// Archived kids may stay listed (assignment skips them), so archiving a kid doesn't block edits.
-		if _, err := s.db.GetKidByID(ctx, id); err != nil {
+		if _, err := q.GetKidByID(ctx, id); err != nil {
 			bad(fmt.Sprintf("assignment.kidIds[%d]", i), "unknown kid", id)
 		}
 	}
@@ -366,7 +368,7 @@ func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, err
 	}
 
 	if in.LocationID != nil {
-		locs, err := s.db.ListLocations(ctx)
+		locs, err := q.ListLocations(ctx)
 		if err != nil {
 			return in, err
 		}
@@ -375,7 +377,7 @@ func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, err
 		}
 	}
 	if len(in.EquipmentIDs) > 0 {
-		eq, err := s.db.ListEquipment(ctx)
+		eq, err := q.ListEquipment(ctx)
 		if err != nil {
 			return in, err
 		}
@@ -392,7 +394,7 @@ func (s *Service) normalize(ctx context.Context, in ChoreInput) (ChoreInput, err
 			continue
 		}
 		seen[e.KidID] = true
-		if _, err := s.db.GetKidByID(ctx, e.KidID); err != nil {
+		if _, err := q.GetKidByID(ctx, e.KidID); err != nil {
 			bad(fmt.Sprintf("eligibility[%d].kidId", i), "unknown kid", e.KidID)
 		}
 	}
@@ -465,29 +467,15 @@ func mustJSON(v []string) string {
 
 // Create adds a chore.
 func (s *Service) Create(ctx context.Context, in ChoreInput) (Chore, error) {
-	in, err := s.normalize(ctx, in)
+	in, err := normalize(ctx, s.db.Queries, in)
 	if err != nil {
 		return Chore{}, err
 	}
 	now := db.Timestamp(s.clock.Now())
-	mode, kids, points, penalty := assignmentColumns(in.Assignment)
 	var id int64
 	err = s.inTx(ctx, func(q *sqlc.Queries, emit func(events.Event) error) error {
-		c, err := q.CreateChore(ctx, sqlc.CreateChoreParams{
-			Name: in.Name, Description: in.Description, Points: int64(in.Points), Penalty: int64(in.Penalty),
-			EstimatedMinutes: nullInt(in.EstimatedMinutes), MinAge: nullInt(in.MinAge), Steps: mustJSON(in.Steps),
-			Slots: mustJSON(in.Slots), Schedule: scheduleJSON(in.Schedule),
-			AssignMode: mode, AssignKids: kids, SharedPoints: points, SharedPenalty: penalty, RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
-			AutoApproveHours: nullInt(in.AutoApproveHours), EvidencePhotos: int64(in.Evidence.Photos),
-			EvidenceBeforeAfter: b2i(in.Evidence.BeforeAfter), EvidenceVideo: b2i(in.Evidence.Video),
-			EvidenceChecklist: b2i(in.Evidence.Checklist), EvidenceNote: b2i(in.Evidence.Note),
-			LocationID: nullID(in.LocationID), Disabled: b2i(in.Disabled), CreatedAt: now, UpdatedAt: now,
-		})
-		if err != nil {
-			return err
-		}
-		id = c.ID
-		if err := writeLinks(ctx, q, id, in); err != nil {
+		var err error
+		if id, err = insertChore(ctx, q, in, now); err != nil {
 			return err
 		}
 		return emit(ChoreChanged{ChoreID: id})
@@ -496,6 +484,25 @@ func (s *Service) Create(ctx context.Context, in ChoreInput) (Chore, error) {
 		return Chore{}, err
 	}
 	return s.Get(ctx, id)
+}
+
+// insertChore writes a normalized chore and its links, returning its id.
+func insertChore(ctx context.Context, q *sqlc.Queries, in ChoreInput, now string) (int64, error) {
+	mode, kids, points, penalty := assignmentColumns(in.Assignment)
+	c, err := q.CreateChore(ctx, sqlc.CreateChoreParams{
+		Name: in.Name, Description: in.Description, Points: int64(in.Points), Penalty: int64(in.Penalty),
+		EstimatedMinutes: nullInt(in.EstimatedMinutes), MinAge: nullInt(in.MinAge), Steps: mustJSON(in.Steps),
+		Slots: mustJSON(in.Slots), Schedule: scheduleJSON(in.Schedule),
+		AssignMode: mode, AssignKids: kids, SharedPoints: points, SharedPenalty: penalty, RequiresApproval: b2i(in.RequiresApproval), Escalate: b2i(in.Escalate),
+		AutoApproveHours: nullInt(in.AutoApproveHours), EvidencePhotos: int64(in.Evidence.Photos),
+		EvidenceBeforeAfter: b2i(in.Evidence.BeforeAfter), EvidenceVideo: b2i(in.Evidence.Video),
+		EvidenceChecklist: b2i(in.Evidence.Checklist), EvidenceNote: b2i(in.Evidence.Note),
+		LocationID: nullID(in.LocationID), Disabled: b2i(in.Disabled), CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return c.ID, writeLinks(ctx, q, c.ID, in)
 }
 
 // Update replaces a chore's definition. Optional fields left out are cleared.
@@ -507,7 +514,7 @@ func (s *Service) Update(ctx context.Context, id int64, in ChoreInput) (Chore, e
 	if err != nil {
 		return Chore{}, err
 	}
-	in, err = s.normalize(ctx, in)
+	in, err = normalize(ctx, s.db.Queries, in)
 	if err != nil {
 		return Chore{}, err
 	}

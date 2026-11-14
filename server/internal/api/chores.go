@@ -51,6 +51,20 @@ func registerChores(hapi huma.API, h *handlers) {
 		Description: "Validates a rule and returns its next occurrences from today in the household timezone, without saving anything. POST because the rule is a JSON body.",
 		Tags:        []string{"chores"}, Security: manage, Errors: []int{http.StatusUnprocessableEntity},
 	}, h.previewSchedule)
+	huma.Register(hapi, huma.Operation{
+		OperationID: "getStarterPack", Method: http.MethodGet, Path: "/chores/starter-pack",
+		Summary: "The starter pack",
+		Description: "Suggested chores, locations and equipment for a new household, each marked when one with the same name " +
+			"(any case) exists.",
+		Tags: []string{"chores"}, Security: manage, Errors: []int{http.StatusForbidden},
+	}, h.getStarterPack)
+	huma.Register(hapi, huma.Operation{
+		OperationID: "applyStarterPack", Method: http.MethodPost, Path: "/chores/starter-pack/apply",
+		Summary: "Add chores from the starter pack",
+		Description: "Creates the selected chores and the locations and equipment they use, in one transaction. Chores whose name " +
+			"exists are skipped; locations and equipment with the same name are reused. Repeating the call creates nothing new.",
+		Tags: []string{"chores"}, Security: manage, Errors: []int{http.StatusForbidden, http.StatusUnprocessableEntity},
+	}, h.applyStarterPack)
 
 	registerCatalog(hapi, "Location", "/locations", "locations", func() *chores.Catalog { return h.chores.Locations() })
 	registerCatalog(hapi, "Equipment", "/equipment", "equipment", func() *chores.Catalog { return h.chores.Equipment() })
@@ -152,6 +166,34 @@ func (h *handlers) previewSchedule(ctx context.Context, in *PreviewScheduleInput
 		return nil, err
 	}
 	return &PreviewScheduleOutput{Body: p}, nil
+}
+
+type StarterPackOutput struct {
+	Body chores.StarterPack
+}
+
+func (h *handlers) getStarterPack(ctx context.Context, _ *struct{}) (*StarterPackOutput, error) {
+	p, err := h.chores.StarterPack(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &StarterPackOutput{Body: p}, nil
+}
+
+type ApplyStarterInput struct {
+	Body chores.StarterApplyInput
+}
+
+type ApplyStarterOutput struct {
+	Body chores.StarterApplyResult
+}
+
+func (h *handlers) applyStarterPack(ctx context.Context, in *ApplyStarterInput) (*ApplyStarterOutput, error) {
+	r, err := h.chores.ApplyStarter(ctx, in.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &ApplyStarterOutput{Body: r}, nil
 }
 
 type CatalogOutput struct {
