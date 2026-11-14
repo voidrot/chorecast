@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/voidrot/chorecast/compare/android-v0.2.0...android-v0.3.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add a settings screen with a System, Light or Dark theme choice ([#149](https://github.com/voidrot/chorecast/issues/149)) ([8e38640](https://github.com/voidrot/chorecast/commit/8e38640b69590c0bf41be7bd90d6e0ca4fd3ca6c))
+* **android:** move Devices, Change server and Sign out from Home into Settings ([#150](https://github.com/voidrot/chorecast/issues/150)) ([15cec8c](https://github.com/voidrot/chorecast/commit/15cec8cdf15ef4bf61eb322d40ff1e97de12d5cb))
+* **android:** use Chorecast's emerald colors when wallpaper colors are off ([#151](https://github.com/voidrot/chorecast/issues/151)) ([70f9f1a](https://github.com/voidrot/chorecast/commit/70f9f1a13659aee86198ee3687f160aaba503735))
+
 ## [0.2.0](https://github.com/voidrot/chorecast/compare/android-v0.1.0...android-v0.2.0) (2026-11-06)
 
 
