@@ -1,6 +1,7 @@
 package dev.voidrot.chorecast.ui.settings
 
 import android.os.Build
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -34,6 +36,9 @@ fun SettingsScreen(
     appearance: Appearance,
     onTheme: (ThemeMode) -> Unit,
     onDynamicColor: (Boolean) -> Unit,
+    onDevices: (() -> Unit)? = null,
+    onChangeServer: (() -> Unit)? = null,
+    onSignOut: (() -> Unit)? = null,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -84,9 +89,20 @@ fun SettingsScreen(
                 Switch(checked = appearance.dynamicColor, onCheckedChange = null)
             }
         }
+        if (onDevices != null || onChangeServer != null || onSignOut != null) {
+            Text(stringResource(R.string.settings_account), style = MaterialTheme.typography.titleMedium)
+            onDevices?.let { AccountButton(R.string.devices_title, it) }
+            onChangeServer?.let { AccountButton(R.string.action_change_server, it) }
+            onSignOut?.let { AccountButton(R.string.action_sign_out, it) }
+        }
         Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.settings_version, BuildConfig.VERSION_NAME))
     }
+}
+
+@Composable
+private fun AccountButton(@StringRes label: Int, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(stringResource(label)) }
 }
 
 private fun themeLabel(mode: ThemeMode): Int = when (mode) {

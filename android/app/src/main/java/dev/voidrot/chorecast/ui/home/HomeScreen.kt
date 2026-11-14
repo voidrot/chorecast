@@ -42,8 +42,6 @@ fun HomeScreen(
     serverUrl: String,
     recoveryCodesLeft: Long?,
     onSignedOut: () -> Unit,
-    onChangeServer: () -> Unit,
-    onDevices: () -> Unit,
     onReview: () -> Unit,
     onInbox: () -> Unit,
     onSettings: () -> Unit,
@@ -94,16 +92,7 @@ fun HomeScreen(
                 }
             }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onDevices) { Text(stringResource(R.string.devices_title)) }
-                    OutlinedButton(onClick = viewModel::signOut) { Text(stringResource(R.string.action_sign_out)) }
-                }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onChangeServer) { Text(stringResource(R.string.action_change_server)) }
-                    OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
-                }
+                OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.settings_title)) }
             }
         }
     }
