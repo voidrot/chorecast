@@ -349,7 +349,9 @@ function toggleArchive() {
               :key="a"
               :for="`avatar-${a}`"
               class="cursor-pointer rounded-full outline-offset-2 focus-within:outline-2"
-              :class="form.avatar === a ? 'outline-3 outline-emerald-500' : ''"
+              :class="
+                form.avatar === a ? 'outline-3 outline-emerald-700 dark:outline-emerald-300' : ''
+              "
             >
               <input
                 :id="`avatar-${a}`"
@@ -365,7 +367,9 @@ function toggleArchive() {
             <label
               for="avatar-none"
               class="grid size-12 cursor-pointer place-items-center rounded-full border border-dashed border-gray-400 text-xs outline-offset-2 focus-within:outline-2"
-              :class="form.avatar === '' ? 'outline-3 outline-emerald-500' : ''"
+              :class="
+                form.avatar === '' ? 'outline-3 outline-emerald-700 dark:outline-emerald-300' : ''
+              "
             >
               <input
                 id="avatar-none"
