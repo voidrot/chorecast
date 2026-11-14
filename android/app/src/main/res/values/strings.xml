@@ -361,6 +361,7 @@
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_dynamic_color">Use wallpaper colors</string>
     <string name="settings_dynamic_color_summary">Match the app\'s colors to your wallpaper</string>
+    <string name="settings_account">Household and account</string>
     <string name="settings_about">About</string>
     <string name="settings_version">Version %1$s</string>
 </resources>

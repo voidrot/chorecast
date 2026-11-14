@@ -55,13 +55,4 @@ class HomeViewModel(
             }
         }
     }
-
-    fun signOut() {
-        val token = tokens.read()
-        tokens.clear()
-        viewModelScope.launch {
-            if (token != null) auth.logout(url, token)
-            _state.update { it.copy(signedOut = true) }
-        }
-    }
 }
