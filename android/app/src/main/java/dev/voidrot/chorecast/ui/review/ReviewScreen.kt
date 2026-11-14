@@ -2,11 +2,13 @@ package dev.voidrot.chorecast.ui.review
 
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,7 +34,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,6 +49,7 @@ import dev.voidrot.chorecast.core.REJECT_REASONS
 import dev.voidrot.chorecast.core.REJECT_TEXT_MAX
 import dev.voidrot.chorecast.core.linkLapsed
 import dev.voidrot.chorecast.core.openableUrl
+import dev.voidrot.chorecast.ui.components.SectionHeader
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -83,6 +90,7 @@ fun ReviewScreen(
             Text(
                 if (state.items.isEmpty()) stringResource(R.string.review_load_failed, code) else stringResource(R.string.review_refresh_failed),
                 color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
         }
         PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.weight(1f)) {
@@ -104,9 +112,8 @@ fun ReviewScreen(
                 else -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     state.groups.forEach { group ->
                         item(key = group.key) {
-                            Text(
+                            SectionHeader(
                                 stringResource(R.string.review_group, group.kidName, group.items.size),
-                                style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
                         }
@@ -168,8 +175,16 @@ private fun ReviewCard(
     val uriHandler = LocalUriHandler.current
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = checked, onCheckedChange = { onToggle() }, enabled = enabled)
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                    value = checked,
+                    enabled = enabled,
+                    role = Role.Checkbox,
+                    onValueChange = { onToggle() },
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = checked, onCheckedChange = null)
                 Column(Modifier.weight(1f)) {
                     Text(item.instance.choreName, style = MaterialTheme.typography.titleMedium)
                     item.submission?.let {
@@ -198,17 +213,31 @@ private fun ReviewCard(
                 if (link == null) {
                     Text(stringResource(R.string.review_photo_expired, index + 1), style = MaterialTheme.typography.bodySmall)
                 } else {
-                    TextButton(onClick = {
-                        // A lapsed signed link is dead: reload the queue for fresh ones instead.
-                        if (photo.linkLapsed(Instant.now())) onReload() else uriHandler.openUri(link)
-                    }) {
+                    val photoDescription = stringResource(R.string.a11y_open_photo, index + 1, item.instance.choreName)
+                    TextButton(
+                        onClick = {
+                            // A lapsed signed link is dead: reload the queue for fresh ones instead.
+                            if (photo.linkLapsed(Instant.now())) onReload() else uriHandler.openUri(link)
+                        },
+                        modifier = Modifier.semantics { contentDescription = photoDescription },
+                    ) {
                         Text(stringResource(R.string.review_photo_open, index + 1))
                     }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onApprove, enabled = enabled) { Text(stringResource(R.string.review_approve)) }
-                OutlinedButton(onClick = onReject, enabled = enabled) { Text(stringResource(R.string.review_reject)) }
+                val approveDescription = stringResource(R.string.a11y_approve, item.instance.choreName)
+                val rejectDescription = stringResource(R.string.a11y_reject, item.instance.choreName)
+                Button(
+                    onClick = onApprove,
+                    enabled = enabled,
+                    modifier = Modifier.semantics { contentDescription = approveDescription },
+                ) { Text(stringResource(R.string.review_approve)) }
+                OutlinedButton(
+                    onClick = onReject,
+                    enabled = enabled,
+                    modifier = Modifier.semantics { contentDescription = rejectDescription },
+                ) { Text(stringResource(R.string.review_reject)) }
             }
         }
     }

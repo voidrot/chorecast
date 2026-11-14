@@ -32,6 +32,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -127,7 +128,7 @@ fun DeviceScreen(
                 ) {
                     items(picker.kids, key = { it.id }) { kid ->
                         Column(
-                            Modifier.clip(MaterialTheme.shapes.large).clickable(enabled = !state.busy) { viewModel.pickKid(kid) }.padding(12.dp),
+                            Modifier.clip(MaterialTheme.shapes.large).clickable(enabled = !state.busy, role = Role.Button) { viewModel.pickKid(kid) }.padding(12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {

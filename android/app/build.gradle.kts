@@ -55,6 +55,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests { isIncludeAndroidResources = true }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -83,8 +87,12 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
 }
 
 /** Derives a monotonic versionCode from semver: major * 1_000_000 + minor * 1_000 + patch. */

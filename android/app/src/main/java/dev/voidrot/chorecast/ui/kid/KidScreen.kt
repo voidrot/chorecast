@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
@@ -31,7 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.voidrot.chorecast.R
@@ -44,6 +50,8 @@ import dev.voidrot.chorecast.core.StaleReason
 import dev.voidrot.chorecast.core.actionsFor
 import dev.voidrot.chorecast.core.reassignTargets
 import dev.voidrot.chorecast.core.statusView
+import dev.voidrot.chorecast.ui.components.SectionHeader
+import dev.voidrot.chorecast.ui.device.formatDate
 
 /** One kid for the parent: balance and manual adjustment, and the recent chores with their actions. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,6 +84,7 @@ fun KidScreen(
             Text(
                 if (data == null) stringResource(R.string.kid_load_failed, code) else stringResource(R.string.kid_refresh_failed),
                 color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
         }
         PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.weight(1f)) {
@@ -173,18 +182,26 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
 ) {
     if (chores.isEmpty()) return
     item(key = "h$titleRes") {
-        Text(stringResource(titleRes), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+        SectionHeader(stringResource(titleRes), modifier = Modifier.padding(top = 8.dp))
     }
-    items(chores, key = { "$titleRes:${it.id}" }) { ChoreRow(it, working, viewModel) }
+    items(chores, key = { "$titleRes:${it.id}" }) { instance ->
+        ChoreRow(instance, working) { action ->
+            when (action) {
+                ParentAction.REVERSE -> viewModel.openReverse(instance)
+                ParentAction.EXCUSE -> viewModel.openExcuse(instance)
+                ParentAction.REASSIGN -> viewModel.openReassign(instance)
+            }
+        }
+    }
 }
 
 @Composable
-private fun ChoreRow(instance: ChoreInstance, working: Boolean, viewModel: KidViewModel) {
+internal fun ChoreRow(instance: ChoreInstance, working: Boolean, onAction: (ParentAction) -> Unit) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(instance.choreName, style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(R.string.kid_chore_status, instance.date.toString(), statusLabel(instance.statusView())),
+                stringResource(R.string.kid_chore_status, formatDate(instance.date), statusLabel(instance.statusView())),
                 style = MaterialTheme.typography.bodyMedium,
             )
             instance.points?.let {
@@ -192,15 +209,18 @@ private fun ChoreRow(instance: ChoreInstance, working: Boolean, viewModel: KidVi
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 actionsFor(instance).forEach { action ->
-                    OutlinedButton(
-                        onClick = {
-                            when (action) {
-                                ParentAction.REVERSE -> viewModel.openReverse(instance)
-                                ParentAction.EXCUSE -> viewModel.openExcuse(instance)
-                                ParentAction.REASSIGN -> viewModel.openReassign(instance)
-                            }
+                    val description = stringResource(
+                        when (action) {
+                            ParentAction.REVERSE -> R.string.a11y_reverse
+                            ParentAction.EXCUSE -> R.string.a11y_excuse
+                            ParentAction.REASSIGN -> R.string.a11y_reassign
                         },
+                        instance.choreName,
+                    )
+                    OutlinedButton(
+                        onClick = { onAction(action) },
                         enabled = !working,
+                        modifier = Modifier.semantics { contentDescription = description },
                     ) {
                         Text(
                             stringResource(
@@ -242,7 +262,8 @@ private fun AdjustDialog(
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        // A stray tap outside must not throw away a typed amount or note.
+        onDismissRequest = { if (draft.amount.isEmpty() && draft.note.isEmpty()) onDismiss() },
         title = { Text(stringResource(R.string.kid_adjust)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -271,6 +292,7 @@ private fun AdjustDialog(
                         if (draft.problem == AdjustmentProblem.AMOUNT_INVALID) Text(stringResource(R.string.kid_adjust_amount_invalid))
                     },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth(),
                 )

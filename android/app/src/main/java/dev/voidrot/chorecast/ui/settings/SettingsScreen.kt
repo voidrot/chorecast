@@ -29,6 +29,7 @@ import dev.voidrot.chorecast.BuildConfig
 import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.core.Appearance
 import dev.voidrot.chorecast.core.ThemeMode
+import dev.voidrot.chorecast.ui.components.SectionHeader
 
 /** App settings stored on this device. Stateless: the caller owns the [Appearance] state. */
 @Composable
@@ -50,7 +51,7 @@ fun SettingsScreen(
             Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
             TextButton(onClick = onBack) { Text(stringResource(R.string.action_back)) }
         }
-        Text(stringResource(R.string.settings_appearance), style = MaterialTheme.typography.titleMedium)
+        SectionHeader(stringResource(R.string.settings_appearance))
         Text(stringResource(R.string.settings_theme))
         Column(Modifier.selectableGroup()) {
             for (mode in ThemeMode.entries) {
@@ -90,12 +91,12 @@ fun SettingsScreen(
             }
         }
         if (onDevices != null || onChangeServer != null || onSignOut != null) {
-            Text(stringResource(R.string.settings_account), style = MaterialTheme.typography.titleMedium)
+            SectionHeader(stringResource(R.string.settings_account))
             onDevices?.let { AccountButton(R.string.devices_title, it) }
             onChangeServer?.let { AccountButton(R.string.action_change_server, it) }
             onSignOut?.let { AccountButton(R.string.action_sign_out, it) }
         }
-        Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleMedium)
+        SectionHeader(stringResource(R.string.settings_about))
         Text(stringResource(R.string.settings_version, BuildConfig.VERSION_NAME))
     }
 }
