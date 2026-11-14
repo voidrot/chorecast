@@ -53,10 +53,10 @@
     <string name="device_lock">Lock</string>
 
     <string name="kid_balance_label">Points</string>
-    <string name="kid_streak_label">Daily streak</string>
+    <string name="kid_streak_label">Streak</string>
     <plurals name="kid_streak_days">
-        <item quantity="one">%d day</item>
-        <item quantity="other">%d days</item>
+        <item quantity="one">%d-day streak</item>
+        <item quantity="other">%d-day streak</item>
     </plurals>
     <string name="kid_today_title">Today</string>
     <string name="kid_planned_title">Coming up</string>
@@ -309,6 +309,12 @@
     <string name="kid_reverse_title">Reverse approval of %1$s</string>
     <string name="kid_reassign">Reassign</string>
     <string name="kid_reassign_title">Give %1$s to</string>
+    <string name="a11y_reassign">Reassign %1$s</string>
+    <string name="a11y_excuse">Excuse %1$s</string>
+    <string name="a11y_reverse">Reverse approval of %1$s</string>
+    <string name="a11y_approve">Approve %1$s</string>
+    <string name="a11y_reject">Reject %1$s</string>
+    <string name="a11y_open_photo">Open photo %1$d of %2$s (opens in browser)</string>
     <string name="kid_notice_adjusted">Points adjusted.</string>
     <string name="kid_notice_excused">Excused.</string>
     <string name="kid_notice_reversed">Approval reversed.</string>

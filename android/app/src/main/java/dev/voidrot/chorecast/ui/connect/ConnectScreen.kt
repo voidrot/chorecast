@@ -16,6 +16,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -57,7 +60,13 @@ fun ConnectScreen(
         if (state.cleartext) {
             Text(stringResource(R.string.connect_cleartext_warning), color = MaterialTheme.colorScheme.error)
         }
-        state.problem?.let { Text(problemText(it), color = MaterialTheme.colorScheme.error) }
+        state.problem?.let {
+            Text(
+                problemText(it),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
         Button(onClick = viewModel::connect, enabled = !state.checking, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(if (state.checking) R.string.connect_checking else R.string.action_connect))
         }

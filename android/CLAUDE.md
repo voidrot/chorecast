@@ -26,7 +26,7 @@ Run one test class or method from `android/`:
 
 There is no plain `testDebugUnitTest`: each flavor has its own unit-test task (see `mise.toml`), so app tests need the flavor in the task name.
 
-Most tests are in `core/src/test`, which is plain JVM and needs no emulator. `app/src/test` holds only `SmokeTest`. Put logic under test in `core`.
+Most tests are in `core/src/test`, which is plain JVM and needs no emulator. `app/src/test` holds `SmokeTest` plus Robolectric Compose tests (`SemanticsTest`: roles, names and headings) and `ContrastTest` (palette contrast ratios). Put logic under test in `core`.
 
 ## Modules
 

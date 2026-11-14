@@ -34,6 +34,7 @@ import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.core.ChoreStatusView
 import dev.voidrot.chorecast.core.KidToday
 import dev.voidrot.chorecast.core.TodayChore
+import dev.voidrot.chorecast.ui.components.SectionHeader
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -211,10 +212,10 @@ private fun ChoreList(today: KidToday, staleError: TodayError?, onOpen: (Long) -
             item(key = "stale") { Text(stringResource(R.string.kid_refresh_failed), color = MaterialTheme.colorScheme.error) }
         }
         item(key = "today") {
-            Text(
+            SectionHeader(
                 stringResource(R.string.kid_today_title),
-                style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                style = MaterialTheme.typography.titleLarge,
             )
         }
         if (plan.today.isEmpty()) item(key = "empty") { Text(stringResource(R.string.kid_empty)) }
@@ -232,7 +233,7 @@ private fun ChoreList(today: KidToday, staleError: TodayError?, onOpen: (Long) -
         if (plan.planned.isNotEmpty()) {
             item(key = "planned") {
                 Column(Modifier.padding(top = 24.dp, bottom = 4.dp)) {
-                    Text(stringResource(R.string.kid_planned_title), style = MaterialTheme.typography.titleLarge)
+                    SectionHeader(stringResource(R.string.kid_planned_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.kid_planned_note), style = MaterialTheme.typography.bodySmall)
                 }
             }

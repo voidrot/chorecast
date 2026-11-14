@@ -1,6 +1,5 @@
 package dev.voidrot.chorecast.ui.home
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -123,6 +127,7 @@ internal fun LazyListScope.overviewItems(
                 Text(
                     if (overview.overview == null) stringResource(R.string.home_load_failed, code) else stringResource(R.string.home_refresh_failed),
                     color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
                 OutlinedButton(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
             }
@@ -136,8 +141,9 @@ internal fun LazyListScope.overviewItems(
 }
 
 @Composable
-private fun KidCard(row: KidOverview, onClick: () -> Unit) {
-    ElevatedCard(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+internal fun KidCard(row: KidOverview, onClick: () -> Unit) {
+    // Card's onClick sets no role, so TalkBack would not announce it as a button.
+    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth().semantics { role = Role.Button }) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(row.kid.displayName, style = MaterialTheme.typography.titleMedium)
             if (row.total == 0) {

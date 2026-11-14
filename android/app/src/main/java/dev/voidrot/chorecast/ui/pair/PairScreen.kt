@@ -32,6 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -109,7 +112,13 @@ fun PairScreen(viewModel: PairViewModel, onPaired: () -> Unit, onBack: () -> Uni
                 if (!hasCamera) permission.launch(Manifest.permission.CAMERA)
             }) { Text(stringResource(R.string.pair_scan_instead)) }
         }
-        state.error?.let { Text(pairErrorText(it), color = MaterialTheme.colorScheme.error) }
+        state.error?.let {
+            Text(
+                pairErrorText(it),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
         TextButton(onClick = onBack) { Text(stringResource(R.string.action_back)) }
     }
 }
