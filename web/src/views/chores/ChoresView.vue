@@ -63,7 +63,7 @@ onMounted(() => chores.run())
               </div>
             </div>
             <div class="text-right">
-              <div class="font-semibold text-emerald-600 dark:text-emerald-400">
+              <div class="font-semibold text-emerald-700 dark:text-emerald-300">
                 {{ t('chores.pts', { n: c.points }) }}
               </div>
               <div class="mt-1 flex flex-wrap justify-end gap-1">

@@ -168,7 +168,7 @@ async function openAdmin() {
           :href="releasesURL"
           target="_blank"
           rel="noopener"
-          class="text-emerald-600 underline dark:text-emerald-400"
+          class="text-emerald-700 underline dark:text-emerald-300"
           >{{
             t('setup.done.download')
           }}</a

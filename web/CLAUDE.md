@@ -47,7 +47,7 @@ Run from `web/`, or from the repo root with the `mise run` task in parentheses. 
 
 ## Styling and theme
 
-- Components come from Naive UI. `src/theme.ts` holds the emerald `themeOverrides` and `naiveLocale`, which blanks Naive's placeholders because labels say what to enter. The dark theme follows the OS (`useOsTheme` in `App.vue`).
+- Components come from Naive UI. `src/theme.ts` holds the emerald `lightOverrides` and `darkOverrides` (darkened in light mode so white button text passes 4.5:1) and `naiveLocale`, which blanks Naive's placeholders because labels say what to enter. The dark theme follows the OS (`useOsTheme` in `App.vue`).
 - Tailwind 4 runs through `@tailwindcss/vite`. There is no `tailwind.config`. `src/style.css` imports Tailwind and sets the base body styles. Use utility classes for layout and spacing.
 - Naive injects unlayered styles, so they override Tailwind's base layer. Don't fight that with `!important`.
 
