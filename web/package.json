@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.16.1",
+  "packageManager": "pnpm@12.18.0",
   "scripts": {
     "dev": "vite",
     "build": "pnpm typecheck && vite build && touch ../server/internal/webui/dist/.gitkeep",
