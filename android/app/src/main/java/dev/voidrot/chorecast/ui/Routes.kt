@@ -52,3 +52,7 @@ data class PairDeviceRoute(val serverUrl: String)
 /** The parent's inbox. */
 @Serializable
 data class InboxRoute(val serverUrl: String)
+
+/** App settings stored on this device. */
+@Serializable
+data object SettingsRoute

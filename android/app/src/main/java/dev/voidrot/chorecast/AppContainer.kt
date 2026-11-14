@@ -1,6 +1,7 @@
 package dev.voidrot.chorecast
 
 import android.content.Context
+import dev.voidrot.chorecast.core.AppearanceSettings
 import dev.voidrot.chorecast.core.AvatarPhotos
 import dev.voidrot.chorecast.core.ChoreCompleter
 import dev.voidrot.chorecast.core.DeviceClient
@@ -27,6 +28,7 @@ class AppContainer(context: Context) {
     private val prefs = context.getSharedPreferences("chorecast", Context.MODE_PRIVATE)
 
     val settings = SettingsStore(prefs)
+    val appearance = AppearanceSettings(settings)
     val tokenStore: TokenStore = KeystoreTokenStore(prefs)
     private val engine = OkHttp.create()
     val serverChecker = ServerChecker(engine)

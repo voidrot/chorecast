@@ -46,6 +46,7 @@ fun HomeScreen(
     onDevices: () -> Unit,
     onReview: () -> Unit,
     onInbox: () -> Unit,
+    onSettings: () -> Unit,
     onKid: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -99,7 +100,10 @@ fun HomeScreen(
                 }
             }
             item {
-                OutlinedButton(onClick = onChangeServer) { Text(stringResource(R.string.action_change_server)) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onChangeServer) { Text(stringResource(R.string.action_change_server)) }
+                    OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
+                }
             }
         }
     }

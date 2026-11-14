@@ -126,5 +126,6 @@ data class PinEntry(val digits: String = "") {
 sealed interface ParentPage {
     data object Overview : ParentPage
     data object Review : ParentPage
+    data object Settings : ParentPage
     data class Kid(val kidId: Long) : ParentPage
 }

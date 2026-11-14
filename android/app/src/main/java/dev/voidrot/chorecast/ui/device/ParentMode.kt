@@ -23,6 +23,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.voidrot.chorecast.R
 import dev.voidrot.chorecast.core.ActiveSession
+import dev.voidrot.chorecast.core.Appearance
+import dev.voidrot.chorecast.core.ThemeMode
 import dev.voidrot.chorecast.core.ParentPage
 import dev.voidrot.chorecast.ui.home.OverviewViewModel
 import dev.voidrot.chorecast.ui.home.overviewItems
@@ -30,6 +32,7 @@ import dev.voidrot.chorecast.ui.kid.KidScreen
 import dev.voidrot.chorecast.ui.kid.KidViewModel
 import dev.voidrot.chorecast.ui.review.ReviewScreen
 import dev.voidrot.chorecast.ui.review.ReviewViewModel
+import dev.voidrot.chorecast.ui.settings.SettingsScreen
 import androidx.compose.ui.res.stringResource
 
 /** Builds the parent screens' view models for one elevation: they ask the API with the elevated token in the store. */
@@ -51,6 +54,9 @@ internal fun ParentMode(
     page: ParentPage,
     store: ParentSessionStore,
     models: ParentModels,
+    appearance: Appearance,
+    onTheme: (ThemeMode) -> Unit,
+    onDynamicColor: (Boolean) -> Unit,
     onPage: (ParentPage) -> Unit,
     onLock: () -> Unit,
     onRefused: () -> Unit,
@@ -88,9 +94,19 @@ internal fun ParentMode(
                             onKid = { onPage(ParentPage.Kid(it)) },
                             onRetry = vm::refresh,
                         )
+                        item {
+                            OutlinedButton(onClick = { onPage(ParentPage.Settings) }, modifier = Modifier.fillMaxWidth()) {
+                                Text(stringResource(R.string.settings_title))
+                            }
+                        }
                     }
                 }
             }
+            ParentPage.Settings -> SettingsScreen(
+                appearance, onTheme, onDynamicColor,
+                onBack = { onPage(ParentPage.Overview) },
+                modifier = Modifier.weight(1f),
+            )
             ParentPage.Review -> ReviewScreen(
                 viewModel = viewModel<ReviewViewModel>(viewModelStoreOwner = store, key = "review") { models.review(store) },
                 onBack = { onPage(ParentPage.Overview) },
