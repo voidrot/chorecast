@@ -47,6 +47,14 @@ ones), so repeating a call creates nothing, and an unknown key is a 422 that wri
 `chores:manage`. The pack is `server/internal/chores/starter/en.json`. The admin screen is `/chores/starter`; it
 ticks the recommended chores, lists the locations and equipment it will add, and can add the chores paused.
 
+Built: the starter pack API (server only; the admin screen follows). `GET /api/v1/chores/starter-pack` returns
+suggested chores, locations and equipment, each marked `exists` when one with the same name (any case, ignoring
+surrounding spaces) is already there. `POST /api/v1/chores/starter-pack/apply` takes chore keys and an optional
+`disabled` flag, and creates those chores plus the locations and equipment they use in one transaction with one
+`chore.changed` event. Names that exist are reused (locations, equipment) or skipped (chores, including disabled
+ones), so repeating a call creates nothing, and an unknown key is a 422 that writes nothing. Both need
+`chores:manage`. The pack is `server/internal/chores/starter/en.json`.
+
 ## Roles & permissions
 
 | Capability | Owner | Parent | Kid |
